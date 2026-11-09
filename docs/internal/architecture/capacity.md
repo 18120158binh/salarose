@@ -30,7 +30,7 @@ In scope:
 Out of scope:
 
 - Each component's own throughput and latency rules. Each [component contract](../README.md#components) owns them.
-- How the load generator sends traffic, its phases, and its own stop conditions. [The traffic simulator](../features/traffic-simulator.md) owns them.
+- How the load generator sends traffic, its phases, and its stop conditions other than the slot stop of CAP-FR-16. [The traffic simulator](../features/traffic-simulator.md) owns them.
 - The import store. It holds no replication slot, so its WAL does not reach a slot ([decision 0040](decisions/0040-import-through-a-batch-path-and-a-separate-store.md)).
 - Alert rules and their thresholds. [Monitoring](../operations/monitoring.md) lists them.
 - A second customer on the same deployment ([decision 0027](decisions/0027-multi-tenancy.md)).
@@ -119,7 +119,7 @@ Steps:
 3. **Held WAL.** For each slot `s` and rate `r`, `H(s, r)` = `W(r)` × (confirm count + 1) × the checkpoint interval of its job. For the cap, use `H(s, burst)`, with the burst rate for the whole confirm window, even where the window is longer than the burst. This holds while checkpoints complete on schedule and the CDC source keeps up with the WAL. A long checkpoint or a source behind the WAL adds to the hold, so the load test measures the hold itself (CAP-FR-09).
 4. **Cap.** The cap on slot WAL must be at least the margin × the largest `H(s, burst)`.
 5. **Stopped slot.** A stopped job confirms nothing, and its slot already holds `H(s, r)` when the job stops. Time to the cap = (cap − `H(s, r)`) ÷ `W(r)`, for each slot, at both rates.
-6. **Kafka.** For each topic, retained bytes = the topic's sustained bytes per second × its time retention + bursts per retention period × (burst rate − sustained rate) × 600 s × the topic's bytes per event. A byte limit applies to each partition, so a topic's byte limit must be at least its retained bytes divided by its partitions, assuming its messages spread evenly over them.
+6. **Kafka.** For each topic, retained bytes = the topic's sustained bytes per second × its time retention + bursts per retention period × (burst rate − sustained rate) × 600 s × the topic's bytes per event. Multiply by the topic's replicas for the bytes on disk. A byte limit applies to each partition, so a topic's byte limit must be at least its retained bytes divided by its partitions, assuming its messages spread evenly over them.
 7. **Disk.** For each disk, used space at the target = the Postgres data on it, grown at the sustained rate over the period the sizing sheet states + the cap on slot WAL + every topic's retained bytes on it + everything else it holds. Postgres and Kafka sum when they share a disk.
 
 Output: the sizing sheet. Each result sits next to the setting it sets, and each input says where it was measured.
@@ -149,6 +149,7 @@ Ties and edge cases:
 | CAP-FR-13 | Every table that a CDC publication covers must be read by a job, except the heartbeat table that every publication covers on purpose. This is the lead's default, pending owner review. |
 | CAP-FR-14 | A table that no CDC publication covers must not have full replica identity. With logical WAL, the database logs the whole old row of such a table on every update and delete, and no reader uses it. This is the lead's default, pending owner review. Whether the readers of the tables a publication covers need the old row is an [open question](#open-questions). |
 | CAP-FR-15 | The capacity report must state the deployed version, the settings in force, the workload profile, every measurement of CAP-FR-09 and CAP-FR-10, and pass or fail for each requirement in [Non-functional requirements](#non-functional-requirements). |
+| CAP-FR-16 | The load generator's load mode must stop the run on its own, and report why, when any replication slot's status becomes `unreserved` or `lost`. `extended` must never stop a run. |
 
 ## Non-functional requirements
 
@@ -159,10 +160,11 @@ Ties and edge cases:
 | CAP-NFR-03 | At the target load, with every job running, no slot's held WAL may exceed the cap on slot WAL divided by the margin. |
 | CAP-NFR-04 | At the target load, no checkpoint of any job may fail or expire. |
 | CAP-NFR-05 | At the target load, no job may restart. |
-| CAP-NFR-06 | At the sustained load, every consumer keeps up: its lag at the end of the sustained phase must be no higher than its lag at the end of the phase's first confirm window. This is the lead's default, pending owner review. |
+| CAP-NFR-06 | At the sustained load, every consumer keeps up: its lag at the end of the sustained phase must be no higher than its lag at the end of the first of the longest confirm windows in that phase. This is the lead's default, pending owner review. |
 | CAP-NFR-07 | After the burst ends, every consumer's lag must return to its normal lag within a bound. The bound is an [open question](#open-questions). |
 | CAP-NFR-08 | At the target load, each volume that holds Postgres or Kafka, and the disk under it, must keep at least 30% of its space free. This is the lead's default, pending owner review. A load run aborts above 70% full (SIM-FR-12 of [the traffic simulator](../features/traffic-simulator.md#functional-requirements)), so a finished run has shown it, and it keeps the disk clear of the WAL governor's pause under 20% free ([IMP-NFR-03](components/import-metric-pass.md#non-functional-requirements)). |
 | CAP-NFR-09 | The sizing must not meet the cap by lowering the confirm count of [JEX-NFR-10](components/journey-execution.md#non-functional-requirements). A shorter CDC restore window needs its own decision record. |
+| CAP-NFR-10 | `snowplow-good` must keep at least 72 hours of messages at the target load, and the volume that holds Kafka must be sized by CAP-FR-06 to hold that. A recovery that keeps Flink state relies on the raw events waiting there ([rollout known issues](../operations/rollout-known-issues.md#a-new-job-image-cannot-restore-its-savepoint)). From step 6 of the [algorithm](#algorithm), with one burst, the topic alone retains (500 × 259,200 s + 1,500 × 600 s) × its bytes per event, about 130.5 million events: about 13 GB for every 100 bytes per event, and about 65 GB at 500 bytes. The bytes per event come from measurement, so the bound is that product, not a fixed number. |
 
 ## Interfaces
 
@@ -183,8 +185,8 @@ The sizing and the load test read these. None of them is new.
 
 | Case | What happens |
 |---|---|
-| A slot becomes `unreserved` or `lost` during the load test | The run has failed CAP-NFR-02. The operator stops the run before the slot is lost, if it is not yet, and the root-cause review runs. Whether the load generator's load mode stops on its own is an [open question](#open-questions). Its stop conditions today are SIM-FR-12's. |
-| A slot's held WAL passes the cap divided by the margin | The run has failed CAP-NFR-03. It goes on measuring unless a slot nears `unreserved`, and the root-cause review runs. |
+| A slot becomes `unreserved` or `lost` during the load test | The load generator stops the run (CAP-FR-16). The run has failed CAP-NFR-02, and the root-cause review runs. |
+| A slot's held WAL passes the cap divided by the margin | The run has failed CAP-NFR-03. It goes on measuring unless a slot's held WAL nears the cap, and the root-cause review runs. |
 | A slot is `extended` | Nothing. The held WAL is above the database's maximum WAL size, which the sizing expects. |
 | A volume passes 70% full, or 1% of the run's events reach the dead-letter topic | The load generator aborts the run (SIM-FR-12). Past 70% full, the run has failed CAP-NFR-08. |
 | The load generator cannot reach the target rate | The run does not count. The capacity report says the generator was the limiter, not the platform. |
@@ -201,24 +203,24 @@ The sizing and the load test read these. None of them is new.
 - Given a cap of 8 GiB and a burst WAL rate of 5 MB/s, when the sizing runs, then a 60 s job's slot that stops at the burst reaches the cap in about 18 minutes. (CAP-FR-05)
 - Given `snowplow-good` with 3 partitions and a byte limit, when the sizing sheet is read, then it gives the topic's retained bytes at the target load, and the byte limit per partition is at least a third of them. (CAP-FR-06)
 - Given a change that raises the checkpoint interval of one job, when it is reviewed, then the sizing sheet in the same change shows the new held WAL against the cap. (CAP-FR-07)
-- Given a load test, when it runs, then its rate at the collector rises to 500 events per second in the ramp, holds 500 for at least two of the longest confirm windows, holds 2,000 for 10 minutes, then holds 500 until every lag is back to normal. (CAP-FR-08, CAP-NFR-01)
+- Given a load test, when it runs, then its rate at the collector rises to 500 events per second in the ramp, holds 500 for at least two of the longest confirm windows, holds 2,000 for 10 minutes, then holds 500 until every lag is back to normal or the operator ends the run and records the lag left. (CAP-FR-08, CAP-NFR-01)
 - Given a load test, when it ends, then the capacity report gives every measurement of CAP-FR-09 for the whole run, and the measured rows per event per table and WAL per event beside the sizing sheet's. (CAP-FR-09, CAP-FR-10, CAP-FR-15)
 - Given a measured WAL per event above the sizing sheet's, when an operator proposes raising the cap on slot WAL, then the proposal includes the root-cause review, with a finding for each of the seven causes. (CAP-FR-11, CAP-FR-12)
 - Given the database's publications, when the review lists each covered table and its reader, then every table but the heartbeat table has a reader. (CAP-FR-13)
 - Given the database's tables, when the review lists each table with full replica identity, then a CDC publication covers each one. (CAP-FR-14)
 - Given the whole run, when the slots are read, then every slot's status stays `reserved` or `extended`, and every slot's held WAL stays at or under the cap divided by the margin. (CAP-NFR-02, CAP-NFR-03)
 - Given the whole run, when the jobs are read, then no job fails or expires a checkpoint, and no job restarts. (CAP-NFR-04, CAP-NFR-05)
-- Given the sustained phase, when each consumer's lag is read at the end of the phase's first confirm window and at the end of the phase, then the second reading is no higher than the first. (CAP-NFR-06)
+- Given the sustained phase, when each consumer's lag is read at the end of the first of the longest confirm windows in the phase and at the end of the phase, then the second reading is no higher than the first. (CAP-NFR-06)
 - Given the burst has ended, when each consumer's lag is read, then the capacity report gives the time each took to return to its normal lag, and judges CAP-NFR-07 against the bound once the owner sets one. (CAP-NFR-07)
 - Given the run, when free space is read on each volume that holds Postgres or Kafka and on the disk under it, then no reading is under 30%. (CAP-NFR-08)
 - Given a sizing that does not fit the cap, when it is proposed, then it does not lower the confirm count below 10 without a decision record. (CAP-NFR-09)
+- Given a load run in load mode, when a slot's status becomes `unreserved` or `lost`, then the run stops at that reading and its report names the slot. Given a slot that is only `extended`, then the run goes on. (CAP-FR-16)
+- Given the measured bytes per event of `snowplow-good`, when the sizing sheet is read, then the topic's retained bytes for 72 hours at the target load fit the volume that holds Kafka, with CAP-NFR-08's free space left. (CAP-NFR-10, CAP-FR-06)
 
 ## Open questions
 
-- **Retention of `snowplow-good`.** The recovery of 2026-11-08 relied on raw events waiting in `snowplow-good`, which kept 3 days ([rollout known issues](../operations/rollout-known-issues.md#a-new-job-image-cannot-restore-its-savepoint)). No contract requires that. At the sustained load, 72 hours is about 130 million events, more than the 6 GiB that Kafka's volume claims at any event size above about 50 bytes. How long the topic must keep events at the target load is undecided. CAP-FR-06 sizes whatever retention is set.
 - **Bursts per retention period.** The Kafka sizing assumes one burst per retention period. That is the lead's default, pending owner review.
 - **Lag recovery bound.** How long after the burst ends may a consumer's lag take to return to normal (CAP-NFR-07)? No contract or decision sets it. Until the owner does, the capacity report gives the measured time and marks CAP-NFR-07 as not judged.
-- **A slot stop in load mode.** The traffic simulator's load mode stops only on SIM-FR-12's conditions. Its bench mode also stops when a slot is no longer `reserved`, which would stop every run here, because every slot is `extended` at the burst. Whether load mode gets a stop on `unreserved`, or on held WAL above a share of the cap, is undecided.
 - **End-to-end latency.** What latency from the collector to a journey transition must hold at the target load? No contract sets one for the whole path. The load test measures it, and the report states it without a pass or fail.
 - **Sustained phase length.** CAP-FR-08 requires at least two of the longest confirm windows. Whether the test must run longer, for example to show that Kafka retention and disk hold at the sustained rate, is undecided.
 - **The lead's defaults.** The margin of 2, the lag rule of CAP-NFR-06, the 30% free of CAP-NFR-08, the two windows of CAP-FR-08, and the standing rules CAP-FR-13 and CAP-FR-14 wait for owner review.

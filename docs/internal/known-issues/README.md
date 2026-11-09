@@ -26,7 +26,7 @@ Every issue has an id, a severity, and the requirement it breaks. Fix an issue a
 | [Segments](features/segments.md) | 0 | 0 | 0 | 1 |
 | [AI journey generation](features/ai-journey-generation.md) | 0 | 0 | 0 | 0 |
 | [Admin authentication](features/admin-authentication.md) | 0 | 0 | 0 | 0 |
-| [Platform](platform.md) | 0 | 0 | 3 | 0 |
+| [Platform](platform.md) | 0 | 0 | 5 | 0 |
 | [Data ingestion API](features/data-ingestion-api.md) | 1 | 0 | 3 | 0 |
 | [Platform console](features/platform-console.md) | 0 | 0 | 2 | 1 |
 | [Traffic simulator](features/traffic-simulator.md) | 0 | 0 | 0 | 0 |
@@ -35,7 +35,7 @@ Every issue has an id, a severity, and the requirement it breaks. Fix an issue a
 | [Customer lookup](features/customer-lookup.md), not built | 0 | 0 | 1 | 1 |
 | [Data health](features/data-health.md), not built | 0 | 0 | 1 | 0 |
 | [Data import](features/data-import.md), not built | 0 | 0 | 0 | 0 |
-| Total | 3 | 3 | 11 | 5 |
+| Total | 3 | 3 | 13 | 5 |
 
 To recount one page, run `grep -cE '^\| [A-Z]+-KI-[0-9]+ \| Blocking \|' <page>.md`, with each severity in turn.
 
