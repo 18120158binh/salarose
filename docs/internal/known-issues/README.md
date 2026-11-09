@@ -1,6 +1,6 @@
 # Known issues
 
-A contract, in [features/](../features/) or [architecture/components/](../architecture/components/), says what a feature or a component must do. These pages say where the current code does not do it, and what else is wrong with it. They are the only feature pages that name classes, files, and commits. [Platform](platform.md) holds the build, tooling, and shared-code issues that no single feature owns.
+A contract, in [features/](../features/) or [architecture/components/](../architecture/components/), says what a feature or a component must do. These pages say where the current code does not do it, and what else is wrong with it. They are the only feature pages that name classes, files, and commits. [Platform](platform.md) holds the gaps against [platform capacity](../architecture/capacity.md), and the build, tooling, and shared-code issues that no other contract owns.
 
 Every issue has an id, a severity, and the requirement it breaks. Fix an issue and delete its entry in the same change.
 
@@ -26,7 +26,7 @@ Every issue has an id, a severity, and the requirement it breaks. Fix an issue a
 | [Segments](features/segments.md) | 0 | 0 | 0 | 1 |
 | [AI journey generation](features/ai-journey-generation.md) | 0 | 0 | 0 | 0 |
 | [Admin authentication](features/admin-authentication.md) | 0 | 0 | 0 | 0 |
-| [Platform](platform.md) | 0 | 0 | 0 | 0 |
+| [Platform](platform.md) | 0 | 0 | 5 | 0 |
 | [Data ingestion API](features/data-ingestion-api.md) | 1 | 0 | 3 | 0 |
 | [Platform console](features/platform-console.md) | 0 | 0 | 2 | 1 |
 | [Traffic simulator](features/traffic-simulator.md) | 0 | 0 | 0 | 0 |
@@ -35,7 +35,7 @@ Every issue has an id, a severity, and the requirement it breaks. Fix an issue a
 | [Customer lookup](features/customer-lookup.md), not built | 0 | 0 | 1 | 1 |
 | [Data health](features/data-health.md), not built | 0 | 0 | 1 | 0 |
 | [Data import](features/data-import.md), not built | 0 | 0 | 0 | 0 |
-| Total | 3 | 3 | 8 | 5 |
+| Total | 3 | 3 | 13 | 5 |
 
 To recount one page, run `grep -cE '^\| [A-Z]+-KI-[0-9]+ \| Blocking \|' <page>.md`, with each severity in turn.
 
