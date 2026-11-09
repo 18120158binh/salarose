@@ -293,6 +293,7 @@ The component contracts define each message. [Configuration](../operations/confi
 | Rule changes without restarts | Rules arrive by CDC and broadcast state. |
 | Bounded state | Every keyed state has a size limit and a TTL. |
 | Out-of-order events | Metrics and journeys accept events with a bounded out-of-orderness. Metrics use event time. A journey node completes on the first trigger to arrive, and its parent check and watch deadlines use event time. |
+| Capacity | [Platform capacity](capacity.md) sets the target load, how to size for it, and the load test that proves it. |
 
 ## Design decisions
 

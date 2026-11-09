@@ -14,6 +14,7 @@ These documents define what the platform must do, why it is built the way it is,
 
 - [About the architecture](architecture/overview.md): context, data flow, components, topics, and quality attributes
 - [Data model](architecture/data-model.md): every Postgres table, who writes it, and who reads it
+- [Platform capacity](architecture/capacity.md): the target load, how to size Postgres, the CDC slots, the disks, and Kafka for it, and the load test that proves it. [Known issues](known-issues/platform.md)
 - [Design decisions](architecture/decisions/README.md): one record per architectural choice, with its evidence
 
 ### Components
@@ -86,6 +87,7 @@ The folders answer four questions. Product says who the platform is for and what
 | `architecture/overview.md` | Explanation | The map: data flow, components, topics, and quality attributes. It links each component's contract and repeats none of its rules. | Component and job names only |
 | `architecture/components/` | Specification | The contract each pipeline component must meet | No |
 | `architecture/data-model.md` | Reference | Tables, owners, CDC publications | Yes |
+| `architecture/capacity.md` | Specification | The platform's target load, the sizing method, and the load test's pass rules. Its known issues go in `known-issues/platform.md`. | No |
 | `architecture/decisions/` | Explanation | Why each choice was made: context, evidence, alternatives | Where the evidence needs it |
 | `features/` | Specification | The contract each user-facing feature must meet | No |
 | `known-issues/` | Reference | Gaps between the code and the contracts. `features/` and `components/` mirror the contract folders, and `platform.md` holds what no contract owns. | Yes |
