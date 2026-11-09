@@ -74,6 +74,7 @@ A feature is something a person uses: a marketer or an admin in `studio`, or a c
 - [Deployment](operations/deployment.md)
 - [AWS Free Plan environment](operations/aws-free-plan.md): the contract for a short-lived three-node k3s deploy on an AWS Free Plan account
 - [Monitoring](operations/monitoring.md): the journey engine's drop counters, the Prometheus reporter, and the alerts
+- [Keep CI cheap](operations/ci-cost.md): how to cut GitHub Actions cost, and the lesson from hitting the minutes limit
 
 ## How this folder is organized
 
