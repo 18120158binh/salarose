@@ -1,0 +1,142 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: studio
+  annotations:
+    argocd.argoproj.io/sync-wave: "23"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: studio
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: studio
+    spec:
+      nodeSelector:
+        cdp.io/pool: compute
+      containers:
+        - name: studio
+          image: cdp/studio:IMAGE_TAG
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            # Kubernetes sets HOSTNAME to the pod name, which would bind the Next.js server to the pod IP only.
+            - name: HOSTNAME
+              value: 0.0.0.0
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: cdp-pg-app
+                  key: uri
+            - name: OIDC_ISSUER
+              value: https://cognito-idp.us-east-1.amazonaws.com/COGNITO_POOL_ID
+            - name: OIDC_CLIENT_ID
+              value: COGNITO_CLIENT_ID
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: studio-env
+                  key: OIDC_CLIENT_SECRET
+            - name: OIDC_REDIRECT_URL
+              value: https://studio.IP_DASHED.sslip.io/api/auth/oidc/callback
+            - name: OIDC_ROLE_CLAIM
+              value: cognito:groups
+            - name: OIDC_ROLE_MAP
+              value: '{"studio-admin":"admin","studio-editor":"editor"}'
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: studio-env
+                  key: SESSION_SECRET
+            # The dead-letter reader of studio v2 (docs/internal/features/data-health.md). The topic is
+            # event ingestion's default, which the Flink job does not override here.
+            - name: DEAD_LETTER_KAFKA_BROKERS
+              value: cdp-kafka-bootstrap.cdp.svc:9092
+            # The platform console (docs/internal/features/platform-console.md). The two JSON values below
+            # refer to the variables above them with $(NAME), which Kubernetes expands.
+            - name: PLATFORM_DOMAIN
+              value: IP_DASHED.sslip.io
+            - name: PLATFORM_COGNITO_POOL_ID
+              value: COGNITO_POOL_ID
+            - name: PLATFORM_TOOLS
+              value: '[{"id":"argocd","name":"Argo CD","purpose":"Syncs the deployment from git and shows the state of each application","url":"https://argocd.$(PLATFORM_DOMAIN)","signIn":"sso","health":{"kind":"argocd","url":"http://argocd-server.argocd.svc"}},{"id":"grafana","name":"Grafana","purpose":"Dashboards and metrics of the cluster and the Flink jobs","url":"https://grafana.$(PLATFORM_DOMAIN)","signIn":"sso","health":{"kind":"grafana","url":"http://kps-grafana.monitoring.svc"},"links":[{"label":"Flink jobs dashboard","url":"https://grafana.$(PLATFORM_DOMAIN)/dashboards?query=Flink%20jobs"}]},{"id":"flink","name":"Flink","purpose":"The web UI of each Flink job, read-only","url":"https://flink.$(PLATFORM_DOMAIN)","signIn":"sso","health":{"kind":"flink","jobs":[{"name":"event-parse-job","url":"http://event-parse-job-rest.cdp.svc:8081"},{"name":"customer-decision-job","url":"http://customer-decision-job-rest.cdp.svc:8081"},{"name":"customer-profile-writer-job","url":"http://customer-profile-writer-job-rest.cdp.svc:8081"},{"name":"campaign-state-machine-job","url":"http://campaign-state-machine-job-rest.cdp.svc:8081"},{"name":"campaign-outbox-job","url":"http://campaign-outbox-job-rest.cdp.svc:8081"}]}},{"id":"kafka","name":"Kafka browser","purpose":"Topics, consumer groups, and messages, read-only","url":"https://kafka.$(PLATFORM_DOMAIN)","signIn":"sso","health":{"kind":"http","url":"http://kafka-ui.cdp.svc"}}]'
+            - name: PLATFORM_QUICK_LINKS
+              value: '[{"label":"Repository","url":"https://github.com/18120158binh/salarose"},{"label":"CI runs","url":"https://github.com/18120158binh/salarose/actions"},{"label":"Logins (cdp-free-plan/logins)","url":"https://us-east-1.console.aws.amazon.com/secretsmanager/secret?name=cdp-free-plan%2Flogins&region=us-east-1"},{"label":"User pool","url":"https://us-east-1.console.aws.amazon.com/cognito/v2/idp/user-pools/$(PLATFORM_COGNITO_POOL_ID)/users?region=us-east-1"}]'
+            # The pipeline dashboards that the event catalog view of studio v2 links to (docs/internal/features/data-health.md).
+            - name: PIPELINE_DASHBOARDS
+              value: '[{"name":"Flink jobs","url":"https://grafana.$(PLATFORM_DOMAIN)/dashboards?query=Flink%20jobs"}]'
+            # The collector's public address for Tracking setup and Sources (docs/internal/features/data-health.md),
+            # the host of the collector Ingress. TRACKING_APP_IDS stays unset: no shop tracker sends here yet.
+            - name: TRACKING_COLLECTOR_URL
+              value: https://collector.$(PLATFORM_DOMAIN)
+            - name: INGESTION_KAFKA_BROKERS
+              value: cdp-kafka-bootstrap.cdp.svc:9092
+            # Optional, so the pod starts before the Secret exists. Without it Argo CD's health shows "not configured".
+            - name: PLATFORM_ARGOCD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: studio-platform
+                  key: argocd-token
+                  optional: true
+          readinessProbe:
+            httpGet:
+              path: /login
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /login
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              memory: 768Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: studio
+  annotations:
+    argocd.argoproj.io/sync-wave: "23"
+spec:
+  selector:
+    app.kubernetes.io/name: studio
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: studio
+  annotations:
+    argocd.argoproj.io/sync-wave: "23"
+    cert-manager.io/cluster-issuer: letsencrypt
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - studio.IP_DASHED.sslip.io
+      secretName: studio-tls
+  rules:
+    - host: studio.IP_DASHED.sslip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: studio
+                port:
+                  name: http

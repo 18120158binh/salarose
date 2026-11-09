@@ -1,0 +1,94 @@
+# What a bench run may change on the aws-free-plan cluster (docs/internal/features/traffic-simulator.md, SIM-FR-21).
+# No kustomization lists this file, so Argo CD never applies it. Apply it before a bench and delete it after:
+#   k3s kubectl apply -f infra/k8s/simulator/bench-rbac.yaml
+#   k3s kubectl delete -f infra/k8s/simulator/bench-rbac.yaml
+# The bench Job runs as sim-bench. It reads the five FlinkDeployments, to refuse a bench while one is suspended, and
+# patches only the four it can measure, to set spec.job.state. It creates, reads, and deletes the Lease
+# cdp-sim-bench, so one bench runs at a time. Kubernetes cannot narrow create to a name, so create covers any Lease
+# in cdp. It reads and patches only the Argo CD Application cdp-root, to remove syncPolicy.automated for the bench
+# and put it back after. It reads the Flink REST API over each job's -rest service, which needs no role.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sim-bench
+  namespace: cdp
+  labels:
+    app.kubernetes.io/name: traffic-simulator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sim-bench
+  namespace: cdp
+  labels:
+    app.kubernetes.io/name: traffic-simulator
+rules:
+  - apiGroups: ["flink.apache.org"]
+    resources: ["flinkdeployments"]
+    resourceNames:
+      - event-parse-job
+      - customer-decision-job
+      - customer-profile-writer-job
+      - campaign-state-machine-job
+      - campaign-outbox-job
+    verbs: ["get"]
+  - apiGroups: ["flink.apache.org"]
+    resources: ["flinkdeployments"]
+    resourceNames:
+      - event-parse-job
+      - customer-decision-job
+      - customer-profile-writer-job
+      - campaign-state-machine-job
+    verbs: ["patch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["create"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: ["cdp-sim-bench"]
+    verbs: ["get", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sim-bench
+  namespace: cdp
+  labels:
+    app.kubernetes.io/name: traffic-simulator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sim-bench
+subjects:
+  - kind: ServiceAccount
+    name: sim-bench
+    namespace: cdp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sim-bench
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: traffic-simulator
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    resourceNames: ["cdp-root"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sim-bench
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: traffic-simulator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sim-bench
+subjects:
+  - kind: ServiceAccount
+    name: sim-bench
+    namespace: cdp

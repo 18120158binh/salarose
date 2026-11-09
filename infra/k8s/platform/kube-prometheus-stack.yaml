@@ -1,0 +1,191 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 92.22.0
+    helm:
+      releaseName: kps
+      valuesObject:
+        # k3s runs these inside the server process and exposes no endpoint for them.
+        kubeEtcd:
+          enabled: false
+        kubeControllerManager:
+          enabled: false
+        kubeScheduler:
+          enabled: false
+        kubeProxy:
+          enabled: false
+        defaultRules:
+          rules:
+            etcd: false
+            kubeControllerManager: false
+            kubeSchedulerAlerting: false
+            kubeSchedulerRecording: false
+            kubeProxy: false
+            windows: false
+        windowsMonitoring:
+          enabled: false
+        prometheusOperator:
+          nodeSelector:
+            cdp.io/pool: platform
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          admissionWebhooks:
+            certManager:
+              enabled: true
+            patch:
+              enabled: false
+        prometheus:
+          prometheusSpec:
+            nodeSelector:
+              cdp.io/pool: platform
+            retention: 3d
+            retentionSize: 6GB
+            podMonitorSelectorNilUsesHelmValues: false
+            ruleSelectorNilUsesHelmValues: false
+            serviceMonitorSelectorNilUsesHelmValues: false
+            probeSelectorNilUsesHelmValues: false
+            scrapeConfigSelectorNilUsesHelmValues: false
+            resources:
+              requests:
+                cpu: 200m
+                memory: 1Gi
+              limits:
+                memory: 2Gi
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: local-path
+                  accessModes:
+                    - ReadWriteOnce
+                  resources:
+                    requests:
+                      storage: 8Gi
+        alertmanager:
+          alertmanagerSpec:
+            nodeSelector:
+              cdp.io/pool: platform
+            resources:
+              requests:
+                cpu: 10m
+                memory: 64Mi
+              limits:
+                memory: 128Mi
+        kube-state-metrics:
+          nodeSelector:
+            cdp.io/pool: platform
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+        prometheus-node-exporter:
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+        grafana:
+          nodeSelector:
+            cdp.io/pool: platform
+          admin:
+            existingSecret: grafana-admin
+            userKey: admin-user
+            passwordKey: admin-password
+          # Sign-in through the grafana Cognito app client (AFP-FR-27, AFP-FR-29); the bootstrap script creates
+          # grafana-oidc. The login form stays for the break-glass admin (AFP-FR-32).
+          envValueFrom:
+            GF_AUTH_GENERIC_OAUTH_CLIENT_ID:
+              secretKeyRef:
+                name: grafana-oidc
+                key: client-id
+            GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET:
+              secretKeyRef:
+                name: grafana-oidc
+                key: client-secret
+          grafana.ini:
+            server:
+              root_url: https://grafana.IP_DASHED.sslip.io
+            auth.generic_oauth:
+              enabled: true
+              name: Cognito
+              scopes: openid email profile
+              auth_url: https://cdp-studio-582577265946.auth.us-east-1.amazoncognito.com/oauth2/authorize
+              token_url: https://cdp-studio-582577265946.auth.us-east-1.amazoncognito.com/oauth2/token
+              api_url: https://cdp-studio-582577265946.auth.us-east-1.amazoncognito.com/oauth2/userInfo
+              use_pkce: true
+              allow_sign_up: true
+              login_attribute_path: email
+              email_attribute_path: email
+              # The groups are in the ID token only. Strict mode refuses anyone the path maps to no role.
+              role_attribute_path: >-
+                contains("cognito:groups" || `[]`, 'studio-admin') && 'Admin' ||
+                contains("cognito:groups" || `[]`, 'studio-editor') && 'Viewer' || ''
+              role_attribute_strict: true
+              allow_assign_grafana_admin: false
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          sidecar:
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+              limits:
+                memory: 128Mi
+          ingress:
+            enabled: true
+            ingressClassName: traefik
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt
+            hosts:
+              - grafana.IP_DASHED.sslip.io
+            path: /
+            pathType: Prefix
+            tls:
+              - secretName: grafana-tls
+                hosts:
+                  - grafana.IP_DASHED.sslip.io
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[]?.clientConfig.caBundle
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[]?.clientConfig.caBundle
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 5m
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true

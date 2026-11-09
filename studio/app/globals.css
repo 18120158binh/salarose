@@ -1,0 +1,369 @@
+@import "tailwindcss";
+@source "../../shared/**/*.tsx";
+
+/* v2 is light only (SHL-FR-14), so the classic theme cookie's .dark must not reach a v2 page. */
+@custom-variant dark (&:is(.dark:not(:has([data-salarose])) *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --animate-skeleton: skeleton 2s -1s infinite linear;
+  --animate-caret-blink: 1s ease-out infinite caret-blink;
+  --animate-toast-success-odd: toast-success-odd 0.32s cubic-bezier(0.5, 1, 0.89, 1);
+  --animate-toast-success-even: toast-success-even 0.32s cubic-bezier(0.5, 1, 0.89, 1);
+  --animate-toast-error-odd: toast-error-odd 0.28s cubic-bezier(0.5, 1, 0.89, 1);
+  --animate-toast-error-even: toast-error-even 0.28s cubic-bezier(0.5, 1, 0.89, 1);
+  --font-heading: var(--font-heading);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar: var(--sidebar);
+  --color-code-highlight: var(--code-highlight);
+  --code-foreground: var(--code-foreground);
+  --color-code: var(--code);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-ring: var(--ring);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-input: var(--input);
+  --color-destructive: var(--destructive);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning: var(--warning);
+  --color-success-foreground: var(--success-foreground);
+  --color-success: var(--success);
+  --color-info-foreground: var(--info-foreground);
+  --color-info: var(--info);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  /* Salarose (studio v2). Defined only inside the Salarose scope below, so classic pages never use them. */
+  --color-ai: var(--ai);
+  --color-ai-ink: var(--ai-ink);
+  --color-ai-tint: var(--ai-tint);
+  --color-ai-border: var(--ai-border);
+  --color-preview: var(--preview);
+  --color-preview-tint: var(--preview-tint);
+  --color-preview-border: var(--preview-border);
+  --color-ink-muted: var(--ink-muted);
+  --color-sky: var(--sky);
+  --color-blush: var(--blush);
+  --color-salt: var(--salt);
+  --color-rose-sun: var(--rose-sun);
+  --spacing-space-1: 4px;
+  --spacing-space-2: 8px;
+  --spacing-space-3: 12px;
+  --spacing-space-4: 16px;
+  --spacing-space-5: 20px;
+  --spacing-space-6: 28px;
+  --spacing-space-7: 44px;
+  --spacing-space-8: 84px;
+  --radius-control: 8px;
+  --radius-tile: 10px;
+  --radius-card: 12px;
+  --shadow-card: 0 1px 2px rgba(22, 24, 28, 0.08);
+  --shadow-pop: 0 2px 8px rgba(14, 111, 106, 0.12);
+  --radius-hero: 16px;
+  --shadow-hero: 0 24px 60px rgba(26, 43, 51, 0.14);
+  @keyframes skeleton {
+  to {
+    background-position: -200% 0;
+    }
+  }
+  @keyframes caret-blink {
+  0%, 70%, to {
+    opacity: 1;
+    }
+  20%, 50% {
+    opacity: 0;
+    }
+  }
+  @keyframes toast-success-odd {
+  0% {
+    scale: 1;
+    }
+  30% {
+    scale: 1.025;
+    }
+  60% {
+    scale: 0.99;
+    }
+  100% {
+    scale: 1;
+    }
+  }
+  @keyframes toast-error-odd {
+  0% {
+    translate: 0 0;
+    }
+  25% {
+    translate: -3px 0;
+    }
+  50% {
+    translate: 3px 0;
+    }
+  75% {
+    translate: -3px 0;
+    }
+  100% {
+    translate: 0 0;
+    }
+  }
+  @keyframes toast-success-even {
+  0% {
+    scale: 1;
+    }
+  30% {
+    scale: 1.025;
+    }
+  60% {
+    scale: 0.99;
+    }
+  100% {
+    scale: 1;
+    }
+  }
+  @keyframes toast-error-even {
+  0% {
+    translate: 0 0;
+    }
+  25% {
+    translate: -3px 0;
+    }
+  50% {
+    translate: 3px 0;
+    }
+  75% {
+    translate: -3px 0;
+    }
+  100% {
+    translate: 0 0;
+    }
+  }
+}
+
+.root {
+  isolation: isolate;
+}
+
+:root {
+  --destructive-foreground: #ffffff;
+  --info: #3b82f6;
+  --info-foreground: #ffffff;
+  --success: #10b981;
+  --success-foreground: #ffffff;
+  --warning: #f59e0b;
+  --warning-foreground: #ffffff;
+  --accent: #f5f5f5;
+  --accent-foreground: #111111;
+  --background: #ffffff;
+  --border: #e5e7eb;
+  --card: #ffffff;
+  --card-foreground: #111111;
+  --destructive: #ef4444;
+  --foreground: #111111;
+  --input: #e5e7eb;
+  --muted: #f8f9fa;
+  --muted-foreground: #6b7280;
+  --popover: #ffffff;
+  --popover-foreground: #111111;
+  --primary: #111111;
+  --primary-foreground: #ffffff;
+  --ring: #111111;
+  --secondary: #f3f4f6;
+  --secondary-foreground: #111111;
+  --chart-1: #fb923c;
+  --chart-2: #34d399;
+  --chart-3: #8b5cf6;
+  --chart-4: #ec4899;
+  --chart-5: #3b82f6;
+  --code: #f5f5f5;
+  --code-foreground: #111111;
+  --code-highlight: rgba(0, 0, 0, 0.04);
+  --radius: 0.75rem;
+  --sidebar: #f8f9fa;
+  --sidebar-accent: rgba(0, 0, 0, 0.04);
+  --sidebar-accent-foreground: #111111;
+  --sidebar-border: #e5e7eb;
+  --sidebar-foreground: #374151;
+  --sidebar-primary: #111111;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-ring: #111111;
+}
+
+.dark:not(:has([data-salarose])) {
+  --destructive-foreground: var(--color-red-400);
+  --info: var(--color-blue-500);
+  --info-foreground: var(--color-blue-400);
+  --success: var(--color-emerald-500);
+  --success-foreground: var(--color-emerald-400);
+  --warning: var(--color-amber-500);
+  --warning-foreground: var(--color-amber-400);
+  --accent: --alpha(var(--color-white) / 4%);
+  --accent-foreground: var(--color-neutral-100);
+  --background: color-mix(in srgb, var(--color-neutral-950) 95%, var(--color-white));
+  --border: --alpha(var(--color-white) / 6%);
+  --card: color-mix(in srgb, var(--background) 98%, var(--color-white));
+  --card-foreground: var(--color-neutral-100);
+  --destructive: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
+  --foreground: var(--color-neutral-100);
+  --input: --alpha(var(--color-white) / 8%);
+  --muted: --alpha(var(--color-white) / 4%);
+  --muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-white));
+  --popover: color-mix(in srgb, var(--background) 98%, var(--color-white));
+  --popover-foreground: var(--color-neutral-100);
+  --primary: var(--color-neutral-100);
+  --primary-foreground: var(--color-neutral-800);
+  --ring: var(--color-neutral-500);
+  --secondary: --alpha(var(--color-white) / 4%);
+  --secondary-foreground: var(--color-neutral-100);
+  --chart-1: var(--color-blue-700);
+  --chart-2: var(--color-emerald-500);
+  --chart-3: var(--color-amber-500);
+  --chart-4: var(--color-purple-500);
+  --chart-5: var(--color-rose-500);
+  --code: color-mix(in srgb, var(--background) 98%, var(--color-white));
+  --code-foreground: var(--foreground);
+  --code-highlight: --alpha(var(--color-white) / 4%);
+  --sidebar: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
+  --sidebar-accent: --alpha(var(--color-white) / 4%);
+  --sidebar-accent-foreground: var(--color-neutral-100);
+  --sidebar-border: --alpha(var(--color-white) / 5%);
+  --sidebar-foreground: color-mix(in srgb, var(--color-neutral-100) 64%, var(--sidebar));
+  --sidebar-primary: var(--color-neutral-100);
+  --sidebar-primary-foreground: var(--color-neutral-800);
+  --sidebar-ring: var(--color-neutral-400);
+}
+
+/*
+ * Salarose, the studio v2 design system (tokens.json of the Salarose design system).
+ * The v2 shell marks its root with data-salarose. Scoping on :root:has() themes the whole document,
+ * portals included, only while a v2 page is open, so the classic studio keeps its look.
+ * The fonts come from next/font in the v2 layout, which sets --font-sans and --font-heading here.
+ */
+:root:has([data-salarose]) {
+  --background: #f3f3ef;
+  --foreground: #16181c;
+  --card: #fdfdfc;
+  --card-foreground: #16181c;
+  --popover: #ffffff;
+  --popover-foreground: #16181c;
+  --primary: #0e6f6a;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f0eb;
+  --secondary-foreground: #16181c;
+  --muted: #f0f0eb;
+  --muted-foreground: #5a5e66;
+  --ink-muted: #676c75;
+  --accent: rgba(14, 111, 106, 0.1);
+  --accent-foreground: #0a5350;
+  --border: rgba(22, 24, 28, 0.08);
+  --input: rgba(22, 24, 28, 0.14);
+  --ring: #0e6f6a;
+  --destructive: #b3261e;
+  --destructive-foreground: #ffffff;
+  --success: #006300;
+  --success-foreground: #ffffff;
+  --warning: #8a5a00;
+  --warning-foreground: #ffffff;
+  --info: #184f95;
+  --info-foreground: #ffffff;
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
+  --chart-3: #1baf7a;
+  --radius: 0.5rem;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ai: #6250d6;
+  --ai-ink: #352a77;
+  --ai-tint: rgba(98, 80, 214, 0.08);
+  --ai-border: rgba(98, 80, 214, 0.3);
+  --preview: #0e6f6a;
+  --preview-tint: rgba(14, 111, 106, 0.1);
+  --preview-border: rgba(14, 111, 106, 0.3);
+  /* The sign-in horizon and the mark. They never carry text. */
+  --sky: #b7d6ea;
+  --blush: #ebdfd8;
+  --salt: #f8f7f2;
+  --rose-sun: #f8a868;
+  /* The sidebar is dark chrome (surface-ink). */
+  --sidebar: #15171c;
+  --sidebar-foreground: #b9bdc6;
+  --sidebar-accent: rgba(255, 255, 255, 0.1);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-primary: #0e6f6a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-ring: #9be8d2;
+}
+
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  code, kbd, samp, pre {
+    font-family: var(--font-mono);
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+@utility scrollbar-none {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+  &::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari and Opera */
+  }
+}
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--foreground) 15%, transparent) transparent;
+  
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  &::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--foreground) 15%, transparent);
+    border-radius: 9999px;
+  }
+  
+  &::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--foreground) 30%, transparent);
+  }
+}

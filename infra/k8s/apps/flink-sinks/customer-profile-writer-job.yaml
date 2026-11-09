@@ -1,0 +1,13 @@
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: customer-profile-writer-job
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+spec:
+  flinkConfiguration:
+    execution.checkpointing.dir: s3://BUCKET/flink/customer-profile-writer-job/checkpoints
+    execution.checkpointing.savepoint-dir: s3://BUCKET/flink/customer-profile-writer-job/savepoints
+    high-availability.storageDir: s3://BUCKET/flink/customer-profile-writer-job/ha
+  job:
+    entryClass: com.cdp.platform.jobs.profilewriter.CustomerProfileWriterJob

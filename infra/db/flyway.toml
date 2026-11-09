@@ -1,0 +1,23 @@
+# Shared by the migration Job (infra/k8s/data/db-migrate.yaml) and test-migrations.sh. Each runner
+# sets the URL, the user, and the locations through FLYWAY_* environment variables.
+[flyway]
+# A database that holds the schema but no history table, the one deployed before Flyway, is marked
+# as version 1 and runs only the later files. An empty database runs every file.
+baselineOnMigrate = true
+baselineVersion = "1"
+baselineDescription = "schema before Flyway"
+validateOnMigrate = true
+cleanDisabled = true
+outOfOrder = false
+mixed = false
+
+[flyway.postgresql]
+# Flyway's own advisory lock must not hold a transaction open, or CREATE INDEX CONCURRENTLY waits on it forever.
+transactional.lock = false
+
+# Connection settings belong to an environment. The runners set its URL and user with FLYWAY_URL and FLYWAY_USER.
+[environments.default]
+connectRetries = 30
+connectRetriesInterval = 10
+# A migration waits at most 5 s for a lock, so it fails instead of queueing the apps' queries behind it.
+initSql = "SET lock_timeout = '5s'; SET statement_timeout = '15min'"

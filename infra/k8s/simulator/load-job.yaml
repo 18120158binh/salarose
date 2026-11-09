@@ -1,0 +1,82 @@
+# One traffic simulator load run on the aws-free-plan cluster (docs/internal/features/traffic-simulator.md).
+# No kustomization lists this file, so Argo CD never applies it and a sync starts no run (SIM-FR-06).
+# It is job.yaml with the deadline, the resources, and the load settings of a load run. Start it the same way:
+#   tag=$(cat infra/k8s/simulator/image-tag)
+#   ip=$(sed -n 's/^IP_DASHED=//p' infra/k8s/envs/aws-free-plan/env.properties)
+#   sed -e "s/SIM_TAG/$tag/" -e "s/SIM_IP_DASHED/$ip/" -e 's/SIM_ARGS/"load"/' infra/k8s/simulator/load-job.yaml | k3s kubectl create -f -
+# SIM_ARGS "load" runs the default profile: ramp 290:300, steady 290:600, peak 3000:600, soak 290:3600 (85 minutes).
+# Change a phase with "load", "--peak", "3000:600" and the like, and raise activeDeadlineSeconds to cover prepare
+# (up to 6 minutes), the profile, and the drain (up to 5 minutes).
+# Sizing: the sender used 0.14 to 0.28 cores at 3,000 events per second and 0.45 at 9,000 in a benchmark against a
+# stand-in collector (simulator/README.md). The run tail reads every snowplow-parsed record on top of that, which no
+# benchmark has measured. The five Flink jobs request 3.75 cores of the four 2-core compute nodes, so a node with 500m
+# free exists. With no CPU limit the run can use more, and its report gives the CPU it used per phase. Memory holds
+# the sampled send times and fixed-size histograms, not the events, so 256Mi is an estimate with room to spare.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: sim-load-
+  namespace: cdp
+  labels:
+    app.kubernetes.io/name: traffic-simulator
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 7200
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: traffic-simulator
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        cdp.io/pool: compute
+      containers:
+        - name: simulator
+          image: 582577265946.dkr.ecr.us-east-1.amazonaws.com/cdp/simulator:SIM_TAG
+          args: [SIM_ARGS]
+          env:
+            - name: SIM_COLLECTOR_URL
+              value: http://collector.cdp.svc
+            - name: SIM_KAFKA_BROKERS
+              value: cdp-kafka-bootstrap.cdp.svc:9092
+            - name: SIM_REPORT_BUCKET
+              value: cdp-free-plan-582577265946
+            # Public, because studio's sign-in callback and its server actions' origin check use the public host.
+            - name: SIM_STUDIO_URL
+              value: https://studio.SIM_IP_DASHED.sslip.io
+            - name: SIM_LOGIN_SECRET_ID
+              value: cdp-free-plan/logins
+            - name: SIM_SCENARIO_WINDOW_S
+              value: "60"
+            - name: SIM_PROMETHEUS_URL
+              value: http://kps-kube-prometheus-stack-prometheus.monitoring.svc:9090
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: PGHOST
+              value: cdp-pg-rw.cdp.svc
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: cdp-pg-app
+                  key: dbname
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: cdp-pg-app
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cdp-pg-app
+                  key: password
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 500m
+              memory: 256Mi
+            limits:
+              memory: 512Mi

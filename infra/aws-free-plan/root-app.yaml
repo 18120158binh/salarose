@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cdp-root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:18120158binh/salarose.git
+    targetRevision: deploy/aws-free-plan
+    path: infra/k8s/envs/aws-free-plan
+    kustomize: {}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      # The overlay holds custom resources whose CRDs arrive through the platform child apps.
+      - SkipDryRunOnMissingResource=true

@@ -1,0 +1,9 @@
+# Every app, for targets that deploy them at once. The aws-free-plan overlay adds these directories one commit at a time.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - flink-sinks
+  - flink-decision
+  - flink-parse
+  - web
+  - monitoring

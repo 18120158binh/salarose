@@ -1,0 +1,8 @@
+# The Strimzi and Flink operator charts create RoleBindings in their watched namespace,
+# so cdp must exist before their Applications sync.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cdp
+  annotations:
+    argocd.argoproj.io/sync-wave: "-30"

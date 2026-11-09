@@ -1,0 +1,80 @@
+# Another system owns customer_profiles, so schema.sql leaves it out. This environment has no such system. An empty
+# table makes profile lookups find no profile instead of failing. The columns are the ones the jobs read and the
+# tracking guide's profile data section lists. The Job connects as cdp, so cdp owns the table.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: customer-profiles-table
+  namespace: cdp
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+    # A Job's template is immutable, so a changed Job is replaced rather than patched.
+    argocd.argoproj.io/sync-options: Force=true,Replace=true
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        cdp.io/pool: data
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+      containers:
+        - name: psql
+          image: ghcr.io/cloudnative-pg/postgresql:16.15-standard-trixie
+          command:
+            - psql
+            - --no-psqlrc
+            - --set=ON_ERROR_STOP=1
+            - --command
+            - |
+              CREATE TABLE IF NOT EXISTS customer_profiles (
+                  cdp_uuid text PRIMARY KEY,
+                  fid bigint,
+                  cardcode text,
+                  customer_id text,
+                  phone text,
+                  email text,
+                  name text,
+                  first_name text,
+                  pronoun text,
+                  gender text,
+                  age double precision,
+                  city text,
+                  env text,
+                  network_user_id text,
+                  user_time text
+              )
+            - --command
+            # The CDC alerts read heartbeat age through CloudNativePG's metrics exporter, a member of pg_monitor
+            # (AFP-FR-35). The grant predates the migrations in infra/db/migrations and stays here for now.
+            - GRANT SELECT ON cdc_heartbeat TO pg_monitor
+          env:
+            - name: PGHOST
+              value: cdp-pg-rw.cdp.svc
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: cdp-pg-app
+                  key: dbname
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: cdp-pg-app
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cdp-pg-app
+                  key: password
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi

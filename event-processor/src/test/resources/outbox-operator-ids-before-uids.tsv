@@ -1,0 +1,21 @@
+# Operator ids that Flink generated for the outbox job at commit 0681d821, where
+# only outbox-profile-lookup had a uid. A savepoint of that job keeps its state
+# under these ids. The ids depend on which flows the job ran, ENABLE_OUTBOX and
+# ENABLE_TIMER, so each shape has its own rows. They hold only for a job that ran
+# at parallelism 2 or more. At parallelism 1 the timer flow chains differently,
+# and the ids of watch-timers and watch-timeout-sink change.
+#
+# shape	uid	id	vertex or chained
+both	transitions-source	cbc357ccb763df2852fee8c4fc7d55f2	vertex
+both	notification-sink	b452bede3a67ce652dad430f5f5f152e	chained
+both	Sink Committer: notification-sink	b1d246a0057704f317d4dbc194e104a8	chained
+both	watch-timers	945d513d7d3b2f13d402980b4600c3e7	vertex
+both	watch-timeout-sink	931e79eafc3caa2beea8a5506180cee0	chained
+both	Sink Committer: watch-timeout-sink	11126bb2c0349e3d20006f076d6ebfc0	chained
+outbox-only	transitions-source	cbc357ccb763df2852fee8c4fc7d55f2	vertex
+outbox-only	notification-sink	9f9437bfffaf748efc279144b0759dc0	chained
+outbox-only	Sink Committer: notification-sink	e05b0ff6ef3fe1f6da54caa55d81566a	chained
+timer-only	transitions-source	cbc357ccb763df2852fee8c4fc7d55f2	vertex
+timer-only	watch-timers	57c004f5ada35552ab46620344b00093	vertex
+timer-only	watch-timeout-sink	c1a5c8c84c3737892b6a748865b3fc4e	chained
+timer-only	Sink Committer: watch-timeout-sink	be6af0815ca7a2f10d192f69884737e4	chained

@@ -1,0 +1,59 @@
+# kafbat kafka-ui settings (AFP-FR-30). The Deployment's env adds the client id and secret, the issuer, and the
+# redirect URL, which the overlay or the bootstrap script fill in.
+kafka:
+  clusters:
+    - name: cdp
+      bootstrapServers: cdp-kafka-bootstrap.cdp.svc:9092
+      # Rejects every write to the cluster: produce, topic create, edit, and delete, offset resets, for every user.
+      readOnly: true
+      # /metrics needs no sign-in, so the cluster's topics, offsets, and groups must stay out of it. With no port,
+      # kafka-ui scrapes no broker over JMX. test-config.sh checks this.
+      metrics:
+        type: JMX
+        prometheusExpose: false
+auth:
+  type: OAUTH2
+  oauth2:
+    client:
+      cognito:
+        provider: cognito
+        clientName: Cognito
+        scope:
+          - openid
+          - email
+          - profile
+        authorizationGrantType: authorization_code
+        userNameAttribute: email
+        customParams:
+          type: cognito
+          logoutUrl: https://cdp-studio-582577265946.auth.us-east-1.amazoncognito.com/logout
+# A user in no listed group signs in to an empty UI and gets 403 from every cluster API.
+rbac:
+  roles:
+    - name: studio-admin
+      clusters:
+        - cdp
+      subjects:
+        - provider: oauth_cognito
+          type: group
+          value: studio-admin
+      permissions:
+        - resource: clusterconfig
+          actions:
+            - view
+        - resource: topic
+          value: ".*"
+          actions:
+            - view
+            - messages_read
+        - resource: consumer
+          value: ".*"
+          actions:
+            - view
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+server:
+  forward-headers-strategy: framework

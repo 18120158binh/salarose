@@ -1,0 +1,13 @@
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: campaign-state-machine-job
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+spec:
+  flinkConfiguration:
+    execution.checkpointing.dir: s3://BUCKET/flink/campaign-state-machine-job/checkpoints
+    execution.checkpointing.savepoint-dir: s3://BUCKET/flink/campaign-state-machine-job/savepoints
+    high-availability.storageDir: s3://BUCKET/flink/campaign-state-machine-job/ha
+  job:
+    entryClass: com.cdp.platform.jobs.statemachine.StateMachineJob

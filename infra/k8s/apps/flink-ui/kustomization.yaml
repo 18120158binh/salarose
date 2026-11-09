@@ -1,0 +1,13 @@
+# The Flink URL (AFP-FR-23 to AFP-FR-25): Traefik -> flink-ui-proxy (Cognito sign-in) -> flink-ui-gateway (landing
+# page, GET and HEAD only) -> <job name>-rest:8081. Adds objects only; it changes no FlinkDeployment.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: cdp
+resources:
+  - proxy.yaml
+  - gateway.yaml
+configMapGenerator:
+  - name: flink-ui-gateway
+    files:
+      - nginx.conf
+      - index.html

@@ -1,0 +1,127 @@
+version: "3.7"
+
+services:
+  redpanda:
+    image: docker.io/redpandadata/redpanda:v26.1.9
+    container_name: redpanda-broker
+    command: >
+      redpanda start
+      --overprovisioned
+      --smp 1
+      --memory 1G
+      --reserve-memory 0M
+      --kafka-addr PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
+      --advertise-kafka-addr PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
+      --set redpanda.kafka_batch_max_bytes=8388608
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "info"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  console:
+    image: docker.io/redpandadata/console:v3.7.3
+    container_name: redpanda-console
+    entrypoint: /bin/sh
+    command: -c "sleep 5 && ./console"
+    environment:
+      - KAFKA_BROKERS=redpanda:29092
+    ports:
+      - "8082:8080"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
+  collector:
+    image: opensnowcat/opensnowcat-collector-kafka:1.2.1
+    container_name: opensnowcat-collector
+    command: ["--config", "/snowplow/config/collector.config"]
+    volumes:
+      - ./collector.config:/snowplow/config/collector.config:ro,Z
+    environment:
+      - JAVA_OPTS=-Dorg.slf4j.simpleLogger.defaultLogLevel=info -Dorg.slf4j.simpleLogger.log.com.snowplowanalytics.snowplow.collectors.scalastream=debug
+    ports:
+      - "8080:8080"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
+  redis:
+    image: redis:8.0-alpine
+    container_name: redis-profiles
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres-db
+    command: postgres -c wal_level=logical
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: auroracy
+    volumes:
+      - postgres_data:/var/lib/postgresql/data:Z
+    restart: unless-stopped
+
+  flink-jobmanager:
+    build:
+      context: .
+      dockerfile: Containerfile
+    image: flink-custom:2.2.0-java21
+    container_name: flink-jobmanager
+    userns_mode: "keep-id"
+    security_opt:
+      - label:disable
+    ports:
+      - "8081:8081"
+    command: jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+      - HADOOP_USER_NAME=flink
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      # Jobs submitted here read their settings in this container. The collector writes to snowplow-good.
+      - KAFKA_EVENT_TOPIC_PATTERN=snowplow-good
+    volumes:
+      - ../../event-processor/target:/opt/flink/usrlib:ro,z,U
+    depends_on:
+      - redpanda
+      - postgres
+    restart: on-failure
+
+  flink-taskmanager:
+    image: flink-custom:2.2.0-java21
+    container_name: flink-taskmanager
+    userns_mode: "keep-id"
+    security_opt:
+      - label:disable
+    command: taskmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+      - HADOOP_USER_NAME=flink
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - ../../event-processor/target:/opt/flink/usrlib:ro,z,U
+    depends_on:
+      - flink-jobmanager
+      - postgres
+    scale: 1
+    restart: on-failure
+
+volumes:
+  redis_data:
+  postgres_data:

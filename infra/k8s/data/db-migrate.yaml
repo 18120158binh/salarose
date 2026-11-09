@@ -1,0 +1,84 @@
+# Applies infra/db/migrations on every sync (docs/internal/architecture/components/schema-migrations.md). A Sync hook
+# is created again by each sync, and its wave runs after the Postgres cluster (wave 0) and before every app (20 and
+# up). Argo CD waits for the Job to complete, and a failed Job fails the sync, so no later wave rolls.
+# BeforeHookCreation keeps the last run's Job and log until the next sync.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migrate
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 1800
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        cdp.io/pool: data
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+      containers:
+        - name: flyway
+          image: flyway/flyway:13.11.1-alpine@sha256:ca71f3b89abb622198c0c462bb66bada4d0fecc64c4998f2c76a751cd969dcef
+          # A ConfigMap volume also holds a ..<timestamp> directory with a second copy of every key, and Flyway scans
+          # locations recursively, so it would find each migration twice. Copy only the top-level files.
+          command: ["sh", "-c", "cp -L /config/* /work/ && exec flyway migrate"]
+          env:
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: cdp-pg-app
+                  key: dbname
+            - name: FLYWAY_URL
+              value: jdbc:postgresql://cdp-pg-rw.cdp.svc:5432/$(DB_NAME)
+            # cdp owns every object in public. The beforeMigrate callback fails the run if one is not.
+            - name: FLYWAY_USER
+              valueFrom:
+                secretKeyRef:
+                  name: cdp-pg-app
+                  key: username
+            - name: FLYWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cdp-pg-app
+                  key: password
+            - name: FLYWAY_CONFIG_FILES
+              value: /work/flyway.toml
+            - name: FLYWAY_LOCATIONS
+              value: filesystem:/work
+            - name: REDGATE_DISABLE_TELEMETRY
+              value: "true"
+            - name: JAVA_ARGS
+              value: -Xmx192m
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: work
+              mountPath: /work
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              memory: 384Mi
+      volumes:
+        - name: config
+          configMap:
+            name: db-migrations
+        - name: work
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

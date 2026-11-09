@@ -1,0 +1,97 @@
+name: validate-deploy
+
+on:
+  pull_request:
+    paths:
+      - infra/**
+      - .github/workflows/**
+  push:
+    branches: [deploy/aws-free-plan]
+    paths:
+      - infra/**
+      - .github/workflows/**
+
+permissions:
+  contents: read
+
+jobs:
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # The release download has returned 504 for hours at a time. The runner's kubectl embeds kustomize as a fallback.
+      - name: Install kustomize
+        run: |
+          url=https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.8.3/kustomize_v5.8.3_linux_amd64.tar.gz
+          if curl -fsSL --retry 3 --retry-all-errors -o /tmp/kustomize.tgz "$url"; then
+            sudo tar -xzf /tmp/kustomize.tgz -C /usr/local/bin kustomize
+          else
+            printf '%s\n' '#!/bin/sh' '[ "$1" = build ] && shift' 'exec kubectl kustomize "$@"' | sudo tee /usr/local/bin/kustomize >/dev/null
+            sudo chmod +x /usr/local/bin/kustomize
+          fi
+          kustomize version || kubectl version --client
+      # The overlay lists only the layers rolled out so far, so also build it with every layer to catch errors
+      # in the layers still to come.
+      - name: Build the overlay as committed and with every layer
+        run: |
+          overlay=infra/k8s/envs/aws-free-plan
+          kustomize build "$overlay" >/dev/null
+          cp "$overlay/kustomization.yaml" /tmp/kustomization.yaml
+          for layer in data apps/flink-sinks apps/flink-decision apps/flink-parse apps/web apps/flink-ui apps/kafka-ui apps/monitoring; do
+            grep -q "^  - ../../$layer$" "$overlay/kustomization.yaml" ||
+              sed -i "/^  - ..\/..\/platform$/a\\  - ../../$layer" "$overlay/kustomization.yaml"
+          done
+          kustomize build "$overlay" >/tmp/all.yaml
+          cp /tmp/kustomization.yaml "$overlay/kustomization.yaml"
+          if grep -nE '\b(IP_DASHED|BUCKET|COGNITO_POOL_ID|COGNITO_CLIENT_ID)\b' /tmp/all.yaml; then
+            echo "a placeholder token survived the overlay" >&2
+            exit 1
+          fi
+      # The migration Job must mount the hashed ConfigMap kustomize generates, run as a Sync hook, and sit in a wave
+      # before every app (docs/internal/architecture/components/schema-migrations.md).
+      - name: Check the migration Job's wiring
+        run: |
+          job='select(.kind == "Job" and .metadata.name == "db-migrate")'
+          cm=$(yq -e "$job | .spec.template.spec.volumes[] | select(.name == \"config\") | .configMap.name" /tmp/all.yaml)
+          [[ $cm == db-migrations-* ]] || { echo "the Job mounts '$cm', not the generated ConfigMap" >&2; exit 1; }
+          yq -e "select(.kind == \"ConfigMap\" and .metadata.name == \"$cm\") | .data[\"V0001__baseline.sql\"]" /tmp/all.yaml >/dev/null
+          [[ $(yq -e "$job | .metadata.annotations[\"argocd.argoproj.io/hook\"]" /tmp/all.yaml) == Sync ]]
+          wave=$(yq -e "$job | .metadata.annotations[\"argocd.argoproj.io/sync-wave\"]" /tmp/all.yaml)
+          first_app=$(yq -N 'select(.kind == "Deployment" or .kind == "FlinkDeployment") | .metadata.annotations["argocd.argoproj.io/sync-wave"] // "0"' /tmp/all.yaml | sort -n | head -1)
+          (( wave < first_app )) || { echo "the Job's wave $wave is not before the first app wave $first_app" >&2; exit 1; }
+
+  flink-ui-gateway:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash infra/k8s/apps/flink-ui/test-gateway.sh
+
+  kafka-ui-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash infra/k8s/apps/kafka-ui/test-config.sh
+
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/aws-free-plan/terraform
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.17.1
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # k3s-server.sh and k3s-agent.sh are Terraform templates. Terraform renders and checks them at plan time.
+      - run: |
+          shellcheck -x             infra/aws-free-plan/check-spend.sh infra/aws-free-plan/bootstrap.sh infra/aws-free-plan/bootstrap-cluster.sh             infra/aws-free-plan/create-sim-bot.sh infra/aws-free-plan/rotate-logins.sh infra/aws-free-plan/test-rotate-logins.sh infra/aws-free-plan/test-bootstrap-token.sh             infra/k8s/apps/flink-ui/test-gateway.sh infra/k8s/apps/kafka-ui/test-config.sh
+      - run: bash infra/aws-free-plan/test-rotate-logins.sh
+      - run: bash infra/aws-free-plan/test-bootstrap-token.sh

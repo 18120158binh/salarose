@@ -1,0 +1,126 @@
+# Alerts for a silent pipeline outage (AFP-FR-34). In #320 Postgres invalidated every CDC slot, Debezium retried for
+# 30 minutes, and each job restarted about every 30 minutes while its state read RUNNING. These rules watch what
+# showed the outage: slot WAL status, heartbeat age, checkpoint progress, restart counts, and disk.
+# The cnpg_cdp_replication_slots_* series come from the custom query in infra/k8s/data/postgres-monitoring.yaml.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: pipeline-alerts
+spec:
+  groups:
+    - name: cdc-replication
+      rules:
+        - alert: CdcReplicationSlotLost
+          expr: |
+            cnpg_cdp_replication_slots_active{wal_status=~"lost|unreserved"}
+          labels:
+            severity: critical
+          annotations:
+            summary: CDC slot {{ $labels.slot_name }} lost its WAL
+            description: >-
+              The slot's wal_status is {{ $labels.wal_status }}. A lost slot never streams again: its CDC source
+              retries for about 30 minutes, then the job restarts in a loop and no checkpoint completes. Recover by
+              suspending the job with upgradeMode last-state, dropping the slot, and resuming.
+        - alert: CdcReplicationSlotInactive
+          expr: |
+            cnpg_cdp_replication_slots_active{wal_status!="lost"} == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: CDC slot {{ $labels.slot_name }} has had no consumer for 5 minutes
+            description: >-
+              No CDC source is reading the slot, so it holds WAL until a consumer returns or Postgres invalidates it.
+              Expected while its job is suspended.
+        - alert: CdcReplicationSlotWalNearLimit
+          expr: |
+            cnpg_cdp_replication_slots_retained_bytes / cnpg_cdp_replication_slots_max_keep_bytes > 0.7
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: CDC slot {{ $labels.slot_name }} holds {{ $value | humanizePercentage }} of max_slot_wal_keep_size
+            description: >-
+              Postgres invalidates the slot when its retained WAL reaches max_slot_wal_keep_size. At 6 MB/s of WAL,
+              the last 30% of a 3 GB cap lasts under 3 minutes.
+        - alert: CdcHeartbeatStale
+          expr: |
+            cnpg_cdp_replication_slots_heartbeat_age_seconds > 600
+          labels:
+            severity: critical
+          annotations:
+            summary: CDC slot {{ $labels.slot_name }} has not beaten for {{ $value | humanizeDuration }}
+            description: >-
+              The slot's CDC source writes cdc_heartbeat every 30 seconds. A stale row means the source stopped
+              streaming: the job is down, or the slot is lost.
+        - alert: CdcSlotMetricsMissing
+          expr: |
+            absent(cnpg_cdp_replication_slots_active)
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Prometheus has no CDC slot metrics
+            description: >-
+              The CDC slot alerts cannot fire. Check that Prometheus scrapes cdp-pg and that the cdp_replication_slots
+              query succeeds; it needs SELECT on cdc_heartbeat for pg_monitor.
+    - name: flink-progress
+      rules:
+        - alert: FlinkCheckpointsFailing
+          expr: |
+            sum by (job_name) (increase(flink_jobmanager_job_numberOfFailedCheckpoints{namespace="cdp"}[10m])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.job_name }} failed {{ $value | humanize }} checkpoints in 10 minutes"
+            description: >-
+              With no tolerated checkpoint failures, each failure restarts the job. A source that never acknowledges
+              the barrier, such as a CDC source retrying a lost slot, fails every checkpoint of the job.
+        # Flink reports -1 until a job completes its first checkpoint, so that case counts from the job's uptime.
+        - alert: FlinkCheckpointStalled
+          expr: |
+            max by (job_name) (
+                (
+                  time() - flink_jobmanager_job_lastCheckpointCompletedTimestamp{namespace="cdp"} / 1000 > 300
+                  and flink_jobmanager_job_lastCheckpointCompletedTimestamp{namespace="cdp"} > 0
+                )
+              or
+                (
+                  flink_jobmanager_job_uptime{namespace="cdp"} / 1000 > 300
+                  and on (job_id) flink_jobmanager_job_lastCheckpointCompletedTimestamp{namespace="cdp"} <= 0
+                )
+            )
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.job_name }} has completed no checkpoint for {{ $value | humanizeDuration }}"
+            description: >-
+              Checkpoints run every 30 seconds. Without them the job's exactly-once Kafka output never commits, so
+              downstream sees nothing, even while the job state reads RUNNING.
+        - alert: FlinkJobRestarting
+          expr: |
+            sum by (job_name) (increase(flink_jobmanager_job_numRestarts{namespace="cdp"}[1h])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.job_name }} restarted {{ $value | humanize }} times in the last hour"
+            description: >-
+              A job in a restart loop reads RUNNING between restarts. Check its exception history and the CDC slot
+              and checkpoint alerts.
+    - name: node-disk
+      rules:
+        - alert: NodeDiskOver70Percent
+          expr: |
+            (
+                1 - node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}
+            )
+              * on (instance) group_left (node)
+                label_replace(kube_node_info, "instance", "$1:9100", "internal_ip", "(.*)")
+            > 0.7
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.node }} root disk is {{ $value | humanizePercentage }} full"
+            description: >-
+              On data-1 this disk holds the Kafka and Postgres volumes. Postgres stops when it cannot write WAL.

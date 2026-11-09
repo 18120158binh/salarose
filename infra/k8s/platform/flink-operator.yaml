@@ -1,0 +1,64 @@
+# The operator's webhook certificate is a cert-manager Certificate, so this syncs after cert-manager.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: flink-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  project: default
+  source:
+    # Apache moves a release to archive.apache.org/dist/flink/ once a newer one ships.
+    repoURL: https://downloads.apache.org/flink/flink-kubernetes-operator-1.16.1/
+    chart: flink-kubernetes-operator
+    targetRevision: 1.16.1
+    helm:
+      releaseName: flink-operator
+      valuesObject:
+        watchNamespaces:
+          - cdp
+        webhook:
+          create: true
+        operatorPod:
+          nodeSelector:
+            cdp.io/pool: platform
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              memory: 768Mi
+          webhook:
+            resources:
+              requests:
+                cpu: 50m
+                memory: 256Mi
+              limits:
+                memory: 512Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: flink-operator
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[]?.clientConfig.caBundle
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[]?.clientConfig.caBundle
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 5m
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true

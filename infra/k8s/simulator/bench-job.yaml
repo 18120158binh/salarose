@@ -1,0 +1,81 @@
+# One traffic simulator bench run on the aws-free-plan cluster (docs/internal/features/traffic-simulator.md).
+# No kustomization lists this file, so Argo CD never applies it and a sync starts no run (SIM-FR-06).
+# It is load-job.yaml with the sim-bench service account, a 6-hour deadline, and a 15-minute grace period. Before
+# the first bench, apply bench-rbac.yaml. Freeze merges to deploy/aws-free-plan for the whole run. Start it:
+#   tag=$(cat infra/k8s/simulator/image-tag)
+#   ip=$(sed -n 's/^IP_DASHED=//p' infra/k8s/envs/aws-free-plan/env.properties)
+#   sed -e "s/SIM_TAG/$tag/" -e "s/SIM_IP_DASHED/$ip/" #     -e 's/SIM_ARGS/"bench", "--job", "customer-decision-job", "--backlog", "200000"/' #     infra/k8s/simulator/bench-job.yaml | k3s kubectl create -f -
+# Each run suspends the job with a savepoint, fills its input topic, and resumes it from that savepoint. Raise
+# activeDeadlineSeconds for more runs or a larger backlog: a run takes its savepoint (up to 15 minutes), its fill at
+# --fill-eps, a minute to settle, the restart (up to 10 minutes), and the drain.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: sim-bench-
+  namespace: cdp
+  labels:
+    app.kubernetes.io/name: traffic-simulator
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 21600
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: traffic-simulator
+    spec:
+      restartPolicy: Never
+      serviceAccountName: sim-bench
+      # On the deadline's SIGTERM the bench resumes the job it suspended, which can take 10 minutes.
+      terminationGracePeriodSeconds: 900
+      nodeSelector:
+        cdp.io/pool: compute
+      containers:
+        - name: simulator
+          image: 582577265946.dkr.ecr.us-east-1.amazonaws.com/cdp/simulator:SIM_TAG
+          args: [SIM_ARGS]
+          env:
+            - name: SIM_COLLECTOR_URL
+              value: http://collector.cdp.svc
+            - name: SIM_KAFKA_BROKERS
+              value: cdp-kafka-bootstrap.cdp.svc:9092
+            - name: SIM_REPORT_BUCKET
+              value: cdp-free-plan-582577265946
+            # Public, because studio's sign-in callback and its server actions' origin check use the public host.
+            - name: SIM_STUDIO_URL
+              value: https://studio.SIM_IP_DASHED.sslip.io
+            - name: SIM_LOGIN_SECRET_ID
+              value: cdp-free-plan/logins
+            - name: SIM_SCENARIO_WINDOW_S
+              value: "60"
+            - name: SIM_PROMETHEUS_URL
+              value: http://kps-kube-prometheus-stack-prometheus.monitoring.svc:9090
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: PGHOST
+              value: cdp-pg-rw.cdp.svc
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: cdp-pg-app
+                  key: dbname
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: cdp-pg-app
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cdp-pg-app
+                  key: password
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 500m
+              memory: 256Mi
+            limits:
+              memory: 512Mi

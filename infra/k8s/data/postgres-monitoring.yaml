@@ -1,0 +1,51 @@
+# A CloudNativePG custom query for the CDC alerts in infra/k8s/apps/monitoring/pipeline-alerts.yaml (AFP-FR-35).
+# The default pg_replication_slots query has no wal_status and no heartbeat. Each metric below is exported as
+# cnpg_cdp_replication_slots_<name>. The exporter runs as a member of pg_monitor, which needs SELECT on cdc_heartbeat;
+# the Job in envs/aws-free-plan/customer-profiles.yaml grants it. A metric value must not be NULL, so a lost slot
+# reports 0 retained bytes, an unlimited cap reports -1, and a slot without a heartbeat row reports age -1.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cdp-pg-monitoring
+  labels:
+    cnpg.io/reload: ""
+data:
+  queries: |
+    cdp_replication_slots:
+      primary: true
+      target_databases:
+        - auroracy
+      query: |
+        SELECT s.slot_name,
+          COALESCE(s.wal_status, 'unknown') AS wal_status,
+          s.active,
+          COALESCE(pg_catalog.pg_wal_lsn_diff(pg_catalog.pg_current_wal_lsn(), s.restart_lsn), 0) AS retained_bytes,
+          k.max_keep_bytes,
+          COALESCE(EXTRACT(EPOCH FROM pg_catalog.now() OPERATOR(pg_catalog.-) h.beat_at), -1) AS heartbeat_age_seconds
+        FROM pg_catalog.pg_replication_slots s
+        CROSS JOIN (
+          SELECT CASE WHEN setting::bigint < 0 THEN -1 ELSE setting::bigint * 1048576 END AS max_keep_bytes
+          FROM pg_catalog.pg_settings
+          WHERE name = 'max_slot_wal_keep_size'
+        ) k
+        LEFT JOIN public.cdc_heartbeat h ON h.slot_name = s.slot_name
+        WHERE NOT s.temporary
+      metrics:
+        - slot_name:
+            usage: LABEL
+            description: Name of the replication slot
+        - wal_status:
+            usage: LABEL
+            description: "reserved, extended, unreserved, or lost"
+        - active:
+            usage: GAUGE
+            description: 1 while a consumer streams from the slot
+        - retained_bytes:
+            usage: GAUGE
+            description: WAL bytes the slot holds back, 0 once lost
+        - max_keep_bytes:
+            usage: GAUGE
+            description: max_slot_wal_keep_size in bytes, -1 when unlimited
+        - heartbeat_age_seconds:
+            usage: GAUGE
+            description: Seconds since the slot's cdc_heartbeat row was written, -1 when it has none

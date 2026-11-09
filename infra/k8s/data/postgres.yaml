@@ -1,0 +1,53 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cdp-pg
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.15-standard-trixie
+  postgresql:
+    parameters:
+      wal_level: logical
+      max_replication_slots: "32"
+      max_wal_senders: "32"
+      # A running CDC source holds the WAL of its last 10 checkpoints plus the open one. At the 6 MB/s peak
+      # measured in the load run (#320) that is 11 x 30 s x 6 MB/s = about 2 GB, and 11 x 60 s = about 4 GB
+      # for the outbox. The cap stays 2x above that. The count covers completed checkpoints only and starts
+      # at 0 after a restart, so a stopped, crash-looping, or checkpoint-failing job holds WAL until it
+      # completes 10 checkpoints, and at peak it passes the cap after 8 GB / 6 MB/s = about 22 minutes.
+      # local-path does not enforce the 8Gi claim, so the real limit is data-1's 30 GB disk, shared with
+      # Kafka. 15 GB used after one load run + 8 GB = 23 GB. A second load run within Kafka's 72 h retention
+      # adds about 6.5 GB more. See docs/internal/operations/deployment.md, durable CDC slots.
+      max_slot_wal_keep_size: 8GB
+      max_connections: "200"
+      shared_buffers: 512MB
+  bootstrap:
+    initdb:
+      database: auroracy
+      owner: cdp
+      # Runs as the superuser, once, at the first bootstrap. The tables come from the migration Job
+      # (db-migrate.yaml), which connects as cdp, so cdp owns them.
+      postInitApplicationSQL:
+        - ALTER ROLE cdp WITH REPLICATION
+  # CloudNativePG prepends its default queries when they are missing. Listing them first keeps git equal to the live spec.
+  monitoring:
+    customQueriesConfigMap:
+      - name: cnpg-default-monitoring
+        key: queries
+      - name: cdp-pg-monitoring
+        key: queries
+  storage:
+    storageClass: local-path
+    size: 8Gi
+  affinity:
+    nodeSelector:
+      cdp.io/pool: data
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      memory: 2Gi

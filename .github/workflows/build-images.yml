@@ -1,0 +1,182 @@
+name: build-and-deploy
+
+on:
+  push:
+    branches: [deploy/aws-free-plan]
+    # Rollout commits only move the overlay. They need no new images. The simulator builds in its own workflow,
+    # so a change to it rolls neither studio nor the Flink jobs.
+    paths-ignore:
+      - infra/k8s/envs/**
+      - infra/k8s/simulator/**
+      - infra/aws-free-plan/**
+      - simulator/**
+      - .github/workflows/build-simulator.yml
+      - docs/**
+      - .agents/**
+      - '**/*.md'
+  workflow_dispatch:
+    inputs:
+      images:
+        description: Images to build and roll out. "changed" builds those whose inputs differ from the deployed tag.
+        type: choice
+        options: [all, flink-jobs, studio, changed]
+        default: all
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: build-images
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  # Not a secret: only this repo's deploy branch can assume the role, through GitHub's OIDC token.
+  AWS_CI_ROLE_ARN: arn:aws:iam::582577265946:role/cdp-free-plan-ci
+
+jobs:
+  # An image's base is the commit its deployed tag names on the deploy branch, not the push's before SHA. The
+  # concurrency group drops a pending run when a newer push arrives, and a failed build leaves its tag behind,
+  # so only the deployed tag says which changes are not yet running. Any doubt about the base builds the image.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      flink-jobs: ${{ steps.detect.outputs.flink-jobs }}
+      studio: ${{ steps.detect.outputs.studio }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Read the deployed tags
+        run: git show origin/deploy/aws-free-plan:infra/k8s/envs/aws-free-plan/kustomization.yaml >"$RUNNER_TEMP/overlay.yaml"
+      # Each list is the build context its Dockerfile reads. Studio copies the whole repo, but its build reads only
+      # the pnpm workspace. The workflow itself is not an input: to roll a change to a build step, run it by hand.
+      - id: detect
+        name: Decide which images to build
+        env:
+          OVERLAY: ${{ runner.temp }}/overlay.yaml
+          REQUESTED: ${{ inputs.images || 'changed' }}
+        run: |
+          declare -A inputs=(
+            [flink-jobs]="event-processor"
+            [studio]="studio shared package.json pnpm-lock.yaml pnpm-workspace.yaml"
+          )
+          for image in flink-jobs studio; do
+            if [ "$REQUESTED" = all ] || [ "$REQUESTED" = "$image" ]; then
+              build=true reason="requested"
+            elif [ "$REQUESTED" != changed ]; then
+              build=false reason="not requested"
+            else
+              tag=$(grep -A2 -x "  - name: cdp/$image" "$OVERLAY" | sed -n 's/^    newTag: sha-//p')
+              base=$(git rev-parse -q --verify "$tag^{commit}" || true)
+              if [ -z "$base" ] || ! git merge-base --is-ancestor "$base" "$GITHUB_SHA"; then
+                build=true reason="deployed tag sha-$tag names no ancestor of this commit"
+              elif git diff --quiet "$base" "$GITHUB_SHA" -- ${inputs[$image]}; then
+                build=false reason="no change to ${inputs[$image]} since sha-$tag"
+              else
+                build=true reason="inputs changed since sha-$tag"
+              fi
+            fi
+            echo "$image: build=$build ($reason)"
+            echo "$image=$build" >>"$GITHUB_OUTPUT"
+          done
+
+  flink-jobs:
+    needs: changes
+    if: needs.changes.outputs.flink-jobs == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: ./event-processor/mvnw -B -f event-processor/pom.xml clean spotless:check checkstyle:check package
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_CI_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      # The plain docker builder resolves FROM against local images, so the base image never needs a registry.
+      - name: Build and push the jobs image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          tag="sha-${GITHUB_SHA::12}"
+          docker build -t "cdp-flink-base:$tag" -f event-processor/Dockerfile event-processor
+          docker build --build-arg "BASE_IMAGE=cdp-flink-base:$tag" -t "$REGISTRY/cdp/flink-jobs:$tag" \
+            -f event-processor/Dockerfile.jobs event-processor
+          docker push "$REGISTRY/cdp/flink-jobs:$tag"
+
+  studio:
+    needs: changes
+    if: needs.changes.outputs.studio == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_CI_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build and push the studio image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          tag="sha-${GITHUB_SHA::12}"
+          docker build -t "$REGISTRY/cdp/studio:$tag" -f studio/Dockerfile .
+          docker push "$REGISTRY/cdp/studio:$tag"
+
+  # GitOps delivery: CI never touches the cluster. It records the new tag in git, and Argo CD rolls it out:
+  # a rolling update for studio, and a savepoint upgrade for each Flink job. Each image that built rolls out on
+  # its own, so a failed build of one does not hold back the other.
+  deploy:
+    needs: [flink-jobs, studio]
+    if: ${{ !cancelled() && (needs.flink-jobs.result == 'success' || needs.studio.result == 'success') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: deploy-aws-free-plan
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: deploy/aws-free-plan
+      # sed, not `kustomize edit`, which rewrites the whole file and buries the one-line change in the diff.
+      - name: Set the image tags in the overlay
+        env:
+          FLINK_JOBS: ${{ needs.flink-jobs.result }}
+          STUDIO: ${{ needs.studio.result }}
+        run: |
+          tag="sha-${GITHUB_SHA::12}"
+          overlay=infra/k8s/envs/aws-free-plan/kustomization.yaml
+          built=()
+          if [ "$FLINK_JOBS" = success ]; then built+=(flink-jobs); fi
+          if [ "$STUDIO" = success ]; then built+=(studio); fi
+          for image in "${built[@]}"; do
+            sed -i -E "\|^  - name: cdp/$image$|,/^    newTag: /s/^(    newTag: ).*/\1$tag/" "$overlay"
+            test "$(grep -A2 -x "  - name: cdp/$image" "$overlay" | grep -cx "    newTag: $tag")" -eq 1
+          done
+          if git diff -U0 -- "$overlay" | grep -E '^[-+] ' | grep -vE '^[-+]    newTag: '; then
+            echo "the overlay changed outside a newTag line" >&2
+            exit 1
+          fi
+          echo "BUILT=${built[*]}" >>"$GITHUB_ENV"
+      # The commit touches only the overlay, which the push trigger ignores, so it starts no new build.
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add infra/k8s/envs/aws-free-plan/kustomization.yaml
+          git diff --cached --quiet && { echo "tag already set"; exit 0; }
+          git commit -m "deploy(aws-free-plan): roll out sha-${GITHUB_SHA::12} to ${BUILT// /, }"
+          for _ in 1 2 3; do
+            git pull --rebase origin deploy/aws-free-plan && git push origin HEAD:deploy/aws-free-plan && exit 0
+            sleep 5
+          done
+          exit 1

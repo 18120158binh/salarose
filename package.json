@@ -1,0 +1,22 @@
+{
+  "name": "event-online-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "studio:dev": "pnpm --filter studio dev -p 3001",
+    "studio:build": "pnpm --filter studio build",
+    "studio:start": "pnpm --filter studio start -p 3001",
+    "studio:lint": "pnpm --filter studio lint",
+    "infra:up": "podman compose --env-file .env -f infra/local/docker-compose.yml up -d",
+    "infra:down": "podman compose --env-file .env -f infra/local/docker-compose.yml down",
+    "infra:logs": "podman compose --env-file .env -f infra/local/docker-compose.yml logs -f",
+    "db:reset": "bash infra/local/init-db.sh",
+    "flink:build": "./event-processor/mvnw -f event-processor/pom.xml clean package",
+    "flink:parse": "podman exec -d flink-jobmanager ./bin/flink run -c com.cdp.platform.jobs.eventparser.EventParseJob /opt/flink/usrlib/event-processor-1.0.0-SNAPSHOT.jar",
+    "flink:decision": "podman exec -d flink-jobmanager ./bin/flink run -c com.cdp.platform.jobs.customerdecision.CustomerDecisionJob /opt/flink/usrlib/event-processor-1.0.0-SNAPSHOT.jar",
+    "flink:profile-writer": "podman exec -d flink-jobmanager ./bin/flink run -c com.cdp.platform.jobs.profilewriter.CustomerProfileWriterJob /opt/flink/usrlib/event-processor-1.0.0-SNAPSHOT.jar",
+    "flink:state-machine": "podman exec -d flink-jobmanager ./bin/flink run -c com.cdp.platform.jobs.statemachine.StateMachineJob /opt/flink/usrlib/event-processor-1.0.0-SNAPSHOT.jar",
+    "flink:outbox": "podman exec -d flink-jobmanager ./bin/flink run -c com.cdp.platform.jobs.outbox.CampaignOutboxJob /opt/flink/usrlib/event-processor-1.0.0-SNAPSHOT.jar",
+    "flink:submit": "pnpm flink:profile-writer && pnpm flink:state-machine && pnpm flink:outbox && pnpm flink:decision && pnpm flink:parse"
+  }
+}

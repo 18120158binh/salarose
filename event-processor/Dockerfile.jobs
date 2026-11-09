@@ -1,0 +1,3 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+COPY target/event-processor-1.0.0-SNAPSHOT.jar /opt/flink/usrlib/event-processor.jar

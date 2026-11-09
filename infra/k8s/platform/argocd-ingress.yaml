@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-server
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-15"
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: traefik
+  tls:
+    # Not argocd-server-tls: argocd-server serves that secret itself when it exists.
+    - secretName: argocd-ingress-tls
+      hosts:
+        - argocd.IP_DASHED.sslip.io
+  rules:
+    - host: argocd.IP_DASHED.sslip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  number: 80

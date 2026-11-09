@@ -1,0 +1,13 @@
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: customer-decision-job
+  annotations:
+    argocd.argoproj.io/sync-wave: "21"
+spec:
+  flinkConfiguration:
+    execution.checkpointing.dir: s3://BUCKET/flink/customer-decision-job/checkpoints
+    execution.checkpointing.savepoint-dir: s3://BUCKET/flink/customer-decision-job/savepoints
+    high-availability.storageDir: s3://BUCKET/flink/customer-decision-job/ha
+  job:
+    entryClass: com.cdp.platform.jobs.customerdecision.CustomerDecisionJob

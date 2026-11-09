@@ -1,0 +1,6 @@
+# The job's default pattern does not match the collector's topic.
+- op: add
+  path: /spec/podTemplate/spec/containers/0/env/-
+  value:
+    name: KAFKA_EVENT_TOPIC_PATTERN
+    value: snowplow-good

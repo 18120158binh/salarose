@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: cdp
+resources:
+  - event-parse-job.yaml
+components:
+  - ../flink-common
+patches:
+  - path: event-parse-topic.yaml
+    target:
+      group: flink.apache.org
+      kind: FlinkDeployment
+      name: event-parse-job

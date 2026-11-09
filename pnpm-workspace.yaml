@@ -1,0 +1,11 @@
+packages:
+
+  - 'studio'
+  - 'shared'
+allowBuilds:
+  better-sqlite3: set this to true or false
+  sharp: true
+  unrs-resolver: true
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver

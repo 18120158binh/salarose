@@ -1,0 +1,46 @@
+# Alert rules for the journey engine, as a Prometheus Operator PrometheusRule.
+# They need the reporter in flink-prometheus-reporter.yaml and a scrape of
+# port 9249 on the Flink pods, for example a PodMonitor. For a plain
+# Prometheus, copy the groups into a rules file.
+#
+# Flink exports a counter as a gauge that starts again at 0 when the job
+# restarts. increase() treats that drop as a reset, so a restart does not fire.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: journey-engine-alerts
+spec:
+  groups:
+    - name: journey-execution
+      rules:
+        # JEX-NFR-08: customer decision fell more than the allowed
+        # out-of-orderness behind, and the state machine dropped its triggers.
+        - alert: JourneyTriggersDroppedAsLate
+          expr: |
+            sum by (job_name) (
+              increase(flink_taskmanager_job_task_operator_lateMatchedEvents{job_name="campaign-state-machine-job"}[10m])
+            ) > 0
+          labels:
+            severity: critical
+          annotations:
+            summary: The state machine dropped triggers as late
+            description: >-
+              {{ $value | humanize }} triggers arrived behind the trigger watermark in the last 10 minutes
+              and were dropped. Customer decision most likely fell behind. Those people do not move on
+              for those events.
+        # A trigger the parser could not use: a message that does not decode, or
+        # no journey key or no event time. The trigger source counts it in its
+        # deserializer group. The name without that group is the counter's name
+        # before the source decoded the messages.
+        - alert: JourneyTriggersInvalid
+          expr: |
+            sum by (job_name) (
+              increase({__name__=~"flink_taskmanager_job_task_operator_(deserializer_)?invalidMatchedEvents",job_name="campaign-state-machine-job"}[10m])
+            ) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: The state machine dropped triggers it could not parse
+            description: >-
+              {{ $value | humanize }} triggers did not decode, or had no canon_id, campaign_id, node_id,
+              or event time, in the last 10 minutes. The state machine log has one line for each.

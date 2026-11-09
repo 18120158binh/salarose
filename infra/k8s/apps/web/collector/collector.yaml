@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: collector
+  annotations:
+    argocd.argoproj.io/sync-wave: "23"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: collector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: collector
+    spec:
+      nodeSelector:
+        cdp.io/pool: compute
+      containers:
+        - name: collector
+          image: opensnowcat/opensnowcat-collector-kafka:1.2.1
+          args: ["--config", "/snowplow/config/collector.config"]
+          env:
+            - name: JAVA_OPTS
+              value: -XX:MaxRAMPercentage=70
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 768Mi
+          volumeMounts:
+            - name: config
+              mountPath: /snowplow/config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: collector-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: collector
+  annotations:
+    argocd.argoproj.io/sync-wave: "23"
+spec:
+  selector:
+    app.kubernetes.io/name: collector
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: collector
+  annotations:
+    argocd.argoproj.io/sync-wave: "23"
+    cert-manager.io/cluster-issuer: letsencrypt
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - collector.IP_DASHED.sslip.io
+      secretName: collector-tls
+  rules:
+    - host: collector.IP_DASHED.sslip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: collector
+                port:
+                  name: http

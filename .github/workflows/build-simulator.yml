@@ -1,0 +1,69 @@
+name: build-simulator
+
+# The simulator has its own workflow, so a change to it rolls neither studio nor the Flink jobs.
+on:
+  push:
+    branches: [deploy/aws-free-plan]
+    paths:
+      - simulator/**
+      - .github/workflows/build-simulator.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  # Not a secret: only this repo's deploy branch can assume the role, through GitHub's OIDC token.
+  AWS_CI_ROLE_ARN: arn:aws:iam::582577265946:role/cdp-free-plan-ci
+  TAG_FILE: infra/k8s/simulator/image-tag
+
+jobs:
+  simulator:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    # Its own group: a shared group would let a simulator run cancel a pending studio or Flink deploy. The tag
+    # step below retries its push, so a race with the deploy job's commit costs one fetch.
+    concurrency:
+      group: build-simulator
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      # The image is tested before it is pushed, and the tested image is the one pushed.
+      - run: docker build -t cdp-sim:ci simulator
+      - run: sh simulator/test-image.sh cdp-sim:ci
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_CI_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Push the simulator image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          tag="sha-${GITHUB_SHA::12}"
+          docker tag cdp-sim:ci "$REGISTRY/cdp/simulator:$tag"
+          docker push "$REGISTRY/cdp/simulator:$tag"
+      # The run commands read the tag from this file. It is written only after the push, so it never names an
+      # image that is not in the registry. No kustomization lists infra/k8s/simulator, so Argo CD rolls nothing,
+      # and a push made with the workflow's own token starts no workflow.
+      - name: Record the tag
+        run: |
+          tag="sha-${GITHUB_SHA::12}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for _ in 1 2 3; do
+            git fetch origin deploy/aws-free-plan
+            git checkout -q -B record-tag origin/deploy/aws-free-plan
+            echo "$tag" > "$TAG_FILE"
+            git add "$TAG_FILE"
+            if git diff --cached --quiet; then echo "tag already recorded"; exit 0; fi
+            git commit -m "chore(simulator): record image $tag"
+            git push origin HEAD:deploy/aws-free-plan && exit 0
+            sleep 5
+          done
+          exit 1

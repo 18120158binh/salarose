@@ -1,0 +1,2 @@
+# templatefile() sends these to Linux nodes as is, so a CRLF checkout would break user data.
+*.sh text eol=lf

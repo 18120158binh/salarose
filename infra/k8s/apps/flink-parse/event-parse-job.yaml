@@ -1,0 +1,17 @@
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: event-parse-job
+  annotations:
+    argocd.argoproj.io/sync-wave: "22"
+spec:
+  flinkConfiguration:
+    execution.checkpointing.dir: s3://BUCKET/flink/event-parse-job/checkpoints
+    execution.checkpointing.savepoint-dir: s3://BUCKET/flink/event-parse-job/savepoints
+    high-availability.storageDir: s3://BUCKET/flink/event-parse-job/ha
+  job:
+    entryClass: com.cdp.platform.jobs.eventparser.EventParseJob
+    # The values of the 2026-11-09 restore. Keep both: the operator redeploys from
+    # initialSavepointPath whenever the nonce changes, and reads the path at no other time.
+    initialSavepointPath: s3://cdp-free-plan-582577265946/flink/event-parse-job/savepoints/savepoint-4f7ef7-c3c17511684e
+    savepointRedeployNonce: 3

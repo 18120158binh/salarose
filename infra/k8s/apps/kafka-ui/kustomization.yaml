@@ -1,0 +1,14 @@
+# The read-only Kafka browser (AFP-FR-30): Traefik -> kafka-ui, which signs people in through its own Cognito app
+# client and reads cdp-kafka-bootstrap. Adds objects only; it changes no Kafka object.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: cdp
+resources:
+  - kafka-ui.yaml
+configMapGenerator:
+  - name: kafka-ui-config
+    files:
+      - config.yml
+    options:
+      annotations:
+        argocd.argoproj.io/sync-wave: "24"

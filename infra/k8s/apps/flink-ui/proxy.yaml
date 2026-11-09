@@ -1,0 +1,131 @@
+# Signs every request in at Cognito and passes only studio-admin members on to the gateway (AFP-FR-24).
+# The bootstrap script creates the secret flink-ui-auth from the flink-ui app client.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-ui-proxy
+  annotations:
+    argocd.argoproj.io/sync-wave: "24"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flink-ui-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: flink-ui-proxy
+    spec:
+      nodeSelector:
+        cdp.io/pool: platform
+      containers:
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.5
+          ports:
+            - name: http
+              containerPort: 4180
+          env:
+            - name: OAUTH2_PROXY_HTTP_ADDRESS
+              value: 0.0.0.0:4180
+            - name: OAUTH2_PROXY_REVERSE_PROXY
+              value: "true"
+            - name: OAUTH2_PROXY_UPSTREAMS
+              value: http://flink-ui-gateway.cdp.svc.cluster.local/
+            - name: OAUTH2_PROXY_PROVIDER
+              value: oidc
+            - name: OAUTH2_PROXY_OIDC_ISSUER_URL
+              value: https://cognito-idp.us-east-1.amazonaws.com/COGNITO_POOL_ID
+            - name: OAUTH2_PROXY_REDIRECT_URL
+              value: https://flink.IP_DASHED.sslip.io/oauth2/callback
+            - name: OAUTH2_PROXY_SCOPE
+              value: openid email profile
+            - name: OAUTH2_PROXY_CODE_CHALLENGE_METHOD
+              value: S256
+            - name: OAUTH2_PROXY_SKIP_PROVIDER_BUTTON
+              value: "true"
+            - name: OAUTH2_PROXY_EMAIL_DOMAINS
+              value: "*"
+            - name: OAUTH2_PROXY_OIDC_GROUPS_CLAIM
+              value: cognito:groups
+            - name: OAUTH2_PROXY_ALLOWED_GROUPS
+              value: studio-admin
+            - name: OAUTH2_PROXY_COOKIE_NAME
+              value: _flink_ui
+            - name: OAUTH2_PROXY_COOKIE_SECURE
+              value: "true"
+            # Re-reads cognito:groups through the refresh token every hour, so a removal from studio-admin applies
+            # within an hour.
+            - name: OAUTH2_PROXY_COOKIE_REFRESH
+              value: 1h
+            - name: OAUTH2_PROXY_COOKIE_EXPIRE
+              value: 12h
+            - name: OAUTH2_PROXY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: flink-ui-auth
+                  key: client-id
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: flink-ui-auth
+                  key: client-secret
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: flink-ui-auth
+                  key: cookie-secret
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flink-ui-proxy
+  annotations:
+    argocd.argoproj.io/sync-wave: "24"
+spec:
+  selector:
+    app.kubernetes.io/name: flink-ui-proxy
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flink-ui
+  annotations:
+    argocd.argoproj.io/sync-wave: "24"
+    cert-manager.io/cluster-issuer: letsencrypt
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - flink.IP_DASHED.sslip.io
+      secretName: flink-ui-tls
+  rules:
+    - host: flink.IP_DASHED.sslip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: flink-ui-proxy
+                port:
+                  name: http

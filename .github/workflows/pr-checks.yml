@@ -1,0 +1,197 @@
+name: PR checks
+
+on:
+  pull_request:
+    branches: [master, deploy/aws-free-plan]
+  # Runs on the real base after every merge, so a break from two PRs merged back to back shows up minutes later.
+  push:
+    branches: [deploy/aws-free-plan]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  # A push run filters on its own diff, so each gets its own group. Cancelling one would leave that merge untested.
+  group: pr-checks-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      event-processor: ${{ steps.filter.outputs.event-processor }}
+      studio: ${{ steps.filter.outputs.studio }}
+      pull-request-tool: ${{ steps.filter.outputs.pull-request-tool }}
+      simulator: ${{ steps.filter.outputs.simulator }}
+      db-migrations: ${{ steps.filter.outputs.db-migrations }}
+    steps:
+      # On push the filter diffs with git. A base equal to the pushed branch makes it diff against the
+      # push's before SHA; without it, the filter diffs against the default branch.
+      - if: github.event_name == 'push'
+        uses: actions/checkout@v7
+      - id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          base: ${{ github.event_name == 'push' && github.ref_name || '' }}
+          filters: |
+            event-processor:
+              - 'event-processor/**'
+              - 'infra/db/**'
+              - 'docs/internal/operations/deployment.md'
+              - '.github/workflows/pr-checks.yml'
+            studio:
+              - 'studio/**'
+              - 'shared/**'
+              - 'infra/db/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - '.github/workflows/pr-checks.yml'
+            pull-request-tool:
+              - '.agents/skills/pull-request/**'
+              - '.github/workflows/pr-checks.yml'
+            simulator:
+              - 'simulator/**'
+              - 'studio/app/actions.ts'
+              - 'studio/src/entities/journey/model/parseCampaign.ts'
+              - '.github/workflows/pr-checks.yml'
+            db-migrations:
+              - 'infra/db/**'
+              - 'infra/k8s/data/db-migrate.yaml'
+              - '.github/workflows/pr-checks.yml'
+
+  # Runs on every event, because a new test can start reading a file outside its job's filter.
+  test-inputs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pip install pyyaml==6.0.3
+      - run: python .github/scripts/check_test_inputs.py
+
+  # A Flink image pin may go only once the deployed image already holds the code the pin waits for.
+  pin-removal:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Check image pin removals
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+        run: bash .github/scripts/check-pin-removal.sh ${{ github.event.pull_request.head.sha }}
+
+  # A job skipped by its filter reports success, so each stays usable as a required check. A job
+  # runs whenever `changes` did not succeed: on workflow_dispatch it is skipped, and if it fails,
+  # no filter result exists to justify a skip.
+  event-processor:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.event-processor == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: event-processor/pom.xml
+      - name: Format, style, test, and package
+        run: ./event-processor/mvnw -B -f event-processor/pom.xml clean spotless:check checkstyle:check package
+
+  # The jar of the image event-parse-job runs on the base branch writes a savepoint, and this
+  # checkout's jar must restore it.
+  flink-restore:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.event-processor == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: event-processor/pom.xml
+      - name: Restore the running image's savepoint
+        env:
+          BASE_REF: origin/${{ github.base_ref || 'deploy/aws-free-plan' }}
+        run: bash event-processor/scripts/restore-check.sh
+
+  studio:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.studio == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # The same pnpm and Node that studio/Dockerfile builds the image with.
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter studio lint
+      - run: pnpm --filter studio test
+      - run: pnpm studio:build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+
+  pull-request-tool:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.pull-request-tool == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: python .agents/skills/pull-request/scripts/test_pr.py -v
+
+  # Runs the simulator's tests inside the image its Dockerfile builds, so they see the packages the image ships.
+  simulator:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.simulator == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t cdp-sim:test simulator
+      - run: sh simulator/test-image.sh cdp-sim:test
+
+  # Runs every migration from zero, through the migration Job's image and command, against an empty Postgres. Also
+  # fails on drift from infra/db/schema.sql and on a migration already on the base branch that was edited or deleted.
+  db-migrations:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.db-migrations == 'true') }}
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: bash infra/db/test-migrations.sh
+        env:
+          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+          # A reviewed fix of a migration that failed on the live database, so it was never recorded as applied.
+          MIGRATION_FIX: ${{ contains(github.event.pull_request.labels.*.name, 'migration-fix') }}

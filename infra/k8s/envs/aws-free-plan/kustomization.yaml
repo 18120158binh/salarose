@@ -1,0 +1,135 @@
+# The aws-free-plan environment (docs/internal/operations/aws-free-plan.md). The root Argo CD Application syncs this
+# directory. Layers are added one commit at a time, in the order listed, each after the one before it is healthy.
+# Terraform (infra/aws-free-plan/terraform, stage server) writes env.properties. CI prints the image tag to set below.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../platform
+  - ../../data
+  - customer-profiles.yaml
+  - ../../apps/flink-sinks
+  - ../../apps/monitoring
+  - ../../apps/flink-decision
+  - ../../apps/flink-parse
+  - ../../apps/web
+  - ../../apps/flink-ui
+  - ../../apps/kafka-ui
+configurations:
+  - flink-image.yaml
+images:
+  - name: cdp/flink-jobs
+    newName: 582577265946.dkr.ecr.us-east-1.amazonaws.com/cdp/flink-jobs
+    newTag: sha-d6d59d45c02c
+  - name: cdp/studio
+    newName: 582577265946.dkr.ecr.us-east-1.amazonaws.com/cdp/studio
+    newTag: sha-63fdd216f9ee
+configMapGenerator:
+  - name: aws-free-plan-env
+    envs:
+      - env.properties
+    options:
+      disableNameSuffixHash: true
+      annotations:
+        config.kubernetes.io/local-config: "true"
+replacements:
+  - source:
+      kind: ConfigMap
+      name: aws-free-plan-env
+      fieldPath: data.IP_DASHED
+    targets:
+      - select:
+          kind: Ingress
+        fieldPaths:
+          - spec.rules.0.host
+          - spec.tls.0.hosts.0
+        options: &host
+          delimiter: "."
+          index: 1
+      - select:
+          kind: Application
+          name: kube-prometheus-stack
+        fieldPaths:
+          - spec.source.helm.valuesObject.grafana.ingress.hosts.0
+          - spec.source.helm.valuesObject.grafana.ingress.tls.0.hosts.0
+          - spec.source.helm.valuesObject.grafana.[grafana.ini].server.root_url
+        options: *host
+      - select:
+          kind: Deployment
+          name: studio
+        fieldPaths:
+          - spec.template.spec.containers.[name=studio].env.[name=OIDC_REDIRECT_URL].value
+        options: *host
+      - select:
+          kind: Deployment
+          name: studio
+        fieldPaths:
+          - spec.template.spec.containers.[name=studio].env.[name=PLATFORM_DOMAIN].value
+        options:
+          delimiter: "."
+          index: 0
+      - select:
+          kind: Deployment
+          name: flink-ui-proxy
+        fieldPaths:
+          - spec.template.spec.containers.[name=oauth2-proxy].env.[name=OAUTH2_PROXY_REDIRECT_URL].value
+        options: *host
+      - select:
+          kind: Deployment
+          name: kafka-ui
+        fieldPaths:
+          - spec.template.spec.containers.[name=kafka-ui].env.[name=AUTH_OAUTH2_CLIENT_COGNITO_REDIRECTURI].value
+        options: *host
+  - source:
+      kind: ConfigMap
+      name: aws-free-plan-env
+      fieldPath: data.BUCKET
+    targets:
+      - select:
+          kind: FlinkDeployment
+        fieldPaths:
+          - spec.flinkConfiguration.[execution.checkpointing.dir]
+          - spec.flinkConfiguration.[execution.checkpointing.savepoint-dir]
+          - spec.flinkConfiguration.[high-availability.storageDir]
+        options:
+          delimiter: /
+          index: 2
+  - source:
+      kind: ConfigMap
+      name: aws-free-plan-env
+      fieldPath: data.COGNITO_POOL_ID
+    targets:
+      - select:
+          kind: Deployment
+          name: studio
+        fieldPaths:
+          - spec.template.spec.containers.[name=studio].env.[name=OIDC_ISSUER].value
+        options: &issuer
+          delimiter: /
+          index: 3
+      - select:
+          kind: Deployment
+          name: studio
+        fieldPaths:
+          - spec.template.spec.containers.[name=studio].env.[name=PLATFORM_COGNITO_POOL_ID].value
+      - select:
+          kind: Deployment
+          name: flink-ui-proxy
+        fieldPaths:
+          - spec.template.spec.containers.[name=oauth2-proxy].env.[name=OAUTH2_PROXY_OIDC_ISSUER_URL].value
+        options: *issuer
+      - select:
+          kind: Deployment
+          name: kafka-ui
+        fieldPaths:
+          - spec.template.spec.containers.[name=kafka-ui].env.[name=AUTH_OAUTH2_CLIENT_COGNITO_ISSUERURI].value
+        options: *issuer
+  - source:
+      kind: ConfigMap
+      name: aws-free-plan-env
+      fieldPath: data.COGNITO_CLIENT_ID
+    targets:
+      - select:
+          kind: Deployment
+          name: studio
+        fieldPaths:
+          - spec.template.spec.containers.[name=studio].env.[name=OIDC_CLIENT_ID].value

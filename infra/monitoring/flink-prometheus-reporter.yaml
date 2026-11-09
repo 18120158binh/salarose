@@ -1,0 +1,11 @@
+# Flink settings that expose every job's metrics to Prometheus. Merge them into
+# the flinkConfiguration of each FlinkDeployment in the Argo CD repo, or into the
+# cluster's config.yaml. The reporter jar ships in the Flink distribution under
+# plugins/metrics-prometheus, so the image needs no extra jar.
+#
+# Each JobManager and TaskManager then serves metrics on port 9249 at /metrics.
+# A counter such as the state machine's lateMatchedEvents appears as
+# flink_taskmanager_job_task_operator_lateMatchedEvents, with the labels
+# job_name, task_name, operator_name, subtask_index, tm_id, and host.
+metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+metrics.reporter.prom.port: "9249"

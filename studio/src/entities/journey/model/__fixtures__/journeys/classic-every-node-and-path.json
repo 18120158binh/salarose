@@ -1,0 +1,478 @@
+{
+  "type": "setup",
+  "id": "setup",
+  "label": "Start",
+  "description": "Define journey settings",
+  "triggerType": "user",
+  "triggerEventName": "view_product",
+  "filters": {
+    "groups": [
+      {
+        "conditions": [
+          {
+            "type": "event_property",
+            "field": "product.price",
+            "op": "=",
+            "value": 10
+          }
+        ]
+      }
+    ]
+  },
+  "conditions": {
+    "groups": [
+      {
+        "conditions": [
+          {
+            "type": "profile_property",
+            "field": "city",
+            "op": "IN",
+            "value": [
+              "Hanoi"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "next": {
+    "type": "check",
+    "id": "yes_no",
+    "label": "yes_no",
+    "eventType": "user",
+    "eventName": "purchase",
+    "filters": {
+      "groups": [
+        {
+          "conditions": [
+            {
+              "type": "event_property",
+              "field": "order.total",
+              "op": "=",
+              "value": 1000
+            }
+          ]
+        }
+      ]
+    },
+    "conditions": {
+      "groups": [
+        {
+          "conditions": [
+            {
+              "type": "profile_property",
+              "field": "city",
+              "op": "IN",
+              "value": [
+                "Hanoi"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "description": "Check yes_no",
+    "next": {
+      "type": "YesOrNoPath",
+      "yes": {
+        "type": "watch",
+        "id": "success_timeout",
+        "label": "success_timeout",
+        "eventName": "add_to_cart",
+        "filters": {
+          "groups": [
+            {
+              "conditions": [
+                {
+                  "type": "event_property",
+                  "field": "product.brand",
+                  "op": "=",
+                  "value": "acme"
+                }
+              ]
+            }
+          ]
+        },
+        "timeLimitValue": 15,
+        "timeLimitUnit": "minutes",
+        "description": "Watch success_timeout",
+        "next": {
+          "type": "SuccessOrTimeoutPath",
+          "success": {
+            "type": "end",
+            "goalId": "goal_default"
+          },
+          "timeout": {
+            "type": "engagement",
+            "id": "hook",
+            "label": "hook",
+            "action": {
+              "type": "webhook",
+              "title": "",
+              "body": "",
+              "subject": "",
+              "url": "https://example.com/hook",
+              "payload": "{}",
+              "templateId": "",
+              "method": "PUT"
+            },
+            "next": {
+              "type": "end",
+              "goalId": "goal_default"
+            }
+          }
+        }
+      },
+      "no": [
+        {
+          "type": "check",
+          "id": "yes_only",
+          "label": "yes_only",
+          "eventType": "user",
+          "eventName": "purchase",
+          "filters": {
+            "groups": [
+              {
+                "conditions": [
+                  {
+                    "type": "event_property",
+                    "field": "order.total",
+                    "op": "=",
+                    "value": 1000
+                  }
+                ]
+              }
+            ]
+          },
+          "conditions": {
+            "groups": [
+              {
+                "conditions": [
+                  {
+                    "type": "profile_property",
+                    "field": "city",
+                    "op": "IN",
+                    "value": [
+                      "Hanoi"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "description": "Check yes_only",
+          "next": {
+            "type": "YesPath",
+            "yes": {
+              "type": "end",
+              "goalId": "goal_default"
+            }
+          }
+        },
+        {
+          "type": "check",
+          "id": "no_only",
+          "label": "no_only",
+          "eventType": "user",
+          "eventName": "purchase",
+          "filters": {
+            "groups": [
+              {
+                "conditions": [
+                  {
+                    "type": "event_property",
+                    "field": "order.total",
+                    "op": "=",
+                    "value": 1000
+                  }
+                ]
+              }
+            ]
+          },
+          "conditions": {
+            "groups": [
+              {
+                "conditions": [
+                  {
+                    "type": "profile_property",
+                    "field": "city",
+                    "op": "IN",
+                    "value": [
+                      "Hanoi"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "description": "Check no_only",
+          "next": {
+            "type": "NoPath",
+            "no": {
+              "type": "engagement",
+              "id": "after_no",
+              "label": "after_no",
+              "action": {
+                "type": "push",
+                "title": "Hi",
+                "body": "Come back",
+                "subject": "",
+                "url": "",
+                "payload": null,
+                "templateId": "",
+                "method": "POST"
+              },
+              "next": {
+                "type": "end",
+                "goalId": "goal_default"
+              }
+            }
+          }
+        },
+        {
+          "type": "check",
+          "id": "multi",
+          "label": "multi",
+          "eventType": "user",
+          "eventName": "purchase",
+          "filters": {
+            "groups": [
+              {
+                "conditions": [
+                  {
+                    "type": "event_property",
+                    "field": "order.total",
+                    "op": "=",
+                    "value": 1000
+                  }
+                ]
+              }
+            ]
+          },
+          "conditions": {
+            "groups": [
+              {
+                "conditions": [
+                  {
+                    "type": "profile_property",
+                    "field": "city",
+                    "op": "IN",
+                    "value": [
+                      "Hanoi"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "description": "Check multi",
+          "next": {
+            "type": "MultiBranchPath",
+            "branches": [
+              {
+                "branchKey": "vip",
+                "priority": 0,
+                "label": "VIP",
+                "filters": {
+                  "groups": [
+                    {
+                      "conditions": [
+                        {
+                          "type": "event_property",
+                          "field": "order.total",
+                          "op": "=",
+                          "value": 5000
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "conditions": {
+                  "groups": [
+                    {
+                      "conditions": [
+                        {
+                          "type": "behavior",
+                          "event": "purchase",
+                          "measure": "COUNT",
+                          "window": {
+                            "value": 30,
+                            "unit": "DAYS"
+                          },
+                          "op": ">=",
+                          "value": 2
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "next": {
+                  "type": "end",
+                  "goalId": "goal_default"
+                }
+              },
+              {
+                "branchKey": "regular",
+                "priority": 1,
+                "label": "Regular",
+                "next": [
+                  {
+                    "type": "engagement",
+                    "id": "regular_push",
+                    "label": "regular_push",
+                    "action": {
+                      "type": "push",
+                      "title": "Hi",
+                      "body": "Come back",
+                      "subject": "",
+                      "url": "",
+                      "payload": null,
+                      "templateId": "",
+                      "method": "POST"
+                    },
+                    "next": {
+                      "type": "end",
+                      "goalId": "goal_default"
+                    }
+                  },
+                  {
+                    "type": "end",
+                    "goalId": "goal_default"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "watch",
+          "id": "success_only",
+          "label": "success_only",
+          "eventName": "add_to_cart",
+          "filters": {
+            "groups": [
+              {
+                "conditions": [
+                  {
+                    "type": "event_property",
+                    "field": "product.brand",
+                    "op": "=",
+                    "value": "acme"
+                  }
+                ]
+              }
+            ]
+          },
+          "timeLimitValue": 15,
+          "timeLimitUnit": "minutes",
+          "description": "Watch success_only",
+          "next": {
+            "type": "SuccessPath",
+            "success": {
+              "type": "end",
+              "goalId": "goal_default"
+            }
+          }
+        },
+        {
+          "type": "watch",
+          "id": "timeout_only",
+          "label": "timeout_only",
+          "eventName": "add_to_cart",
+          "filters": {
+            "groups": [
+              {
+                "conditions": [
+                  {
+                    "type": "event_property",
+                    "field": "product.brand",
+                    "op": "=",
+                    "value": "acme"
+                  }
+                ]
+              }
+            ]
+          },
+          "timeLimitValue": 15,
+          "timeLimitUnit": "minutes",
+          "description": "Watch timeout_only",
+          "next": {
+            "type": "TimeoutPath",
+            "timeout": {
+              "type": "end",
+              "goalId": "goal_default"
+            }
+          }
+        },
+        {
+          "type": "watch",
+          "id": "delay",
+          "label": "delay",
+          "timeLimitValue": 1,
+          "timeLimitUnit": "days",
+          "description": "Wait a day",
+          "next": {
+            "type": "DelayPath",
+            "next": [
+              {
+                "type": "engagement",
+                "id": "after_delay",
+                "label": "after_delay",
+                "action": {
+                  "type": "push",
+                  "title": "Hi",
+                  "body": "Come back",
+                  "subject": "",
+                  "url": "",
+                  "payload": null,
+                  "templateId": "",
+                  "method": "POST"
+                },
+                "next": {
+                  "type": "end",
+                  "goalId": "goal_default"
+                }
+              },
+              {
+                "type": "end",
+                "goalId": "goal_default"
+              }
+            ]
+          }
+        },
+        {
+          "type": "segment",
+          "id": "segment",
+          "label": "segment",
+          "description": "Buyers",
+          "conditions": {
+            "groups": [
+              {
+                "conditions": [
+                  {
+                    "type": "behavior",
+                    "event": "purchase",
+                    "measure": "COUNT",
+                    "window": {
+                      "value": 30,
+                      "unit": "DAYS"
+                    },
+                    "op": ">=",
+                    "value": 2
+                  }
+                ]
+              }
+            ]
+          },
+          "next": {
+            "type": "YesPath",
+            "yes": {
+              "type": "end",
+              "goalId": "goal_default"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
