@@ -56,7 +56,7 @@ Every other skill the tables name is not in this repo. If one is missing from yo
 | `vercel-react-best-practices`, `vercel-composition-patterns`, `web-design-guidelines` | [vercel-labs/agent-skills](https://github.com/vercel-labs/agent-skills) | `pnpm dlx skills add vercel-labs/agent-skills -g` |
 | `frontend-design` | [anthropics/skills](https://github.com/anthropics/skills) | `pnpm dlx skills add anthropics/skills -g` |
 
-The CLI lists the skills in each source, so you can pick the ones you need, or pass `--skill <name>`. In Claude Code, you can also install pstack and `anthropics/skills` as plugins, as their READMEs describe. Don't put repo-specific rules in an upstream skill. Put them in this file.
+The CLI lists the skills in each source, so you can pick the ones you need, or pass `--skill <name>`. From pstack, install at least the skills the tables name. Installing all of pstack is fine. Don't put repo-specific rules in an upstream skill. Put them in this file.
 
 ### Investigating a question
 
