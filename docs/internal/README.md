@@ -90,7 +90,7 @@ The folders answer four questions. Product says who the platform is for and what
 | `architecture/capacity.md` | Specification | The platform's target load, the sizing method, and the load test's pass rules. Its known issues go in `known-issues/platform.md`. | No |
 | `architecture/decisions/` | Explanation | Why each choice was made: context, evidence, alternatives | Where the evidence needs it |
 | `features/` | Specification | The contract each user-facing feature must meet | No |
-| `known-issues/` | Reference | Gaps between the code and the contracts. `features/` and `components/` mirror the contract folders, and `platform.md` holds what no contract owns. | Yes |
+| `known-issues/` | Reference | Gaps between the code and the contracts. `features/` and `components/` mirror the contract folders, and `platform.md` holds the gaps against `architecture/capacity.md` and what no other contract owns. | Yes |
 | `integration/` | Explanation and reference, for customers | How a customer sends data | Only the names a customer needs |
 | `operations/` | How-to and reference | Running, deploying, configuring, and onboarding | Yes |
 
@@ -111,7 +111,7 @@ Research notes and incident write-ups do not get their own pages. Their findings
 
 ## Writing rules
 
-- **A contract states requirements, not code.** No class names, file paths, function names, libraries, or environment variables in `features/` or `architecture/components/`. Name tables, topics, routes, and message fields, because those are interfaces.
+- **A contract states requirements, not code.** No class names, file paths, function names, libraries, or environment variables in `features/`, `architecture/components/`, or `architecture/capacity.md`. Name tables, topics, routes, and message fields, because those are interfaces.
 - **Give every requirement an id.** Known issues and tests cite it.
 - **Don't guess.** A behavior nobody has decided goes under "Open questions" in the contract.
 - **Write from the code in `known-issues/`.** Name the real class, file, and commit. Mark anything you inferred but did not run.

@@ -1,18 +1,18 @@
 ---
 title: Platform known issues
-contract: ../architecture/overview.md
+contract: ../architecture/capacity.md
 updated: 2026-11-09
 verified_at: b52e8830
 ---
 
 # Platform known issues
 
-This page holds the build, tooling, and shared-code issues that no single feature owns, and the gaps against [platform capacity](../architecture/capacity.md). Java paths are relative to `event-processor/src/main/java/com/cdp/platform/`. TypeScript paths are relative to the repository root.
+This page holds the gaps against [platform capacity](../architecture/capacity.md), and the build, tooling, and shared-code issues that no other contract owns. Those cite [the architecture overview](../architecture/overview.md). Java paths are relative to `event-processor/src/main/java/com/cdp/platform/`. TypeScript paths are relative to the repository root.
 
 | Id | Severity | Issue | Breaks |
 |---|---|---|---|
 | PLT-KI-16 | Risk | The event-path tables share the database whose WAL every CDC slot holds | CAP-NFR-02, CAP-NFR-03 |
-| PLT-KI-17 | Risk | Kafka's retention has no byte limit, and Kafka shares a disk with Postgres | CAP-NFR-08, CAP-NFR-09 |
+| PLT-KI-17 | Risk | Kafka's retention has no byte limit, and Kafka shares a disk with Postgres | CAP-FR-06, CAP-NFR-08 |
 | PLT-KI-18 | Risk | `user_metrics` has full replica identity, but no publication covers it | CAP-FR-14 |
 
 ## PLT-KI-16. The event-path tables share the database whose WAL every CDC slot holds
@@ -24,14 +24,14 @@ This page holds the build, tooling, and shared-code issues that no single featur
 
 ## PLT-KI-17. Kafka's retention has no byte limit, and Kafka shares a disk with Postgres
 
-- **Symptom.** Kafka keeps 72 hours of every topic whatever the volume, on the same 30 GB root disk of `data-1` that holds Postgres and its slot WAL. Decision 0039 estimates that a second load run within 72 hours, with a full slot cap, leaves about 0.5 GB free. That is an estimate, not run.
-- **Cause.** `infra/k8s/data/kafka.yaml` sets `log.retention.hours: 72` and no `log.retention.bytes`. Kafka and Postgres both use the `local-path` storage class, which does not enforce a claim's size (`infra/k8s/data/postgres.yaml`).
+- **Symptom.** Kafka keeps 72 hours of every topic but the dead-letter topic, which keeps 24 hours, whatever the volume. Its volume claims 6 GiB but sits on the same 30 GB root disk of `data-1` that holds Postgres and its slot WAL. Decision 0039 estimates that a second load run within 72 hours, with a full slot cap, leaves about 0.5 GB free. That is an estimate, not run.
+- **Cause.** `infra/k8s/data/kafka.yaml` sets `log.retention.hours: 72`, a `size: 6Gi` claim, and no `log.retention.bytes`. `infra/k8s/data/topics.yaml` sets `retention.ms` only on `snowplow-parsed-dead-letters`. Kafka and Postgres both use the `local-path` storage class, which does not enforce a claim's size (`infra/k8s/data/postgres.yaml`).
 - **Evidence.** Read from the manifests. The disk figures are in [decision 0039](../architecture/decisions/0039-shorten-the-cdc-restore-window.md#why), which names the byte limit as the follow-up.
-- **Fix direction.** Size a byte limit per topic from the sizing sheet (CAP-FR-06), large enough to keep `snowplow-good` for 72 hours at the sustained load (CAP-NFR-09).
+- **Fix direction.** Once the owner sets how long `snowplow-good` must keep events (an open question in the contract), size each topic's byte limit per partition from the sizing sheet (CAP-FR-06), and check the disk against CAP-NFR-08.
 
 ## PLT-KI-18. `user_metrics` has full replica identity, but no publication covers it
 
 - **Symptom.** Every update of a `user_metrics` row, the profile writer's upsert, writes the whole old row to WAL as well as the new one. No CDC reader uses the old row, so those bytes only fill the WAL the slots hold.
 - **Cause.** `infra/db/schema.sql` and `infra/db/migrations/V0001__baseline.sql` run `ALTER TABLE user_metrics replica identity full`, and no publication lists `user_metrics` ([data model](../architecture/data-model.md#publications-for-cdc)).
 - **Evidence.** Read from the schema. With `wal_level=logical`, Postgres logs the old row for a table with full replica identity whether or not a publication covers it. [Decision 0040](../architecture/decisions/0040-import-through-a-batch-path-and-a-separate-store.md#why) names this upsert as the write pattern of #320. How much WAL it adds per event is not measured.
-- **Fix direction.** A migration that sets `user_metrics` back to the default replica identity, with the WAL per event measured before and after (CAP-FR-10).
+- **Fix direction.** A migration that sets `user_metrics` back to the default replica identity, with the WAL per event measured before and after (CAP-FR-10). CAP-FR-14 is the lead's default, pending owner review.

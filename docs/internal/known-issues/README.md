@@ -1,6 +1,6 @@
 # Known issues
 
-A contract, in [features/](../features/) or [architecture/components/](../architecture/components/), says what a feature or a component must do. These pages say where the current code does not do it, and what else is wrong with it. They are the only feature pages that name classes, files, and commits. [Platform](platform.md) holds the build, tooling, and shared-code issues that no single feature owns.
+A contract, in [features/](../features/) or [architecture/components/](../architecture/components/), says what a feature or a component must do. These pages say where the current code does not do it, and what else is wrong with it. They are the only feature pages that name classes, files, and commits. [Platform](platform.md) holds the gaps against [platform capacity](../architecture/capacity.md), and the build, tooling, and shared-code issues that no other contract owns.
 
 Every issue has an id, a severity, and the requirement it breaks. Fix an issue and delete its entry in the same change.
 
