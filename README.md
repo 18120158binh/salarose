@@ -88,4 +88,4 @@ Salarose is a working prototype. It runs end to end on a small Kubernetes cluste
 
 ## License
 
-MIT. See [LICENSE](LICENSE). The skills vendored under `.agents/skills/` keep their own licenses, listed in [.agents/skills/THIRD_PARTY.md](.agents/skills/THIRD_PARTY.md).
+MIT. See [LICENSE](LICENSE).

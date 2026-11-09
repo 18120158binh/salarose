@@ -31,7 +31,7 @@ Read [docs/internal/README.md](docs/internal/README.md) before you change a feat
 | `docs/internal/known-issues/` | Where the code departs from each contract, with class and file names. `features/` and `components/` mirror the contract folders. |
 | `docs/internal/architecture/` | The high-level architecture, the data model, the component contracts in `components/`, and the design decisions in `decisions/`. |
 | `docs/internal/operations/` | Configuration, local run, deployment. |
-| `.agents/skills/` | Skills this guide routes you to. |
+| `.agents/skills/` | This repo's own skills. The [upstream skills](#upstream-skills) are installed separately. |
 
 ## Work from the contracts
 
@@ -44,13 +44,19 @@ A contract defines the behavior of a feature or a component: terms, algorithm, r
 
 ## Skills
 
-Skills live in `.agents/skills/<name>/SKILL.md`. If your harness does not load them on its own, open the file and follow it. `.claude/skills/` links the ones meant to run as slash commands in Claude Code. The tables say when each one applies. Skills named `principle-*` are short; read the whole file.
+This repo's own skills live in `.agents/skills/<name>/SKILL.md`: `create-issue`, `db-migration`, `deploy`, `pull-request`, and five investigation principles, `principle-question-driven-investigation`, `principle-inspect-resources-and-config`, `principle-corroborate-with-the-right-evidence`, `principle-decompose-into-independent-questions`, and `principle-keep-a-finding-ledger`. You edit them here. If your harness does not load them on its own, open the file and follow it. `.claude/skills/` links the ones meant to run as slash commands in Claude Code. The tables say when each one applies. Skills named `principle-*` are short; read the whole file.
 
-The skills from [pstack](https://github.com/backnotprop/pstack) are copied verbatim from commit `fce11a3`, under the MIT license in `.agents/skills/PSTACK_LICENSE`. To update one, copy the upstream file again rather than editing it here. Put repo-specific rules in this file instead.
+### Upstream skills
 
-Five investigation principles are this repo's own, not pstack's, and you edit them here: `principle-question-driven-investigation`, `principle-inspect-resources-and-config`, `principle-corroborate-with-the-right-evidence`, `principle-decompose-into-independent-questions`, and `principle-keep-a-finding-ledger`.
+Every other skill the tables name is not in this repo. If one is missing from your harness, install it from its upstream source with the [`skills`](https://github.com/vercel-labs/skills) CLI. Install with `-g` for your user, so the copies stay out of this repo:
 
-Four frontend skills come from other repos and were installed with the [`skills`](https://github.com/vercel-labs/skills) CLI, which records each source and hash in `skills-lock.json`: `vercel-react-best-practices`, `vercel-composition-patterns`, and `web-design-guidelines` from [vercel-labs/agent-skills](https://github.com/vercel-labs/agent-skills) (MIT), and `frontend-design` from [anthropics/skills](https://github.com/anthropics/skills) (Apache 2.0). Don't edit them here. To update them, run `pnpm dlx skills update -p`, then move any copy it writes to `.claude/skills/` into `.agents/skills/`. [.agents/skills/THIRD_PARTY.md](.agents/skills/THIRD_PARTY.md) lists every vendored skill and its license.
+| Skills | Source | Install |
+|---|---|---|
+| `benchmark-checklist`, `how`, `tdd`, `technical-writing`, `typescript-best-practices`, `unslop`, and the other `principle-*` skills | [pstack](https://github.com/backnotprop/pstack) | `pnpm dlx skills add backnotprop/pstack -g` |
+| `vercel-react-best-practices`, `vercel-composition-patterns`, `web-design-guidelines` | [vercel-labs/agent-skills](https://github.com/vercel-labs/agent-skills) | `pnpm dlx skills add vercel-labs/agent-skills -g` |
+| `frontend-design` | [anthropics/skills](https://github.com/anthropics/skills) | `pnpm dlx skills add anthropics/skills -g` |
+
+The CLI lists the skills in each source, so you can pick the ones you need, or pass `--skill <name>`. From pstack, install at least the skills the tables name. Installing all of pstack is fine. Don't put repo-specific rules in an upstream skill. Put them in this file.
 
 ### Investigating a question
 

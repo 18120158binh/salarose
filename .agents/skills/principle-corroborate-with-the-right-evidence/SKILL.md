@@ -25,4 +25,4 @@ Every conclusion is a claim of a certain type, and each type needs its own evide
 
 You skipped this when a conclusion rests on a comment, a name, a single log line, or "it should", or when you ran something to answer a question the code already answered.
 
-Distinct from [Prove It Works](../principle-prove-it-works/SKILL.md), which checks your own output. This principle checks a claim about a system you are investigating.
+Distinct from [Prove It Works](https://github.com/backnotprop/pstack/blob/main/skills/principle-prove-it-works/SKILL.md), which checks your own output. This principle checks a claim about a system you are investigating.
