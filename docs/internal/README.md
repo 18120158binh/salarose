@@ -114,7 +114,7 @@ Research notes and incident write-ups do not get their own pages. Their findings
 - **Don't guess.** A behavior nobody has decided goes under "Open questions" in the contract.
 - **Write from the code in `known-issues/`.** Name the real class, file, and commit. Mark anything you inferred but did not run.
 - **Keep the pages true.** A change that alters what a feature or a component does updates its contract in the same change. A fix deletes its known issue in the same change.
-- Follow the `technical-writing` skill, then run the `unslop` skill over the page. Both are in `.agents/skills/`.
+- Follow the `technical-writing` skill, then run the `unslop` skill over the page. Both come from [pstack](https://github.com/backnotprop/pstack). [AGENTS.md](../../AGENTS.md#upstream-skills) says how to install them.
 - Use sentence-case headings, no emoji, and no em dashes.
 
 ## Add a page
