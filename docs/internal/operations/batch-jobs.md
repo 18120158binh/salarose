@@ -1,6 +1,8 @@
 # Batch jobs
 
-A batch job is a Java main in the `event-processor` build that runs without Flink, starts on a schedule, does a bounded amount of work, and exits. The import applier is the first one. The import metric pass follows the same pattern. This page is the convention both follow, and the steps that put one into a deployment.
+A batch job is a Java main in the `event-processor` build that runs without Flink, starts on a schedule, does a bounded amount of work, and exits. The import applier follows this page, and the import metric pass will too. This page is the convention, and the steps that put a job into a deployment.
+
+The segment membership pass predates this page. It runs from the Flink jobs image with its own `java` command, so its pod pulls the Flink image and rolls with the Flink jobs' tag. Move it to the batch jobs image when the image is in a deployment.
 
 ## Write the job
 
