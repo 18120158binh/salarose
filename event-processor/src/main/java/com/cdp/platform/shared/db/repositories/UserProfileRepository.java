@@ -97,6 +97,11 @@ public final class UserProfileRepository extends AbstractDatabaseRepository {
      * failed query throws.
      */
     private Optional<UserProfile> findProfile(ProfileKey key) {
+        if (!key.sources().isEmpty()) {
+            return queryForObject(CustomerProfilesTable.lookupSql(key.columns(), key.sources()),
+                statement -> statement.setString(1, key.lookupId()),
+                row -> CustomerProfilesTable.profileWithImported(row, key.columns())).flatMap(found -> found);
+        }
         return queryForObject(CustomerProfilesTable.lookupSql(key.columns()),
             statement -> statement.setString(1, key.lookupId()),
             row -> CustomerProfilesTable.profile(row, key.columns()));
@@ -125,15 +130,23 @@ public final class UserProfileRepository extends AbstractDatabaseRepository {
 
     /**
      * Every column of the profile, as
-     * {@link #findProfileAsync(String, String, Set)} finds it.
+     * {@link #findProfileAsync(String, String, Set, Set)} finds it.
      */
     public CompletableFuture<UserProfile> findProfileAsync(String userId, String canonId) {
         return findProfileAsync(userId, canonId, Set.copyOf(CustomerProfilesTable.COLUMNS));
     }
 
+    /** The given columns of a person's profile, without imported fields. */
+    public CompletableFuture<UserProfile> findProfileAsync(String userId, String canonId, Set<String> columns) {
+        return findProfileAsync(userId, canonId, columns, Set.of());
+    }
+
     /**
-     * The given columns of a person's profile, or an empty profile when there is
-     * none or no column is asked for. The profile is the one whose
+     * The given columns of a person's profile, and the imported fields of the
+     * given sources from {@code customer_attributes} whose {@code customer_key}
+     * is the same id, read in one round trip, or an empty profile when there is
+     * none or nothing is asked for. A source with no row gives no fields. The
+     * profile is the one whose
      * {@code cdp_uuid} is the person's {@code user_id}, else the {@code user_id}
      * that {@code identity_graph} holds for their {@code canon_id}. Without either
      * there is no profile. The other fields are null. Only a found profile, and a
@@ -141,14 +154,17 @@ public final class UserProfileRepository extends AbstractDatabaseRepository {
      * lookup. A failed query completes the future exceptionally and is not cached
      * either. A lookup cancelled while it waits for a thread skips its queries.
      */
-    public CompletableFuture<UserProfile> findProfileAsync(String userId, String canonId, Set<String> columns) {
-        if (columns.isEmpty() || !hasText(userId) && !hasText(canonId)) {
+    public CompletableFuture<UserProfile> findProfileAsync(String userId, String canonId, Set<String> columns,
+        Set<String> sources) {
+        if (columns.isEmpty() && sources.isEmpty() || !hasText(userId) && !hasText(canonId)) {
             return CompletableFuture.completedFuture(UserProfile.empty());
         }
         Set<String> read = Set.copyOf(columns);
+        Set<String> readSources = Set.copyOf(sources);
         return CompletableFuture
             .supplyAsync(() -> lookupId(userId, canonId)
-                .map(id -> profileCache.get(new ProfileKey(id, read), missing -> findProfile(missing).orElse(null)))
+                .map(id -> profileCache
+                    .get(new ProfileKey(id, read, readSources), missing -> findProfile(missing).orElse(null)))
                 .orElseGet(UserProfile::empty), lookupExecutor);
     }
 
@@ -166,7 +182,7 @@ public final class UserProfileRepository extends AbstractDatabaseRepository {
         super.close();
     }
 
-    /** A cache entry: the columns read of one profile. */
-    private record ProfileKey(String lookupId, Set<String> columns) {
+    /** A cache entry: the columns and imported sources read of one profile. */
+    private record ProfileKey(String lookupId, Set<String> columns, Set<String> sources) {
     }
 }

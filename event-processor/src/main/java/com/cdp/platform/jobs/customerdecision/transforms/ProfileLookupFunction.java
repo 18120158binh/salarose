@@ -13,6 +13,7 @@ import org.apache.flink.streaming.api.functions.async.RichAsyncFunction;
 import org.apache.flink.util.function.SerializableSupplier;
 
 import com.cdp.platform.shared.config.DatabaseConfig;
+import com.cdp.platform.shared.db.repositories.CustomerAttributesTable;
 import com.cdp.platform.shared.db.repositories.CustomerProfilesTable;
 import com.cdp.platform.shared.db.repositories.UserProfileRepository;
 import com.cdp.platform.shared.models.Event;
@@ -55,13 +56,16 @@ public final class ProfileLookupFunction extends RichAsyncFunction<Decision, Dec
     @Override
     public void asyncInvoke(Decision decision, ResultFuture<Decision> resultFuture) {
         Event event = decision.event();
-        profiles.find(event.userId(), event.canonId(), columns(decision)).handle((found, failure) -> {
-            if (failure == null) return found;
-            LOG
-                .warn("Profile lookup failed for canonId={} with {}, using an empty profile", event.canonId(),
-                    cause(failure).getClass().getName());
-            return UserProfile.empty();
-        }).thenAccept(found -> resultFuture.complete(Collections.singletonList(decision.withProfile(found))));
+        profiles
+            .find(event.userId(), event.canonId(), columns(decision), sources(decision))
+            .handle((found, failure) -> {
+                if (failure == null) return found;
+                LOG
+                    .warn("Profile lookup failed for canonId={} with {}, using an empty profile", event.canonId(),
+                        cause(failure).getClass().getName());
+                return UserProfile.empty();
+            })
+            .thenAccept(found -> resultFuture.complete(Collections.singletonList(decision.withProfile(found))));
     }
 
     @Override
@@ -82,6 +86,18 @@ public final class ProfileLookupFunction extends RichAsyncFunction<Decision, Dec
         return columns;
     }
 
+    /**
+     * The imported sources that the waiting rules' fields name, such as
+     * {@code orders} for {@code orders.spend_90d} (DEC-FR-41).
+     */
+    static Set<String> sources(Decision decision) {
+        Set<String> sources = new LinkedHashSet<>();
+        decision
+            .profileFields()
+            .forEach(field -> CustomerAttributesTable.sourceOf(field).ifPresent(sources::add));
+        return sources;
+    }
+
     private static Throwable cause(Throwable failure) {
         return failure instanceof CompletionException && failure.getCause() != null ? failure.getCause() : failure;
     }
@@ -90,8 +106,9 @@ public final class ProfileLookupFunction extends RichAsyncFunction<Decision, Dec
         return new ProfileStore() {
 
             @Override
-            public CompletableFuture<UserProfile> find(String userId, String canonId, Set<String> columns) {
-                return repository.findProfileAsync(userId, canonId, columns);
+            public CompletableFuture<UserProfile> find(String userId, String canonId, Set<String> columns,
+                Set<String> sources) {
+                return repository.findProfileAsync(userId, canonId, columns, sources);
             }
 
             @Override
@@ -109,12 +126,14 @@ public final class ProfileLookupFunction extends RichAsyncFunction<Decision, Dec
     }
 
     /**
-     * Finds the given columns of a person's profile by their {@code user_id} and
-     * {@code canon_id}, and is closed with the subtask.
+     * Finds the given columns of a person's profile, and the imported fields of
+     * the given sources, by their {@code user_id} and {@code canon_id}, and is
+     * closed with the subtask.
      */
     interface ProfileStore extends AutoCloseable {
 
-        CompletableFuture<UserProfile> find(String userId, String canonId, Set<String> columns);
+        CompletableFuture<UserProfile> find(String userId, String canonId, Set<String> columns,
+            Set<String> sources);
 
         @Override
         void close();

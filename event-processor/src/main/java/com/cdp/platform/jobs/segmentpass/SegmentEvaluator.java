@@ -28,11 +28,14 @@ final class SegmentEvaluator {
     private final String segmentId;
     private final PersonConditions conditions;
     private final boolean[] behaviorPassesEmpty;
+    private final Instant asOf;
 
-    private SegmentEvaluator(String segmentId, PersonConditions conditions, boolean[] behaviorPassesEmpty) {
+    private SegmentEvaluator(String segmentId, PersonConditions conditions, boolean[] behaviorPassesEmpty,
+        Instant asOf) {
         this.segmentId = segmentId;
         this.conditions = conditions;
         this.behaviorPassesEmpty = behaviorPassesEmpty;
+        this.asOf = asOf;
     }
 
     /**
@@ -50,19 +53,23 @@ final class SegmentEvaluator {
             }
             passes[index] = METRICS.evaluate(behavior.valueOrThrow(), Map.of(), asOf.toEpochMilli());
         }
-        return ParseResult.success(new SegmentEvaluator(segment.id(), segment.conditions(), passes));
+        return ParseResult.success(new SegmentEvaluator(segment.id(), segment.conditions(), passes, asOf));
     }
 
     String segmentId() {
         return segmentId;
     }
 
-    /** Whether every group of the segment passes for the customer. */
+    /**
+     * Whether every group of the segment passes for the customer. A relative-date
+     * condition measures from {@code as_of}, as customer decision measures from
+     * the check time (SMP-FR-03, DEC-FR-42).
+     */
     boolean isMember(ImportedCustomer customer) {
         Optional<List<Predicate>> left = conditions
             .profileLeft(group -> behaviorPassesEmpty[group], nested -> Optional.empty());
         return left.isPresent()
-            && left.get().stream().allMatch(predicate -> FieldPredicates.evaluate(predicate, customer::field));
+            && left.get().stream().allMatch(predicate -> FieldPredicates.evaluate(predicate, customer::field, asOf));
     }
 
     /** The ids of the segments the customer is a member of. */

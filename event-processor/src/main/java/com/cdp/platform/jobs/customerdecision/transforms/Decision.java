@@ -1,5 +1,6 @@
 package com.cdp.platform.jobs.customerdecision.transforms;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -52,8 +53,10 @@ public record Decision(Event event, long sequence, boolean startsSequence, List<
     List<VersionedTrigger> triggers() {
         List<VersionedTrigger> triggers = new ArrayList<>();
         String contextJson = null;
+        // A segment check arrives as an event at the check's event_time.
+        Instant checkTime = event.eventTimestamp() == null ? null : Instant.ofEpochMilli(event.eventTimestamp());
         for (RuleDecision rule : rules) {
-            if (!rule.fires(profile)) continue;
+            if (!rule.fires(profile, checkTime)) continue;
             if (contextJson == null) contextJson = JacksonMapper.writeValueAsString(event.buildContext());
             for (String branch : rule.branches()) {
                 triggers.add(rule.trigger(event, branch, contextJson));

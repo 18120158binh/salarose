@@ -136,7 +136,8 @@ class ProfileLookupFunctionTest {
         }
 
         @Override
-        public CompletableFuture<UserProfile> find(String userId, String canonId, Set<String> columns) {
+        public CompletableFuture<UserProfile> find(String userId, String canonId, Set<String> columns,
+            Set<String> sources) {
             profileLookups.add(userId + " " + columns);
             return answer;
         }
