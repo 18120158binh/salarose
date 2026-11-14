@@ -34,7 +34,7 @@ Out of scope:
 - Rewriting history. Events in `snowplow-parsed` keep the `canon_id` they were published with. A reader maps a past `canon_id` to the current one through the graph's merge history (IDG-FR-05).
 - Messages sent before the merge. The platform does not recall them.
 - Profile attributes in `customer_profiles`. Another system owns them.
-- Undoing a merge. The [identity graph](identity-graph.md#open-questions) holds that question.
+- Undoing a merge. The [identity graph](identity-graph.md) offers no split ([decision 0050](../../decisions/0050-one-account-per-person-no-unmerge-and-a-5-second-merge-bound.md)).
 
 ## Terms
 
