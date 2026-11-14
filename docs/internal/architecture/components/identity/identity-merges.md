@@ -2,13 +2,13 @@
 title: Identity merges
 slug: identity-merges
 purpose: When a merge retires a canon_id, move every job's state under it onto the winner, so that jobs count one person once and the person passes each journey node once.
-status: draft
+status: accepted
 implementation: planned
 area: event-processor
 tags: [identity, merge, state, journeys, metrics]
 created: 2026-10-21
-updated: 2026-10-21
-version: 0.1
+updated: 2026-11-14
+version: 1.0
 known_issues: ../../../known-issues/components/identity/identity-merges.md
 ---
 
@@ -16,7 +16,7 @@ known_issues: ../../../known-issues/components/identity/identity-merges.md
 
 ## Purpose
 
-Every job keys its per-person state by `canon_id`. When a merge retires a `canon_id` today, the metrics, journey instances, and rows under it stay where they are. The person's metrics restart from empty under the winning `canon_id`, and the person can pass a journey's nodes and get its messages a second time. This contract announces each merge and says how each job moves the retired `canon_id`'s state onto the winner. After a merge, metric conditions see all of the person's events, and each node of a campaign completes once for the person. This contract is a draft. The [open questions](#open-questions) must have answers before it is accepted.
+Every job keys its per-person state by `canon_id`. When a merge retires a `canon_id` today, the metrics, journey instances, and rows under it stay where they are. The person's metrics restart from empty under the winning `canon_id`, and the person can pass a journey's nodes and get its messages a second time. This contract announces each merge and says how each job moves the retired `canon_id`'s state onto the winner. After a merge, metric conditions see all of the person's events, and each node of a campaign completes once for the person. [Decision 0051](../../decisions/0051-fold-to-the-earliest-instance-and-count-nodes-through-merge-history.md) settles its open questions.
 
 ## Scope
 
@@ -58,7 +58,7 @@ A shopper browses on a phone without logging in. The phone's `canon_id` is `C1`.
 
 Without this contract, step 4 starts `C2`'s count from 2, and step 5 completes `n1_view` a second time and sends the SMS again.
 
-When both `canon_id` values have an instance of one campaign, which instance survives is an [open question](#open-questions).
+When both `canon_id` values have an instance of one campaign, the instance that started first survives, as [Fold journey instances](#fold-journey-instances) says.
 
 ## Algorithm
 
@@ -93,13 +93,13 @@ The [profile writer](../profile-writer.md) writes the winner's mutation as any o
 
 ### Fold journey instances
 
-Journey execution folds each campaign separately:
+Journey execution folds each campaign separately, entry by entry. An instance is one entry ([decision 0033](../../decisions/0033-a-journey-instance-is-one-entry.md)), named by its entry id:
 
-- If only the retired `canon_id` has an instance, the instance becomes the winner's instance, unchanged. Its completed nodes, buffered triggers, and watch deadlines move with it.
-- If only the winner has an instance, nothing changes.
-- If both have an instance, the rule is an [open question](#open-questions).
+- If only the retired `canon_id` has an entry with an id, the entry becomes the winner's, unchanged. Its completed nodes, buffered triggers, and watch deadlines move with it.
+- If only the winner has an entry with an id, nothing changes.
+- If both have an entry with the same id, such as `first` for an event trigger or one business event that reached both, the one with the earlier entry time survives, and on a tie the one whose `canon_id` sorts first. The other is dropped: its watch timers emit nothing, and its buffered triggers are discarded. The dropped instance's completed node ids join the survivor as completed-elsewhere guards. A guarded node never completes again (IMG-FR-09), and the guards do not move the survivor along.
 
-Entries fold by entry id ([decision 0033](../../decisions/0033-a-journey-instance-is-one-entry.md)). Entries with different ids both move to the winner. Two entries with the same id, such as one business event that reached both `canon_id` values, are one entry, and the open question above decides which survives.
+Entries with different ids all move to the winner, with one exception: when the campaign's segment re-entry setting would have refused the later entry for one person, because it is `never`, or `after` and the later entry started within the period of the earlier one, as [Open an entry](../journey-execution.md#open-an-entry) says (JEX-FR-18). Then the earlier entry survives and the later one is dropped by the rule above, guards included.
 
 ### Fold segment flags
 
@@ -111,7 +111,15 @@ A watch timer of a moved instance keeps its deadline and fires for the winner. A
 
 ### Count nodes once
 
-`campaign_node_stats` counts each person once per node and branch, counting `user_campaign_state_transitions` rows under every `canon_id` the person had. How it maps retired ids, by rewriting rows or by reading the merge history, is an [open question](#open-questions).
+`campaign_node_stats` counts each person once per node and branch, counting `user_campaign_state_transitions` rows under every `canon_id` the person had. Transition rows keep the `canon_id` they were written with. `campaign_node_stats` maps each row's `canon_id` to its current `canon_id` through the merge records, then counts.
+
+### The window before a fold
+
+Journey execution does not hold triggers until a fold. A node that completes a second time between the merge and the fold is counted by campaign and node. IMG-NFR-01 bounds the window.
+
+### A fold is not a change
+
+A fold makes no rule a candidate. A rule whose metric condition the fold made true is checked at the person's next event that changes the metric. The causing event is evaluated against the folded state (IMG-FR-06).
 
 ## Functional requirements
 
@@ -131,6 +139,10 @@ A watch timer of a moved instance keeps its deadline and fires for the winner. A
 | IMG-FR-12 | After a job applies a merge, it must redirect every record that arrives under the retired `canon_id`, for as long as the job keeps state for a person. |
 | IMG-FR-13 | `campaign_node_stats` must count a merged person once per node and branch. |
 | IMG-FR-14 | Events already published must keep the `canon_id` they were published with. |
+| IMG-FR-15 | When both `canon_id` values have an entry with the same entry id, or entries that the segment re-entry setting would not allow for one person, the entry with the earlier entry time must survive, the one whose `canon_id` sorts first on a tie. The dropped entry's completed nodes must guard the survivor against completing them again, without advancing it. Entries with different ids that re-entry allows must all move to the winner. |
+| IMG-FR-16 | A fold must not make a rule a candidate. |
+| IMG-FR-17 | A fold must not rewrite `user_campaign_state_transitions` rows. `campaign_node_stats` must map retired ids through the merge records. |
+| IMG-FR-18 | A node that completes a second time between a merge and its fold must be counted by campaign and node. |
 
 ## Non-functional requirements
 
@@ -196,14 +208,16 @@ The merge record:
 - Given an applied merge of `C1` into `C2`, when a late event under `C1` arrives, then customer decision counts it in `C2`'s series. (IMG-FR-12)
 - Given `n1_view` completed on `next` under `C1` before the merge, then after the merge `campaign_node_stats` counts the person once for `n1_view` on `next`. (IMG-FR-13)
 - Given an event published under `C1` before the merge, then it still carries `C1` in `snowplow-parsed`. (IMG-FR-14)
+- Given entries `first` of `CAMP-0001` under `C1`, entered at 09:00 with `n1_view` completed, and under `C2`, entered at 09:30 with `n1_view` and `n3_email` completed, when `C1` is retired into `C2`, then `C2` holds the 09:00 entry and the 09:30 entry's timers emit nothing. When a trigger for `n3_email` arrives, then it completes nothing and the outbox sends nothing, and the 09:00 entry's completed nodes are still only `n1_view`. (IMG-FR-15, IMG-FR-09)
+- Given a price drop campaign with entry `be-1` under `C1` and `be-2` under `C2`, when `C1` is retired into `C2`, then `C2` holds both entries. (IMG-FR-15)
+- Given a segment campaign with re-entry `never`, and an entry under each `canon_id`, when they merge, then only the earlier entry survives. (IMG-FR-15)
+- Given a rule `m_view_count COUNT >= 5` and 3 views under `C1` and 2 under `C2`, when the fold makes the count 5, then the rule does not fire until the next `view_product`. (IMG-FR-16)
+- Given transition rows under `C1`, when `C1` is retired into `C2`, then the rows still carry `C1`, and `campaign_node_stats` counts the person once. (IMG-FR-17, IMG-FR-13)
+- Given `n1_view` completing under `C2` on another device 3 seconds after the merge and before the fold, then the second-completion count for `CAMP-0001` and `n1_view` rises by 1. (IMG-FR-18)
 
 ## Open questions
 
-- **Two instances of one campaign.** When both `canon_id` values have an instance, which survives? The options are the instance that started first, the instance further along, the winner's instance, or one instance that holds the completed nodes of both where their branches agree. Whatever the choice, IMG-FR-09 holds.
-- **The window before a fold.** Between the moment the graph records a merge and the moment a job folds it, the winner's events from other devices can complete a node that the retired instance already completed. Must journey execution hold the winner's triggers until the fold, or is a second completion in that window accepted? IMG-NFR-01 bounds the window either way.
-- **Rules that a fold satisfies.** A fold can make a metric condition true, for example a count that crosses 5. Today a rule with only a metric condition is a candidate only when an event changes its metric. Should the fold count as such a change, or wait for the next event?
-- **Node counts.** Should a fold rewrite the retired `canon_id`'s rows in `user_campaign_state_transitions` to the winner, or should `campaign_node_stats` read the merge history? Rewriting changes rows that analysts may already have read. Reading the history adds a join to every count.
-- **Two accounts in one person.** If the graph merges two accounts, as it does on a shared device today, the person has two `cdp_uuid` matches in `customer_profiles`. Which profile do conditions and messages use?
+None. [Decision 0051](../../decisions/0051-fold-to-the-earliest-instance-and-count-nodes-through-merge-history.md) answered two instances of one campaign, the window before a fold, rules that a fold satisfies, node counts, and two accounts in one person on 2026-11-14. Two accounts no longer reach one person, because the [identity graph](identity-graph.md#limits) holds one `user_id` per set.
 
 ## Related
 
@@ -217,4 +231,5 @@ The merge record:
 - [0004. Compute metrics and decisions in one keyed job](../../decisions/0004-compute-metrics-and-decisions-in-one-keyed-job.md)
 - [0006. At-least-once delivery with idempotent writes](../../decisions/0006-at-least-once-delivery-with-idempotent-writes.md)
 - [0011. The first trigger to arrive completes a node](../../decisions/0011-the-first-trigger-to-arrive-completes-a-node.md)
+- [0051. Fold to the earliest instance, accept the fold window, and count nodes through merge history](../../decisions/0051-fold-to-the-earliest-instance-and-count-nodes-through-merge-history.md)
 - [Known issues](../../../known-issues/components/identity/identity-merges.md)
