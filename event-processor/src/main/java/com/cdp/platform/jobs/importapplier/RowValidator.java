@@ -50,6 +50,13 @@ final class RowValidator {
      */
     record Valid(String customerKey, String recordId, Instant eventTime, ObjectNode data, List<String> emails,
         List<String> phones, int emailsDropped, int phonesDropped) implements Result {
+
+        /**
+         * The row's key in the store: the record id, or the customer key of a profile.
+         */
+        String key() {
+            return recordId != null ? recordId : customerKey;
+        }
     }
 
     record Rejected(String reason) implements Result {
@@ -162,6 +169,22 @@ final class RowValidator {
             }
         }
         return new Valid(customerKey, recordId, eventTime, data, emails, phones, emailsDropped, phonesDropped);
+    }
+
+    /**
+     * The key a row names in the store when the applier can read it, valid or
+     * not: its record id for an event dataset, its customer key for a profile
+     * dataset. Null when the value is missing, blank, not text, or a
+     * placeholder id. A rejected row with a key protects its stored row from
+     * snapshot removal (IAP-FR-13).
+     */
+    String key(RawRow row) {
+        if (version.kind() == Kind.EVENT) {
+            JsonNode id = row.values().get(version.column(Role.RECORD_ID).orElseThrow());
+            return id != null && id.isTextual() && !id.asText().isBlank() ? id.asText() : null;
+        }
+        JsonNode key = row.values().get(keyColumn);
+        return key != null && key.isTextual() && placeholders.normalize(key.asText()) != null ? key.asText() : null;
     }
 
     static String typeMismatch(String column) {

@@ -10,7 +10,6 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.function.Consumer;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipException;
 
@@ -35,15 +34,16 @@ final class FileValidation {
     private final RowValidator validator;
     private final Lookups lookups;
     private final RejectsSink rejects;
-    private final Consumer<RowValidator.Valid> validRows;
+    private final RowSink validRows;
     private final LockGuard lock;
 
     /**
      * @param validRows
-     *            receives each valid row in file order
+     *            receives each valid row, and the key of each rejected row, in
+     *            file order
      */
     FileValidation(DatasetVersion version, RowValidator validator, Lookups lookups, RejectsSink rejects,
-        Consumer<RowValidator.Valid> validRows, LockGuard lock) {
+        RowSink validRows, LockGuard lock) {
         this.version = version;
         this.validator = validator;
         this.lookups = lookups;
@@ -96,13 +96,14 @@ final class FileValidation {
                     case RowValidator.Rejected rejected -> {
                         stats.reject(row.line(), rejected.reason());
                         rejects.write(row.line(), rejected.reason(), row.raw());
+                        validRows.rejected(validator.key(row));
                     }
                     case RowValidator.Valid valid -> {
                         stats.valid++;
                         stats.emailsDropped += valid.emailsDropped();
                         stats.phonesDropped += valid.phonesDropped();
                         batches.add(valid);
-                        validRows.accept(valid);
+                        validRows.valid(valid);
                     }
                 }
             }
