@@ -12,6 +12,8 @@ import {
   type JourneySummary,
   type PublishedJourney,
 } from './journeyList'
+import { catalogEvents } from '@/features/journey-builder/model/server'
+import type { CatalogEvent } from '@/features/journey-builder/ui/JourneyBuilder'
 import { referencedNames, type NameLookup } from './labels'
 import type { JourneyNode } from './nodes'
 import {
@@ -21,7 +23,10 @@ import {
   nameLookup,
   namesQuery,
   nodeAnalyticsQuery,
+  nodeCompletedQuery,
   nodesByCampaign,
+  parseNodeCompleted,
+  publishedRootQuery,
   parseRemovedSteps,
   parseWaitingRows,
   peopleWaitingQuery,
@@ -103,4 +108,33 @@ export async function loadPublishedJourneys(zone: TimeZone): Promise<{ now: numb
     return publishedJourneys(campaigns, parseCountRows(await run(eventTimeCounts('setup', [lastWeek], ids))))
   })
   return { now, journeys }
+}
+
+/** JBD-FR-09: each node's all-time Completed count. A node missing from the result completed nobody. */
+export async function loadNodeCompleted(campaignId: string): Promise<Record<string, number>> {
+  await requireViewer()
+  return readOnly(ANALYTICS_STATEMENT_TIMEOUT_MS, async (run) => parseNodeCompleted(await run(nodeCompletedQuery(campaignId))))
+}
+
+export type JourneyCanvas = {
+  readonly root: Record<string, unknown>
+  readonly events: CatalogEvent[]
+  readonly completed: Record<string, number>
+  /** Epoch ms of the counts' read. */
+  readonly readAt: number
+}
+
+/** JBD-FR-09: the Journey tab's first load. Null when the id names no published campaign with a readable journey. */
+export async function loadJourneyCanvas(campaignId: string): Promise<JourneyCanvas | null> {
+  await requireViewer()
+  const [read, events] = await Promise.all([
+    readOnly(ANALYTICS_STATEMENT_TIMEOUT_MS, async (run) => {
+      const [row] = await run(publishedRootQuery(campaignId))
+      const root = row?.root
+      if (typeof root !== 'object' || root === null || Array.isArray(root)) return null
+      return { root: root as Record<string, unknown>, completed: parseNodeCompleted(await run(nodeCompletedQuery(campaignId))) }
+    }),
+    catalogEvents(),
+  ])
+  return read === null ? null : { ...read, events, readAt: Date.now() }
 }

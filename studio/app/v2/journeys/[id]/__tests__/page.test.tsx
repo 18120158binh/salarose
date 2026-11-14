@@ -7,6 +7,7 @@ import type { Span } from "@/shared/lib/time-range";
 const mockRequireViewer = jest.fn();
 const mockLoadJourneySummary = jest.fn();
 const mockLoadJourneyAnalytics = jest.fn();
+const mockLoadJourneyCanvas = jest.fn();
 
 let mockPreview = true;
 jest.mock("../../../../../src/widgets/v2-shell/model/viewer", () => ({
@@ -17,7 +18,9 @@ jest.mock("../../../../../src/features/journeys/model/actions", () => ({}));
 jest.mock("../../../../../src/features/journey-analytics/model/server", () => ({
   loadJourneySummary: (...args: unknown[]) => mockLoadJourneySummary(...args),
   loadJourneyAnalytics: (...args: unknown[]) => mockLoadJourneyAnalytics(...args),
+  loadJourneyCanvas: (...args: unknown[]) => mockLoadJourneyCanvas(...args),
 }));
+jest.mock("../../../../../src/features/journey-analytics/model/actions", () => ({}));
 let mockTz: string | undefined;
 jest.mock("next/headers", () => ({
   cookies: async () => ({ get: (name: string) => (name === "tz" && mockTz !== undefined ? { value: mockTz } : undefined) }),
@@ -44,10 +47,10 @@ const LAN = { userId: "u-lan", email: "lan@example.com", role: "editor" };
 const MINH = { userId: "u-minh", email: "minh@example.com", role: "editor" };
 const ADMIN = { userId: "u-admin", email: "admin@example.com", role: "admin" };
 
-function open(id: string, range?: string) {
+function open(id: string, range?: string, tab?: string) {
   return V2JourneyAnalyticsPage({
     params: Promise.resolve({ id }),
-    searchParams: Promise.resolve(range === undefined ? {} : { range }),
+    searchParams: Promise.resolve({ ...(range === undefined ? {} : { range }), ...(tab === undefined ? {} : { tab }) }),
   });
 }
 
@@ -71,6 +74,12 @@ beforeEach(() => {
   mockRequireViewer.mockReset().mockResolvedValue(LAN);
   mockLoadJourneySummary.mockReset().mockResolvedValue(CART);
   mockLoadJourneyAnalytics.mockReset().mockResolvedValue({ nodes: [], removed: [] });
+  mockLoadJourneyCanvas.mockReset().mockResolvedValue({
+    root: { type: "setup", id: "start", label: "Start", triggerType: "user", triggerEventName: "add_to_cart", next: { type: "end" } },
+    events: [{ name: "add_to_cart", label: "Added to cart" }],
+    completed: { start: 12408 },
+    readAt: Date.UTC(2026, 10, 14, 9),
+  });
 });
 
 describe("/v2/journeys/[id]", () => {
@@ -191,5 +200,37 @@ describe("/v2/journeys/[id]", () => {
     expect(html).toContain("Cart abandonment");
     expect(html).toContain("All time");
     expect(html).not.toContain("<table");
+  });
+
+  it("opens on the Analytics tab, with a link to the Journey tab (JBD-FR-09)", async () => {
+    const page = await html(await open("CAMP-4f1c"));
+
+    expect(page).toMatch(/aria-current="page"[^>]*>Analytics</);
+    expect(page).toContain('href="/v2/journeys/CAMP-4f1c?tab=journey"');
+    expect(mockLoadJourneyCanvas).not.toHaveBeenCalled();
+  });
+
+  it("draws the read-only canvas with all-time Completed counts on ?tab=journey, for any staff user (JBD-FR-09)", async () => {
+    mockRequireViewer.mockResolvedValue(MINH);
+
+    const page = await html(await open("CAMP-4f1c", undefined, "journey"));
+
+    expect(page).toMatch(/aria-current="page"[^>]*>Journey</);
+    expect(page).toContain("Journey canvas");
+    expect(page).toContain("Added to cart");
+    expect(page).toContain("12,408");
+    expect(page).toContain("refreshes every 5 seconds");
+    expect(page).not.toContain("Last 7 days");
+    expect(mockLoadJourneyCanvas).toHaveBeenCalledWith("CAMP-4f1c");
+    expect(mockLoadJourneyAnalytics).not.toHaveBeenCalled();
+  });
+
+  it("keeps the header when the canvas's first read fails, leaving the error to its region (JBD-FR-09)", async () => {
+    mockLoadJourneyCanvas.mockRejectedValue(new Error("statement timeout"));
+    jest.spyOn(console, "error").mockImplementation(() => {});
+
+    const { html: page } = await render(await open("CAMP-4f1c", undefined, "journey"));
+
+    expect(page).toContain("Cart abandonment");
   });
 });
