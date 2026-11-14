@@ -49,5 +49,6 @@ Each record explains one choice that shapes the architecture: the context, the d
 | [0043](0043-apply-schema-changes-as-migrations-on-every-sync.md) | Apply schema changes as versioned migrations on every sync | Accepted | 2026-11-08 |
 | [0044](0044-classify-event-field-changes-as-safe-asks-first-or-breaking.md) | Classify event field changes as Safe, Asks first, or Breaking | Accepted | 2026-11-08 |
 | [0045](0045-adopt-the-salarose-design-system-and-approve-a-visual-draft-before-ui-code.md) | Adopt the Salarose design system, and approve a visual draft before UI code | Accepted | 2026-11-08 |
+| [0046](0046-cap-fan-out-at-10000-exact-items-and-thresholds-as-filters.md) | Cap fan-out at 10,000 people, match exact items, and express thresholds as filters | Accepted | 2026-11-14 |
 
 To add a decision, copy [the template](../../_templates/decision.md) to the next free number. Never edit an accepted record to reverse it. Write a new record and set `superseded_by` on the old one.
