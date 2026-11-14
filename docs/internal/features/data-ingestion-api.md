@@ -36,7 +36,7 @@ Out of scope:
 - The Snowplow tracker protocol as a request body. The API takes only the plain JSON below.
 - More than one customer on a deployment. A deployment serves one tenant, so a source key names a source, not a customer. See [decision 0027](../architecture/decisions/0027-multi-tenancy.md).
 
-The owner decided on 2026-11-05 that the API writes to topics of its own, whose format carries no Snowplow fields, that the body is plain JSON only, that backfill is out of scope, that a deployment has one tenant, and that an admin creates and revokes source keys in `studio`.
+The owner decided on 2026-11-05 that the API writes to topics of its own, whose format carries no Snowplow fields, that the body is plain JSON only, that backfill is out of scope, that a deployment has one tenant, and that an admin creates and revokes source keys in `studio`. [Decision 0049](../architecture/decisions/0049-the-ingestion-api-writes-plain-json-to-its-own-topic-and-leaves-history-to-import.md) records these choices and their reasons. History arrives through the [data import](data-import.md) instead.
 
 ## Terms
 
@@ -278,6 +278,7 @@ Event fields:
 - [Business event fan-out](../architecture/components/business-event-fan-out.md)
 - [0032. Fan out business events to interested people](../architecture/decisions/0032-fan-out-business-events-to-interested-people.md)
 - [Event catalog](event-catalog.md)
+- [0049. The ingestion API writes plain JSON to its own topic, and leaves history to the import](../architecture/decisions/0049-the-ingestion-api-writes-plain-json-to-its-own-topic-and-leaves-history-to-import.md)
 - [Onboard a customer](../operations/onboard-a-customer.md)
 - [Tracking integration guide](../integration/tracking-guide.md)
 - [Data import](data-import.md)
