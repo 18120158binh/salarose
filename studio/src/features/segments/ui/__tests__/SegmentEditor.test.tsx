@@ -14,6 +14,10 @@ jest.mock("next/navigation", () => ({ useRouter: () => router }));
 
 const ID = "SEG-4f1c9a0b2d3e5f67" as SegmentDraft["id"];
 const EVENTS: UserEventDef[] = [{ id: "1", name: "com.acme/add_to_cart", label: "Added to cart", fields: [] }];
+const EVENTS_WITH_FIELDS: UserEventDef[] = [{
+  ...EVENTS[0],
+  fields: [{ value: "product.price", label: "Product price", dataType: "number" }],
+}];
 const ACTIVE = { campaignId: "CAMP-A", campaignName: "Cart abandonment – Hà Nội", status: "active", kinds: ["entry_trigger"] } as const;
 const USED: JourneyUse[] = [
   { ...ACTIVE, kinds: ["entry_trigger"], href: "/v2/journeys/CAMP-A" },
@@ -77,11 +81,55 @@ describe("SegmentEditor", () => {
     expect(save.mock.calls[1][1]).toEqual(["CAMP-A"]);
   });
 
-  it("shows no size count before membership is stored, and offers no event filters (SEG-FR-08, SEG-FR-11)", () => {
+  it("shows no size count before membership is stored (SEG-FR-08)", () => {
     renderEditor();
 
     expect(screen.getByText("Size shows once membership is stored.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /filter/i })).not.toBeInTheDocument();
+  });
+
+  it("adds a filter, focuses its field, and returns focus to + filter on removal (SEG-FR-11)", async () => {
+    renderEditor();
+
+    fireEvent.click(screen.getByRole("button", { name: "filter" }));
+    const field = screen.getByRole("combobox", { name: "Filter 1 field" });
+    await waitFor(() => expect(field).toHaveFocus());
+    expect(screen.getByText("WHERE")).toBeInTheDocument();
+
+    expect(screen.getByRole("group", { name: "Event filters for com.acme/add_to_cart" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Filter 1 value" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Remove filter" }));
+    expect(screen.queryByRole("combobox", { name: "Filter 1 field" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "filter" })).toHaveFocus());
+  });
+
+  it("refuses a filter with no value, names it, marks it, and keeps the typed values (SEG-FR-43)", () => {
+    const initial = draft("2");
+    initial.groups[1][0] = { ...newBehaviorCondition("com.acme/add_to_cart"), filters: [{ field: "product.price", op: ">", value: "" }] };
+    render(<SegmentEditor details={null} events={EVENTS_WITH_FIELDS} initial={initial} usedBy={USED} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save segment" }));
+
+    expect(screen.getByText("Group 2, condition 1, filter 1 needs a value. Fill it in, or remove the filter. Nothing you typed was lost.")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Filter 1 value" })).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("textbox", { name: "Filter 1 value" })).toHaveAccessibleDescription("Needs a value");
+    expect(screen.getByText("product.price")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove filter Product price" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Filter 1 field" })).toHaveTextContent("Product price");
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("sends the filters with the save", async () => {
+    save.mockResolvedValue({ saved: true, id: ID });
+    const initial = draft("2");
+    initial.groups[1][0] = { ...newBehaviorCondition("com.acme/add_to_cart"), filters: [{ field: "product.price", op: ">", value: "500000" }] };
+    render(<SegmentEditor details={null} events={EVENTS_WITH_FIELDS} initial={initial} usedBy={USED} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save segment" }));
+
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    expect(save.mock.calls[0][0].conditions.groups[1].conditions[0].filters).toEqual({
+      groups: [{ conditions: [{ type: "event_property", field: "product.price", op: ">", value: 500000 }] }],
+    });
   });
 
   it("keeps a server refusal on the page with every typed value", async () => {
