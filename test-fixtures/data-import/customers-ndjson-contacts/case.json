@@ -1,0 +1,74 @@
+{
+  "description": "A profile NDJSON file: emails and phones normalized or dropped while the row stays (IAP-FR-08), a repeated customer key, a deleted person, and NDJSON types (IAP-FR-06).",
+  "kind": "profile",
+  "columns": [
+    {
+      "name": "customer_id",
+      "displayName": "Customer id",
+      "type": "string",
+      "pii": true,
+      "aliases": []
+    },
+    {
+      "name": "email",
+      "displayName": "Email",
+      "type": "string",
+      "pii": true,
+      "aliases": []
+    },
+    {
+      "name": "phone",
+      "displayName": "Phone",
+      "type": "string",
+      "pii": true,
+      "aliases": [
+        "mobile"
+      ]
+    },
+    {
+      "name": "age",
+      "displayName": "Age",
+      "type": "number",
+      "pii": false,
+      "aliases": []
+    },
+    {
+      "name": "vip",
+      "displayName": "VIP",
+      "type": "boolean",
+      "pii": false,
+      "aliases": []
+    },
+    {
+      "name": "signed_up",
+      "displayName": "Signed up",
+      "type": "datetime",
+      "pii": false,
+      "aliases": []
+    }
+  ],
+  "roles": {
+    "customer_key": "customer_id",
+    "email": [
+      "email"
+    ],
+    "phone": [
+      "phone"
+    ]
+  },
+  "deliveryMode": "snapshot",
+  "delimiter": ",",
+  "format": "ndjson",
+  "timeZone": "Asia/Ho_Chi_Minh",
+  "startedAt": "2026-11-14T01:50:00Z",
+  "phoneCountry": "VN",
+  "placeholders": [
+    "unknown",
+    "undefined",
+    "null"
+  ],
+  "tombstoneKey": "fixture-tombstone-key-of-32-chars-or-more",
+  "tombstonedKeys": [
+    "gone-1"
+  ]
+}

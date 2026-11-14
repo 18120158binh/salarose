@@ -1,0 +1,111 @@
+{
+  "counts": {
+    "rows_read": 14,
+    "valid": 3,
+    "rejected": 11,
+    "rejected_by_reason": {
+      "customer_key_missing": 2,
+      "event_time_invalid": 1,
+      "event_time_out_of_range": 2,
+      "record_id_duplicate": 1,
+      "record_id_missing": 1,
+      "type_mismatch:amount": 2,
+      "type_mismatch:meta": 1,
+      "type_mismatch:paid": 1
+    },
+    "contacts_dropped": {
+      "email": 0,
+      "phone": 0
+    }
+  },
+  "rejects": [
+    {
+      "line": 3,
+      "reason": "event_time_invalid"
+    },
+    {
+      "line": 5,
+      "reason": "record_id_duplicate"
+    },
+    {
+      "line": 6,
+      "reason": "customer_key_missing"
+    },
+    {
+      "line": 7,
+      "reason": "customer_key_missing"
+    },
+    {
+      "line": 8,
+      "reason": "record_id_missing"
+    },
+    {
+      "line": 9,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 10,
+      "reason": "type_mismatch:paid"
+    },
+    {
+      "line": 11,
+      "reason": "event_time_out_of_range"
+    },
+    {
+      "line": 12,
+      "reason": "event_time_out_of_range"
+    },
+    {
+      "line": 13,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 14,
+      "reason": "type_mismatch:meta"
+    }
+  ],
+  "conditions": [
+    "reject_threshold"
+  ],
+  "validRows": [
+    {
+      "line": 2,
+      "customerKey": "c-1",
+      "recordId": "o-1",
+      "data": {
+        "order_id": "o-1",
+        "customer_id": "c-1",
+        "event_time": "2026-11-07T08:00:00+07:00",
+        "amount": 120.5,
+        "paid": true
+      }
+    },
+    {
+      "line": 4,
+      "customerKey": "c-3",
+      "recordId": "o-17",
+      "data": {
+        "order_id": "o-17",
+        "customer_id": "c-3",
+        "event_time": "2026-11-07T09:30:00+07:00",
+        "amount": 5,
+        "paid": true,
+        "meta": {
+          "src": "pos"
+        }
+      }
+    },
+    {
+      "line": 15,
+      "customerKey": "0912345678 ",
+      "recordId": "o-14",
+      "data": {
+        "order_id": "o-14",
+        "customer_id": "0912345678 ",
+        "event_time": "2026-11-13T23:00:00Z",
+        "amount": 7
+      }
+    }
+  ],
+  "fileFailures": []
+}

@@ -1,0 +1,138 @@
+{
+  "counts": {
+    "rows_read": 970,
+    "valid": 940,
+    "rejected": 30,
+    "rejected_by_reason": {
+      "type_mismatch:amount": 30
+    },
+    "contacts_dropped": {
+      "email": 0,
+      "phone": 0
+    }
+  },
+  "rejects": [
+    {
+      "line": 9,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 33,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 46,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 59,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 83,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 96,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 109,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 133,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 146,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 159,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 183,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 196,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 209,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 233,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 246,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 259,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 283,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 296,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 309,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 333,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 346,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 359,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 383,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 396,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 409,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 433,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 446,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 459,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 483,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 496,
+      "reason": "type_mismatch:amount"
+    }
+  ],
+  "fileFailures": [],
+  "conditions": []
+}

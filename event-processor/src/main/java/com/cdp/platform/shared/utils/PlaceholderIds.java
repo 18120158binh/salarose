@@ -1,4 +1,4 @@
-package com.cdp.platform.jobs.eventparser.transforms;
+package com.cdp.platform.shared.utils;
 
 import java.io.Serializable;
 import java.util.LinkedHashSet;
@@ -13,7 +13,7 @@ import java.util.Set;
 public final class PlaceholderIds implements Serializable {
 
     public static final String VARIABLE = "EVENT_PARSE_PLACEHOLDER_IDS";
-    static final PlaceholderIds DEFAULT = new PlaceholderIds(Set.of("unknown", "undefined", "null"));
+    public static final PlaceholderIds DEFAULT = new PlaceholderIds(Set.of("unknown", "undefined", "null"));
 
     private final Set<String> values;
 
@@ -41,7 +41,7 @@ public final class PlaceholderIds implements Serializable {
     }
 
     /** The trimmed identifier, or null when it is blank or a placeholder. */
-    String normalize(String id) {
+    public String normalize(String id) {
         if (id == null) return null;
         String trimmed = id.trim();
         return trimmed.isEmpty() || values.contains(trimmed.toLowerCase(Locale.ROOT)) ? null : trimmed;

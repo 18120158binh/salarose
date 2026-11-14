@@ -3,12 +3,12 @@ title: Import applier
 slug: import-applier
 purpose: Validate each delivered import file and apply its records to the import store, exactly once in effect, without ever applying a broken export.
 status: accepted
-implementation: planned
+implementation: partial
 area: event-processor
 tags: [data-import, batch, validation, idempotency, privacy]
 created: 2026-11-08
-updated: 2026-11-08
-version: 1.0
+updated: 2026-11-14
+version: 1.1
 known_issues: ../../known-issues/components/import-applier.md
 ---
 
@@ -132,6 +132,12 @@ File-level failures apply nothing and quarantine the run with the reason:
 
 A header matches a column when it equals the column's name or one of its aliases, exactly. For NDJSON, each top-level key plays the role of a header.
 
+- A CSV record ends at CRLF or LF. A line with no character at all is skipped. A record with a field count other than the header's is `format_invalid`.
+- A UTF-8 byte order mark at the start of the file is skipped.
+- Two headers, or two keys of one NDJSON object, that match the same column are `format_invalid`, because the row has no single value for it. A duplicate key in an NDJSON object is `format_invalid` too.
+- A blank NDJSON line is skipped. An NDJSON file is `role_missing:<role>` when no line holds a key for a required role.
+- A file with checksum or size that differs fails as `checksum_mismatch`, whatever else fails in it, because the bytes are not the file delivered.
+
 ### 3. Validate each row
 
 The applier parses each row into the version's types at this boundary. Nothing after this step checks a type again.
@@ -149,7 +155,9 @@ The applier parses each row into the version's types at this boundary. Nothing a
 
 The applier stores the customer key exactly as delivered. It does not trim it, change its case, or reformat it.
 
-A datetime value with an offset keeps it. A value without one is read in the version's time zone. A `number` is a finite JSON number, or in CSV a decimal with a `.` separator and no thousands separator. A `boolean` is `true` or `false`, in any case, and CSV also accepts `1` and `0`. An empty CSV cell, or a missing or `null` NDJSON key, means no value, which is valid for every column that plays no required role.
+A datetime value is an ISO-8601 date-time, with `T` or a space between date and time, or a bare date, which means the start of its day. A value with an offset keeps it. A value without one is read in the version's time zone. In NDJSON a datetime is a JSON string. The stored form is ISO-8601 with seconds and the offset, such as `2026-11-07T08:00:00+07:00`. A `number` is a finite JSON number, or in CSV a decimal with a `.` separator and no thousands separator. A `boolean` is `true` or `false`, in any case, as a JSON boolean or a string, and CSV also accepts `1` and `0`. A `string` column in NDJSON takes a JSON string only. A `json` column in CSV holds JSON text. An empty CSV cell, or a missing or `null` NDJSON key, means no value, which is valid for every column that plays no required role.
+
+A row gets the first reason in the table's order. A record id or a customer key counts as seen once a row reaches its duplicate check, even when a later check rejects that row.
 
 Emails and phones are normalized, not rejected:
 
@@ -204,7 +212,7 @@ The run report holds:
 - Each quarantine condition that held, and each file-level failure.
 - Up to 100 sample rejected rows, each with its line number and reason. Their values stay in the rejects file.
 
-The report goes to `reports/<run_id>.json` in the drop zone without row values, and its counts go on the run's `counts`. The rejected rows with their values go to `rejects/<run_id>.ndjson.gz`, which only admins may download. Studio reads the sample rows' values from the rejects file and masks every PII value in them for every role, as [data import](../../features/data-import.md#privacy) requires.
+The report goes to `reports/<run_id>.json` in the drop zone without row values, and its counts go on the run's `counts`. The counts are `rows_read`, `valid`, `rejected`, `rejected_by_reason` by reason, `contacts_dropped` and `contacts_shared` by `email` and `phone`, `distinct_customer_keys`, `match_rate` from 0 to 1 when the file has a valid row, and `new_records`, the valid event rows whose record id the store lacks. The report adds `quarantine_conditions` (`reject_threshold`, `snapshot_shrink`, `record_cap`), `file_failures`, and `sample_rejects`, each with its `line` and `reason`. The run's `reason` joins the conditions or the failures with `, `. The rejected rows with their values go to `rejects/<run_id>.ndjson.gz`, which only admins may download. Studio reads the sample rows' values from the rejects file and masks every PII value in them for every role, as [data import](../../features/data-import.md#privacy) requires.
 
 ### 7. Delete a person
 

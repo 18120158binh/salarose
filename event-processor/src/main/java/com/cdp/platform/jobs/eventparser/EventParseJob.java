@@ -36,7 +36,6 @@ import com.cdp.platform.jobs.eventparser.transforms.DeadLetter;
 import com.cdp.platform.jobs.eventparser.transforms.LegacyContextPrefix;
 import com.cdp.platform.jobs.eventparser.transforms.ParseApiEvent;
 import com.cdp.platform.jobs.eventparser.transforms.ParseSnowplowEvent;
-import com.cdp.platform.jobs.eventparser.transforms.PlaceholderIds;
 import com.cdp.platform.jobs.eventparser.transforms.SchemaGateFunction;
 import com.cdp.platform.jobs.eventparser.volume.EventVolumeCounter;
 import com.cdp.platform.shared.config.DatabaseConfig;
@@ -48,6 +47,7 @@ import com.cdp.platform.shared.db.sinks.JdbcSinkOptions;
 import com.cdp.platform.shared.models.ParsedEvent;
 import com.cdp.platform.shared.models.source.KafkaSourceConfig;
 import com.cdp.platform.shared.utils.JsonSerializationSchema;
+import com.cdp.platform.shared.utils.PlaceholderIds;
 
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 
