@@ -16,6 +16,7 @@
         <jackson.version>2.17.1</jackson.version>
         <jooq.version>3.20.18</jooq.version>
         <thrift.version>0.20.0</thrift.version>
+        <awssdk.version>2.29.52</awssdk.version>
     </properties>
 
     <dependencies>
@@ -227,6 +228,33 @@
             <artifactId>hadoop-client</artifactId>
             <version>3.3.6</version>
             <scope>provided</scope>
+        </dependency>
+        <!-- The import applier (jobs/importapplier), a batch process with no Flink: the drop zone on S3 and phone
+             numbers. The URL connection client keeps Netty and the Apache client out of the jar. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>${awssdk.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>netty-nio-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>apache-client</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>url-connection-client</artifactId>
+            <version>${awssdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.googlecode.libphonenumber</groupId>
+            <artifactId>libphonenumber</artifactId>
+            <version>8.13.52</version>
         </dependency>
     </dependencies>
 

@@ -40,12 +40,14 @@ jobs:
             event-processor:
               - 'event-processor/**'
               - 'infra/db/**'
+              - 'test-fixtures/**'
               - 'docs/internal/operations/deployment.md'
               - '.github/workflows/pr-checks.yml'
             studio:
               - 'studio/**'
               - 'shared/**'
               - 'infra/db/**'
+              - 'test-fixtures/**'
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'

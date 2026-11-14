@@ -1,0 +1,260 @@
+{
+  "counts": {
+    "rows_read": 1000,
+    "valid": 940,
+    "rejected": 60,
+    "rejected_by_reason": {
+      "type_mismatch:amount": 60
+    },
+    "contacts_dropped": {
+      "email": 0,
+      "phone": 0
+    }
+  },
+  "rejects": [
+    {
+      "line": 9,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 33,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 46,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 59,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 83,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 96,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 109,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 133,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 146,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 159,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 183,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 196,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 209,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 233,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 246,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 259,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 283,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 296,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 309,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 333,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 346,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 359,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 383,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 396,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 409,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 433,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 446,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 459,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 483,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 496,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 509,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 533,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 546,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 559,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 583,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 596,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 609,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 633,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 646,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 659,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 683,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 696,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 709,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 733,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 746,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 759,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 783,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 796,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 809,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 833,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 846,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 859,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 883,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 896,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 909,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 933,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 946,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 959,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 983,
+      "reason": "type_mismatch:amount"
+    },
+    {
+      "line": 996,
+      "reason": "type_mismatch:amount"
+    }
+  ],
+  "conditions": [
+    "reject_threshold"
+  ],
+  "fileFailures": []
+}

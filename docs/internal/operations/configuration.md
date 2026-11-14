@@ -217,20 +217,22 @@ Studio checks each tool at most once per 15 seconds per app process, with a 3-se
 
 ## Data import
 
-Data import is planned ([data import](../features/data-import.md)). Its settings have no variable names yet. The lane that builds each reader names the variable and replaces its row here with the variable, its default, and its rules.
+Data import is being built ([data import](../features/data-import.md)). A setting with a variable name is read under that name. The others have no reader yet: the lane that builds one names the variable and replaces its row here with the variable, its default, and its rules.
+
+The import applier reads its settings once at start, and stops before it takes the applier lock when one is missing or malformed. It also reads the `DB_` variables above for the main Postgres, and `EVENT_PARSE_PLACEHOLDER_IDS` for the placeholder ids a customer key may not equal, as event ingestion compares them. Its CronJob takes them from the secrets and the ConfigMap in [batch jobs](batch-jobs.md#the-import-applier).
 
 | Setting | Read by | Default | Effect |
 |---|---|---|---|
 | Reporting time zone | Import metric pass, import applier, studio | `Asia/Ho_Chi_Minh` | IANA zone of the nightly schedule and of datetimes without an offset. Shown read-only on `/settings`. |
-| Default phone country | Import applier, studio | `VN` | Country for phone numbers without a country code. Shown read-only on `/settings`. |
-| Tombstone key, `IMPORT_TOMBSTONE_KEY` in studio | Import applier, import metric pass, studio | None, required | Secret that keys the tombstone HMAC. Created once per deployment and never rotated, because a new key makes every tombstone miss. Keep it in a secret and in the deployment's secret backup. |
-| Import store connection | Import applier, import metric pass, studio | None | Host, database, user, and password of the import store. Studio's user may only read. |
-| Drop zone bucket and prefix, `IMPORTS_BUCKET` in studio | Import applier, studio | `imports/` in the deployment's bucket | Where files land. Lifecycle: `incoming/` 30 days, `rejects/` 14 days. |
-| Applier interval | Import applier | 10 minutes | How often the applier starts and drains the queue |
-| Reject threshold | Import applier | 5% | Share of rejected rows that quarantines a run |
-| Snapshot shrink ratio | Import applier | 80% | Share of the writer's last snapshot below which a snapshot is quarantined |
-| Record cap | Import applier | 5,000,000 | Most rows `import_records` may hold |
-| History limit, future limit | Import applier | 3 years, 1 day | Event time range a row may have |
+| Default phone country, `IMPORT_DEFAULT_PHONE_COUNTRY` in the applier | Import applier, studio | `VN` | ISO 3166-1 region for phone numbers without a country code. Shown read-only on `/settings`. A region the phone library does not know stops the applier at start. |
+| Tombstone key, `IMPORT_TOMBSTONE_KEY` in studio and the applier | Import applier, import metric pass, studio | None, required | Secret that keys the tombstone HMAC. Created once per deployment and never rotated, because a new key makes every tombstone miss. Keep it in a secret and in the deployment's secret backup. |
+| Import store connection, `IMPORT_DB_HOST`, `IMPORT_DB_PORT`, `IMPORT_DB_DATABASE`, `IMPORT_DB_USER`, `IMPORT_DB_PASSWORD` in the applier | Import applier, import metric pass, studio | None, except the port `5432` | Host, database, user, and password of the import store. Studio's user may only read. |
+| Drop zone bucket and prefix, `IMPORTS_BUCKET` in studio and the applier | Import applier, studio | `imports/` in the deployment's bucket | Where files land. Lifecycle: `incoming/` 30 days, `rejects/` 14 days. |
+| Applier interval, the `schedule` of the CronJob `import-applier` | Import applier | 10 minutes | How often the applier starts and drains the queue |
+| Reject threshold, `IMPORT_REJECT_THRESHOLD` | Import applier | `0.05` | Share of rejected rows, from 0 to 1, above which a run is quarantined |
+| Snapshot shrink ratio, `IMPORT_SHRINK_RATIO` | Import applier | `0.8` | Share, from 0 to 1, of the type's last source-key snapshot below which a snapshot is quarantined |
+| Record cap, `IMPORT_RECORD_CAP` | Import applier | `5000000` | Most rows `import_records` may hold. A positive integer. |
+| History limit, future limit, `IMPORT_HISTORY_LIMIT` and `IMPORT_FUTURE_LIMIT` | Import applier | `P3Y`, `P1D` | Event time range a row may have, around the run's start, as positive ISO-8601 periods |
 | Pass schedule | Import metric pass | 03:00 | Local time of the nightly pass, in the reporting time zone |
 | Pass job interval | Import metric pass | 10 minutes | How often the pass job starts to look for the night's pass or a requested retry |
 | Batch size | Import metric pass | 500 rows | Upserts between two governor checks |

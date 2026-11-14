@@ -1,0 +1,2 @@
+# Golden fixtures are compared byte for byte, line ends included.
+test-fixtures/** -text

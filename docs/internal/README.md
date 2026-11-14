@@ -71,6 +71,7 @@ A feature is something a person uses: a marketer or an admin in `studio`, or a c
 
 - [Onboard a customer](operations/onboard-a-customer.md): intake, provisioning, the collector in production, studio setup, and the first events
 - [Configuration](operations/configuration.md): every environment variable and its default
+- [Batch jobs](operations/batch-jobs.md): how a Java job without Flink is written, built, scheduled as a CronJob, and deployed
 - [How to run the stack locally](operations/local-environment.md)
 - [Deployment](operations/deployment.md)
 - [AWS Free Plan environment](operations/aws-free-plan.md): the contract for a short-lived three-node k3s deploy on an AWS Free Plan account

@@ -1,0 +1,16 @@
+# syntax=docker/dockerfile:1.7
+# The batch jobs image: Java mains in the event-processor build that run without Flink, each as a Kubernetes
+# CronJob that names its main class as the container's argument (docs/internal/operations/batch-jobs.md).
+# Build the jar first: ./event-processor/mvnw -f event-processor/pom.xml package
+FROM docker.io/library/eclipse-temurin:21.0.5_11-jre
+
+# The shaded jar leaves out SLF4J and the Postgres driver, which Flink's lib provides to the Flink jobs, so the batch
+# image adds them at the versions in pom.xml, each pinned to its SHA-256 from Maven Central.
+ADD --chmod=644 --checksum=sha256:a2644cbfba1baa145ff7e8c8ef582a6eed7a7ec4ca792f7f054122bdec756268 https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.3/postgresql-42.7.3.jar /opt/batch/lib/
+ADD --chmod=644 --checksum=sha256:a79502b8abdfbd722846a27691226a4088682d6d35654f9b80e2a9ccacf7ed47 https://repo1.maven.org/maven2/org/slf4j/slf4j-api/2.0.12/slf4j-api-2.0.12.jar /opt/batch/lib/
+ADD --chmod=644 --checksum=sha256:4cd8f3d6236044600e7054da7c124c6d2e9f45eb43c77d4e9b093fe1095edc85 https://repo1.maven.org/maven2/org/slf4j/slf4j-simple/2.0.12/slf4j-simple-2.0.12.jar /opt/batch/lib/
+COPY target/event-processor-1.0.0-SNAPSHOT.jar /opt/batch/batch-jobs.jar
+
+USER 10001
+# 75% of the container's memory limit for the heap leaves the rest to metaspace, threads, and buffers.
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-Djava.io.tmpdir=/tmp", "-cp", "/opt/batch/batch-jobs.jar:/opt/batch/lib/*"]

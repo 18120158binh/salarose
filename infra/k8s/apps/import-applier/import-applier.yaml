@@ -1,0 +1,102 @@
+# Starts the import applier every 10 minutes (IAP-NFR-02). It drains the queue and exits. The applier lock on the main
+# Postgres keeps a second instance from running (IAP-FR-23); Forbid only saves the pod a second instance would cost.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: import-applier
+  labels:
+    app.kubernetes.io/name: import-applier
+spec:
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # A failed start retries at the next schedule, not at once: the applier resumes from the database.
+      backoffLimit: 0
+      activeDeadlineSeconds: 7200
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: import-applier
+        spec:
+          restartPolicy: Never
+          nodeSelector:
+            cdp.io/pool: compute
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+          containers:
+            - name: import-applier
+              image: cdp/batch-jobs
+              args: ["com.cdp.platform.jobs.importapplier.ImportApplierMain"]
+              env:
+                - name: DB_HOST
+                  value: cdp-pg-rw.cdp.svc
+                - name: DB_PORT
+                  value: "5432"
+                - name: DB_DATABASE
+                  value: auroracy
+                - name: DB_USER
+                  value: cdp
+                - name: DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: cdp-pg-app
+                      key: password
+                - name: IMPORT_DB_HOST
+                  value: cdp-import-pg-rw.cdp.svc
+                - name: IMPORT_DB_DATABASE
+                  valueFrom:
+                    secretKeyRef:
+                      name: cdp-import-pg-app
+                      key: dbname
+                - name: IMPORT_DB_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: cdp-import-pg-app
+                      key: username
+                - name: IMPORT_DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: cdp-import-pg-app
+                      key: password
+                - name: IMPORTS_BUCKET
+                  valueFrom:
+                    configMapKeyRef:
+                      name: import-applier-env
+                      key: IMPORTS_BUCKET
+                - name: AWS_REGION
+                  valueFrom:
+                    configMapKeyRef:
+                      name: import-applier-env
+                      key: AWS_REGION
+                - name: IMPORT_TOMBSTONE_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: cdp-import-tombstone
+                      key: key
+              resources:
+                requests:
+                  cpu: "1"
+                  memory: 2Gi
+                limits:
+                  cpu: "1"
+                  memory: 2Gi
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            # The rejects file streams here before its upload.
+            - name: tmp
+              emptyDir:
+                sizeLimit: 4Gi

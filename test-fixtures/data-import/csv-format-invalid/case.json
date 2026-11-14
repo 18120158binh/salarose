@@ -1,0 +1,74 @@
+{
+  "description": "A quote inside a plain field breaks RFC 4180 (IAP-FR-05).",
+  "kind": "event",
+  "columns": [
+    {
+      "name": "order_id",
+      "displayName": "Order id",
+      "type": "string",
+      "pii": false,
+      "aliases": [
+        "id"
+      ]
+    },
+    {
+      "name": "customer_id",
+      "displayName": "Customer id",
+      "type": "string",
+      "pii": true,
+      "aliases": [
+        "user_id"
+      ]
+    },
+    {
+      "name": "event_time",
+      "displayName": "Event time",
+      "type": "datetime",
+      "pii": false,
+      "aliases": [
+        "created_at"
+      ]
+    },
+    {
+      "name": "amount",
+      "displayName": "Amount",
+      "type": "number",
+      "pii": false,
+      "aliases": [
+        "total"
+      ]
+    },
+    {
+      "name": "paid",
+      "displayName": "Paid",
+      "type": "boolean",
+      "pii": false,
+      "aliases": []
+    },
+    {
+      "name": "meta",
+      "displayName": "Meta",
+      "type": "json",
+      "pii": false,
+      "aliases": []
+    }
+  ],
+  "roles": {
+    "customer_key": "customer_id",
+    "record_id": "order_id",
+    "event_time": "event_time"
+  },
+  "deliveryMode": "incremental",
+  "delimiter": ",",
+  "format": "csv",
+  "timeZone": "Asia/Ho_Chi_Minh",
+  "startedAt": "2026-11-14T01:50:00Z",
+  "phoneCountry": "VN",
+  "placeholders": [
+    "unknown",
+    "undefined",
+    "null"
+  ],
+  "tombstoneKey": "fixture-tombstone-key-of-32-chars-or-more",
+  "tombstonedKeys": []
+}
