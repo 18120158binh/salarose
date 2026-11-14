@@ -327,18 +327,27 @@ final class MetricPass {
         governor.awaitClear(deadline, lock::check);
         Written written = statement.run();
         progress.walBytes += written.walBytes();
-        holdOwnRate(publishStart, progress.walBytes);
+        holdOwnRate(publishStart, progress.walBytes, deadline);
         return written;
     }
 
     /**
-     * Sleeps until the own WAL so far is within the own rate since publishing began
-     * (IMP-NFR-02).
+     * Sleeps until the own WAL so far is within the own rate over the time spent
+     * writing since publishing began (IMP-NFR-02). Governor pauses do not count,
+     * so a long pause earns no burst. The sleep ends at the deadline, and the
+     * lock is checked after it.
      */
-    private void holdOwnRate(Instant publishStart, long walBytes) throws InterruptedException {
+    private void holdOwnRate(Instant publishStart, long walBytes, Instant deadline) throws InterruptedException {
         Duration due = Duration.ofMillis((long) Math.ceil(walBytes / settings.ownWalBytesPerSecond() * 1000));
-        Duration elapsed = Duration.between(publishStart, clock.instant());
-        if (due.compareTo(elapsed) > 0) sleeper.sleep(due.minus(elapsed));
+        Instant now = clock.instant();
+        Duration paused = Duration.ofMillis((long) (governor.pausedSeconds() * 1000));
+        Duration writing = Duration.between(publishStart, now).minus(paused);
+        Duration sleep = due.minus(writing);
+        Duration untilDeadline = Duration.between(now, deadline);
+        if (sleep.compareTo(untilDeadline) > 0) sleep = untilDeadline;
+        if (sleep.isNegative() || sleep.isZero()) return;
+        sleeper.sleep(sleep);
+        lock.check();
     }
 
     /** What the pass has done so far, recorded when it ends either way. */

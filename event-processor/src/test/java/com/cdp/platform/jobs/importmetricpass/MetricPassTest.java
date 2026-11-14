@@ -262,6 +262,28 @@ class MetricPassTest {
         assertEquals("failed", ledger.passes.getFirst().state);
     }
 
+    @Test
+    void aGovernorPauseEarnsNoBurstOfOwnWal() throws Exception {
+        for (int i = 0; i < 4; i++) {
+            store.orders.add(event("c-" + i, Map.of("orders_90d", DoubleNode.valueOf(i))));
+        }
+        ledger.walPerStatement = 262_144;
+        WalGovernor.Reading clear = new WalGovernor.Reading(OptionalDouble.of(0.9), OptionalDouble.of(0.9),
+            OptionalDouble.of(0));
+        WalGovernor.Reading lowSlot = new WalGovernor.Reading(OptionalDouble.of(0.1), OptionalDouble.of(0.9),
+            OptionalDouble.of(0));
+        readings.add(clear);
+        for (int i = 0; i < 80; i++)
+            readings.add(lowSlot);
+
+        pass().run();
+
+        assertEquals(Duration.ofMinutes(40), Duration
+            .between(ledger.passes.getLast().pauses.getFirst().start(),
+                ledger.passes.getLast().pauses.getFirst().end()));
+        assertEquals(List.of(Duration.ofSeconds(1), Duration.ofSeconds(1)), ownRateSleeps);
+    }
+
     MetricPass pass() {
         WalGovernor governor = new WalGovernor(
             () -> readings.isEmpty()
@@ -285,8 +307,10 @@ class MetricPassTest {
             }
         };
         ledger.snapshotOpen = () -> store.open;
-        return new MetricPass(ledger, store::snapshot, governor, SETTINGS, LockGuard.none(), clock,
-            ownRateSleeps::add);
+        return new MetricPass(ledger, store::snapshot, governor, SETTINGS, LockGuard.none(), clock, duration -> {
+            ownRateSleeps.add(duration);
+            now = now.plus(duration);
+        });
     }
 
     static ImportSnapshot.EventRow event(String customerKey, Map<String, JsonNode> values) {
