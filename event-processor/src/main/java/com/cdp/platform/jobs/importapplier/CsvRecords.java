@@ -18,6 +18,7 @@ final class CsvRecords {
     private final char delimiter;
     private long line = 1;
     private long recordLine;
+    private int recordChars;
 
     CsvRecords(Reader reader, char delimiter) {
         this.reader = reader;
@@ -39,6 +40,7 @@ final class CsvRecords {
         }
         if (c == -1) return null;
         recordLine = line;
+        recordChars = 0;
         List<String> fields = new ArrayList<>();
         StringBuilder field = new StringBuilder();
         while (true) {
@@ -47,7 +49,7 @@ final class CsvRecords {
             } else {
                 while (c != -1 && c != delimiter && c != '\n' && c != '\r') {
                     if (c == '"') throw new FileFailure(FileFailure.FORMAT_INVALID);
-                    field.append((char) c);
+                    append(field, c);
                     c = read();
                 }
             }
@@ -81,8 +83,17 @@ final class CsvRecords {
             } else if (c == '\n') {
                 line++;
             }
-            field.append((char) c);
+            append(field, c);
         }
+    }
+
+    /**
+     * Appends a character, failing once the record passes
+     * {@link FileRows#MAX_RECORD_CHARS}.
+     */
+    private void append(StringBuilder field, int c) throws FileFailure {
+        if (++recordChars > FileRows.MAX_RECORD_CHARS) throw new FileFailure(FileFailure.FORMAT_INVALID);
+        field.append((char) c);
     }
 
     private int read() throws IOException {

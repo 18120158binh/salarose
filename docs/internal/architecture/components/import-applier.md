@@ -133,6 +133,7 @@ File-level failures apply nothing and quarantine the run with the reason:
 A header matches a column when it equals the column's name or one of its aliases, exactly. For NDJSON, each top-level key plays the role of a header.
 
 - A CSV record ends at CRLF or LF. A line with no character at all is skipped. A record with a field count other than the header's is `format_invalid`.
+- A CSV record or an NDJSON line longer than 1 MiB (1,048,576 characters) is `format_invalid`, so an unterminated quote or a file without line ends fails the run instead of exhausting the applier's memory.
 - A UTF-8 byte order mark at the start of the file is skipped.
 - Two headers, or two keys of one NDJSON object, that match the same column are `format_invalid`, because the row has no single value for it. A duplicate key in an NDJSON object is `format_invalid` too.
 - A blank NDJSON line is skipped. An NDJSON file is `role_missing:<role>` when no line holds a key for a required role.

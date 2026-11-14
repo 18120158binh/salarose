@@ -27,6 +27,14 @@ final class FileFailure extends Exception {
         return reasons;
     }
 
+    /**
+     * The reasons without what follows a colon, for logs: a header can be a row
+     * value when a file has no header row (IAP-NFR-04).
+     */
+    String reasonCodes() {
+        return String.join(", ", reasons.stream().map(reason -> reason.split(":", 2)[0]).distinct().toList());
+    }
+
     static String roleMissing(String role) {
         return "role_missing:" + role;
     }

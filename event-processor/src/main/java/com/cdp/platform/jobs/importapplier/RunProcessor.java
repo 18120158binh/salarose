@@ -70,7 +70,7 @@ final class RunProcessor {
                 boolean moved = runs.quarantine(run.id(), String.join(", ", failure.reasons()), counts);
                 LOG
                     .info("run {} quarantined by a file-level failure: {} (moved: {})", run.id(),
-                        failure.getMessage(), moved);
+                        failure.reasonCodes(), moved);
                 return Outcome.QUARANTINED;
             }
             ObjectNode counts = RunReport.counts(stats);

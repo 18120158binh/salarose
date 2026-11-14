@@ -36,6 +36,12 @@ final class FileRows {
     private static final ObjectMapper JSON = new ObjectMapper()
         .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 
+    /**
+     * The most characters a CSV record or an NDJSON line may hold: 1 MiB
+     * (IAP-NFR-01).
+     */
+    static final int MAX_RECORD_CHARS = 1 << 20;
+
     private final DatasetVersion version;
     private final boolean csv;
     private final BufferedReader reader;
@@ -138,7 +144,7 @@ final class FileRows {
     private RawRow nextJson() throws IOException, FileFailure {
         String text;
         do {
-            text = decoding(reader::readLine);
+            text = decoding(this::readBoundedLine);
             if (text == null) return null;
             line++;
             if (line == 1 && text.startsWith("﻿")) text = text.substring(1);
@@ -165,6 +171,25 @@ final class FileRows {
             }
         }
         return new RawRow(line, false, values, raw);
+    }
+
+    /**
+     * Reads one NDJSON line without its line end, or null at the end. A line
+     * longer than {@link #MAX_RECORD_CHARS} is {@code format_invalid}, so a file
+     * with no line ends cannot exhaust the heap.
+     */
+    private String readBoundedLine() throws IOException, FileFailure {
+        StringBuilder text = new StringBuilder();
+        int c = reader.read();
+        if (c == -1) return null;
+        while (c != -1 && c != '\n') {
+            if (text.length() == MAX_RECORD_CHARS) throw new FileFailure(FileFailure.FORMAT_INVALID);
+            text.append((char) c);
+            c = reader.read();
+        }
+        int last = text.length() - 1;
+        if (last >= 0 && text.charAt(last) == '\r') text.setLength(last);
+        return text.toString();
     }
 
     private interface Read<T> {
