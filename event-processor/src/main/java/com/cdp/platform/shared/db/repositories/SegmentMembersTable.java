@@ -1,5 +1,10 @@
 package com.cdp.platform.shared.db.repositories;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+
 /**
  * The table {@code segment_members}: one row per tracked person in a segment,
  * with the time they entered. The profile writer is its only writer, and it
@@ -13,34 +18,23 @@ public final class SegmentMembersTable {
     static final String CANON_ID = "canon_id";
     static final String SINCE = "since";
 
+    static final String APPLY_CHANGE_SQL = "/sql/segment_members_apply_change.sql";
+
     private SegmentMembersTable() {
     }
 
     /**
-     * Applies one change, with the parameters {@code entered}, {@code segment_id},
-     * {@code canon_id}, and {@code since}. An exited change deletes the row. An
-     * entered change sets {@code since} only when it differs, and inserts the row
-     * when there is none. Neither the update nor the insert touches a row that
-     * already holds the change's {@code since}, so a repeated change writes no WAL
-     * and takes no row lock (PRW-FR-12). An upsert with {@code DO UPDATE} would
-     * lock the row even when its {@code WHERE} matches nothing.
+     * The statement that applies one change, with the parameters {@code entered},
+     * {@code segment_id}, {@code canon_id}, and {@code since}. It lives in
+     * {@value #APPLY_CHANGE_SQL}, which {@code infra/db/test-migrations.sh} also
+     * runs against the migrated schema, so the two cannot drift.
      */
     static String applyChangeSql() {
-        return """
-            WITH change (entered, segment_id, canon_id, since) AS (
-                VALUES (CAST(? AS boolean), CAST(? AS text), CAST(? AS text), CAST(? AS timestamptz))
-            ), deleted AS (
-                DELETE FROM %1$s m USING change c
-                WHERE NOT c.entered AND m.%2$s = c.segment_id AND m.%3$s = c.canon_id
-            ), updated AS (
-                UPDATE %1$s m SET %4$s = c.since FROM change c
-                WHERE c.entered AND m.%2$s = c.segment_id AND m.%3$s = c.canon_id AND m.%4$s <> c.since
-                RETURNING 1
-            )
-            INSERT INTO %1$s (%2$s, %3$s, %4$s)
-            SELECT c.segment_id, c.canon_id, c.since FROM change c
-            WHERE c.entered AND NOT EXISTS (SELECT 1 FROM updated)
-            ON CONFLICT (%2$s, %3$s) DO NOTHING
-            """.formatted(TABLE_NAME, SEGMENT_ID, CANON_ID, SINCE);
+        try (InputStream in = SegmentMembersTable.class.getResourceAsStream(APPLY_CHANGE_SQL)) {
+            if (in == null) throw new IllegalStateException("Missing resource " + APPLY_CHANGE_SQL);
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            throw new UncheckedIOException("Cannot read " + APPLY_CHANGE_SQL, exception);
+        }
     }
 }

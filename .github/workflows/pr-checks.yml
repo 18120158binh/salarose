@@ -60,6 +60,7 @@ jobs:
               - '.github/workflows/pr-checks.yml'
             db-migrations:
               - 'infra/db/**'
+              - 'event-processor/src/main/resources/sql/**'
               - 'infra/k8s/data/db-migrate.yaml'
               - '.github/workflows/pr-checks.yml'
 

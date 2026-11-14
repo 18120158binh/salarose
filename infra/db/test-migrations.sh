@@ -111,6 +111,53 @@ diff -u <(dump mig_reference) <(dump mig_fresh) >"$WORK/drift.diff" || {
   cat "$WORK/drift.diff"; fail "the migrations and infra/db/schema.sql build different schemas (- schema.sql, + migrations)"; }
 pass "migrations match schema.sql"
 
+# PRW-FR-08 to PRW-FR-12: the profile writer's own statement, read from the file the job loads, on the migrated schema.
+APPLY_SQL="$ROOT/event-processor/src/main/resources/sql/segment_members_apply_change.sql"
+[[ -f $APPLY_SQL ]] || fail "missing $APPLY_SQL"
+[[ $(grep -v '^--' "$APPLY_SQL" | tr -cd '?' | wc -c) -eq 4 ]] || fail "$APPLY_SQL must have exactly 4 parameters"
+# JDBC's ? placeholders become $1..$4 for PREPARE. The file's comments are dropped, so a ? in one cannot shift them.
+apply_sql=$(grep -v '^--' "$APPLY_SQL" | awk '{ while (index($0, "?")) { n++; sub(/\?/, "$" n) } print }')
+members=$(sql cdp mig_fresh <<SQL
+PREPARE apply(boolean, text, text, timestamptz) AS $apply_sql;
+-- entered on an empty table writes the row.
+EXECUTE apply(true, 'SEG-3f9a0c1d7e2b4a65', 'customer-42', '2026-08-03 10:00+00');
+SELECT 'entered|' || count(*) || '|' || min(since AT TIME ZONE 'UTC') FROM segment_members;
+-- exited deletes it.
+EXECUTE apply(false, 'SEG-3f9a0c1d7e2b4a65', 'customer-42', NULL);
+SELECT 'exited|' || count(*) FROM segment_members;
+-- exited with no row is a no-op.
+EXECUTE apply(false, 'SEG-3f9a0c1d7e2b4a65', 'customer-42', NULL);
+SELECT 'exited-missing|' || count(*) FROM segment_members;
+-- entered 10:00, exited, entered 11:00, then a restore from after the first replays the last two.
+EXECUTE apply(true, 'SEG-3f9a0c1d7e2b4a65', 'customer-7', '2026-08-03 10:00+00');
+EXECUTE apply(false, 'SEG-3f9a0c1d7e2b4a65', 'customer-7', NULL);
+EXECUTE apply(true, 'SEG-3f9a0c1d7e2b4a65', 'customer-7', '2026-08-03 11:00+00');
+EXECUTE apply(false, 'SEG-3f9a0c1d7e2b4a65', 'customer-7', NULL);
+EXECUTE apply(true, 'SEG-3f9a0c1d7e2b4a65', 'customer-7', '2026-08-03 11:00+00');
+SELECT 'replay|' || count(*) || '|' || min(since AT TIME ZONE 'UTC') FROM segment_members;
+-- entered with the stored since writes nothing and locks nothing: the same tuple version, no xmax.
+CREATE TEMP TABLE before AS SELECT xmin::text AS x FROM segment_members WHERE canon_id = 'customer-7';
+EXECUTE apply(true, 'SEG-3f9a0c1d7e2b4a65', 'customer-7', '2026-08-03 11:00+00');
+SELECT 'same-since|' || (m.xmin::text = b.x) || '|' || m.xmax::text FROM segment_members m, before b
+WHERE m.canon_id = 'customer-7';
+-- entered with a later since moves it.
+EXECUTE apply(true, 'SEG-3f9a0c1d7e2b4a65', 'customer-7', '2026-08-03 12:00+00');
+SELECT 'moved|' || count(*) || '|' || min(since AT TIME ZONE 'UTC') FROM segment_members;
+DELETE FROM segment_members;
+SQL
+) || fail "the segment_members statement does not run on the migrated schema"
+expected='entered|1|2026-08-03 10:00:00
+exited|0
+exited-missing|0
+replay|1|2026-08-03 11:00:00
+same-since|true|0
+moved|1|2026-08-03 12:00:00'
+[[ $members == "$expected" ]] || fail "segment_members statement: got
+$members
+want
+$expected"
+pass "the segment_members statement converges on replay and leaves an unchanged row untouched"
+
 # MIG-AC: a database deployed before Flyway is baselined at 1 and runs only the later files.
 sql cdp mig_live <"$V0001" >/dev/null
 flyway "$WORK/config" mig_live migrate >"$WORK/live.log" || { cat "$WORK/live.log"; fail "migrate on the pre-Flyway database"; }
