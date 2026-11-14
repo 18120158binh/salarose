@@ -52,5 +52,6 @@ Each record explains one choice that shapes the architecture: the context, the d
 | [0046](0046-cap-fan-out-at-10000-exact-items-and-thresholds-as-filters.md) | Cap fan-out at 10,000 people, match exact items, and express thresholds as filters | Accepted | 2026-11-14 |
 | [0047](0047-email-and-phone-are-guarded-match-keys-from-import-and-the-api.md) | Email and phone are guarded match keys, learned from imports and the API | Accepted | 2026-11-14 |
 | [0048](0048-ingestion-keeps-tracker-parity-a-per-replica-limit-and-two-keys-for-rotation.md) | The ingestion API ignores catalog status, counts its rate limit per replica, and allows two keys per app id | Accepted | 2026-11-14 |
+| [0049](0049-the-ingestion-api-writes-plain-json-to-its-own-topic-and-leaves-history-to-import.md) | The ingestion API writes plain JSON to its own topic, and leaves history to the import | Accepted | 2026-11-05 |
 
 To add a decision, copy [the template](../../_templates/decision.md) to the next free number. Never edit an accepted record to reverse it. Write a new record and set `superseded_by` on the old one.
