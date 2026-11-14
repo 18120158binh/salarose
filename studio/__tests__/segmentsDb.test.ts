@@ -120,7 +120,8 @@ import {
   saveSegment,
   updateCampaignStatus,
 } from "@/lib/db";
-import { parseSegmentInput, type SegmentId } from "shared/lib/segments";
+import { parseBehaviorCondition, parseSegmentInput, type SegmentId } from "shared/lib/segments";
+import { emptySegmentDraft, newBehaviorCondition, segmentInput } from "@/features/segments/model/segmentDraft";
 import { UserFacingError } from "shared/lib/userFacingError";
 
 const SEGMENT_ID = "SEG-4f1c9a0b2d3e5f67" as SegmentId;
@@ -277,6 +278,23 @@ describe("behaviorMetricId", () => {
 
     expect(behaviorMetricId(condition)).toBe("m_514afd5c430cce3b");
     expect(behaviorMetricId({ ...condition, filters: undefined })).not.toBe("m_514afd5c430cce3b");
+  });
+
+  it("gives a filtered segment condition the same id as an equal journey condition (SEG-FR-11)", () => {
+    const draft = {
+      ...emptySegmentDraft(),
+      name: "Big carts",
+      groups: [[{ ...newBehaviorCondition("add_to_cart"), filters: [{ field: "product.price", op: ">" as const, value: "500000" }] }]],
+    };
+    const segment = parseSegmentInput(segmentInput(draft)).conditions.groups[0].conditions[0];
+    if (segment.type !== "behavior") throw new Error("not a behavior condition");
+    const journey = parseBehaviorCondition({
+      type: "behavior", event: "add_to_cart", measure: "COUNT", window: { value: 7, unit: "DAYS" }, op: ">=", value: 1,
+      filters: { groups: [{ conditions: [{ type: "event_property", field: "product.price", op: ">", value: 500000 }] }] },
+    }, "Node n1");
+
+    expect(behaviorMetricId(segment)).toBe(behaviorMetricId(journey));
+    expect(behaviorMetricId(segment)).not.toBe(behaviorMetricId({ ...segment, filters: undefined }));
   });
 
   it("treats filters with no groups as no filters, and a string threshold as another value", () => {

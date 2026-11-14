@@ -98,7 +98,7 @@ flowchart LR
 
 The editor is the journey builder's condition editor. Groups are cards under "All of these must hold", and rows inside a card sit under "Any of". A row picks a profile field or a behavior, an operator that fits the field's type, and a typed value. A behavior row reads as a sentence, such as "performed **Add to cart** **at least 3** times in the last **7 days**".
 
-In segment mode, the editor hides **+ filter** on a behavior row until customer decision applies event filters to a segment's behavior conditions. Then the row offers **+ filter** to narrow which events count, such as "`add_to_cart` where `product.price` > 500000". A stored condition keeps the filters it has, and before then the row shows them read-only with a note.
+A behavior row offers **+ filter** to narrow which events count, such as "`add_to_cart` where `product.price` > 500000". Customer decision applies a segment's event filters ([DEC-FR-36](../architecture/components/customer-decision.md#functional-requirements)). Each filter names a field of the event's catalog entry, an operator, and a value, and every filter must pass: the editor saves each filter as its own group. Changing the event clears the filters. A stored condition whose filters put an OR inside a group keeps them as stored, and the row says so instead of showing them. A filter with no field or no value refuses the save and is named by group, condition, and filter (SEG-FR-43).
 
 ### The segment list
 
@@ -135,7 +135,7 @@ The page states four limits of the count, next to it:
 | SEG-FR-08 | The segment pages must show a segment's member count only from stored membership, with its basis, and must show no count before the runtime registry holds size from tracked members. |
 | SEG-FR-09 | The segment list must show every segment with its name, description, creator, last change, and where it is used, as [The segment list](#the-segment-list) says. Where-used must name each active or paused campaign that uses the segment, its status, and the kind of use. |
 | SEG-FR-10 | Deleted (studio v3). The segment list now writes, so the rule that it must not write and must link to the classic page no longer applies. |
-| SEG-FR-11 | The segment editor must use the journey builder's condition editor. In segment mode it must not offer event filters on a behavior condition until customer decision applies them to a segment's behavior conditions ([DEC-FR-36](../architecture/components/customer-decision.md#functional-requirements)). |
+| SEG-FR-11 | The segment editor must use the journey builder's condition editor. It must offer event filters on a behavior condition, which customer decision applies to a segment's behavior conditions ([DEC-FR-36](../architecture/components/customer-decision.md#functional-requirements)), and every filter must pass. |
 | SEG-FR-12 | Once the profile writer stores tracked members, a segment's size must count each tracked member as of their last event, and the page must say so next to the count. |
 | SEG-FR-13 | Once the runtime registry holds size with imported-only members, after the segment membership pass runs, a segment's size must also count the imported-only members of the last pass, and the page must say that they count as of that pass. |
 | SEG-FR-40 | A segment's `profile_property` conditions must accept imported fields and the relative-date operators, by the rules of the [journey builder](journey-builder.md#conditions). The editor must offer them only once the segment runtime evaluates them (JBD-FR-31). |
@@ -196,7 +196,8 @@ The list's preview and classic-studio notes, the editor's details card, and the 
 - Given a staff user in studio, then the sidebar shows **Segments** under **Audience**, and `/segments` has the title **Segments**. (SEG-FR-01)
 - Given "Hanoi cart builders" used as the entry trigger of an active campaign and as a condition of a paused one, then the segment list shows both campaigns with their status and kind of use, each linking to its page. (SEG-FR-09)
 - Given a segment no campaign uses, then its row says "Not used by any journey", and the unused filter shows it. (SEG-FR-09)
-- Given customer decision does not yet apply event filters to segment behavior conditions, then a behavior row in the segment editor offers no **+ filter**. Once it does, the row offers **+ filter**, and a saved filter appears in `conditions_json`. (SEG-FR-11)
+- Given a behavior row, when the marketer adds the filter `product.price` is greater than 500000 and saves, then `conditions_json` holds the filter, and the condition's metric id equals that of a journey condition with the same event, measure, and filters. (SEG-FR-11)
+- Given a filter with no value, when the marketer saves, then the page says "Group 1, condition 1, filter 1 needs a value", marks the value, and keeps every typed value. (SEG-FR-11, SEG-FR-43)
 - Given the segment list request fails, then the page says "Segments could not load." and **Try again** loads the list. (SEG-FR-42)
 - Given group 2's first condition "Added to cart at least _ times" with no number, when the marketer saves, then nothing is written, the message names group 2, condition 1, and the number of times, the field is marked, and every other typed value stays. (SEG-FR-43)
 
