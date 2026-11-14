@@ -67,12 +67,13 @@ When an event links two identity sets:
 
 1. Find the root of each set.
 2. If the roots are equal, the sets are already merged. Stop.
-3. Check the limits. If the joined set would hold more identifiers of a type than that type's limit, refuse the merge. Count it and log both `canon_id` values. Stop.
-4. Pick the winner by the [merge rules](identity-stitching.md#merge) of identity stitching. The higher priority wins, and on equal priority the root that sorts first as a string wins.
-5. Point the retired root at the winning root. Every identifier of the retired set now resolves to the winning `canon_id`.
-6. Write one merge record and publish it, as [identity merges](identity-merges.md) describes.
+3. If the link comes only through an `email` or `phone`, and both sets hold a `user_id`, refuse the merge. Count it as a conflict by type. Stop. See [identifiers](identifiers.md#identifier-types) (IDN-FR-08).
+4. Check the limits. If the joined set would hold more identifiers of a type than that type's limit, refuse the merge. Count it and log both `canon_id` values. Stop.
+5. Pick the winner by the [merge rules](identity-stitching.md#merge) of identity stitching. The higher priority wins, and on equal priority the root that sorts first as a string wins.
+6. Point the retired root at the winning root. Every identifier of the retired set now resolves to the winning `canon_id`.
+7. Write one merge record and publish it, as [identity merges](identity-merges.md) describes.
 
-Steps 1 to 6 run as one change for both sets. No other change to either set runs between them.
+Steps 1 to 7 run as one change for both sets. No other change to either set runs between them.
 
 ### Follow a merge chain
 
@@ -139,8 +140,8 @@ Numbers marked "proposed" are starting values for review, not decisions.
 
 ## Open questions
 
-- **Shared devices.** When a second account logs in on a device, should the graph merge the two accounts, as it does today, refuse the merge, or move the device to the account that logged in last? Platforms differ. Segment Unify gives each identifier type a limit and a priority. When an event would break a limit, it drops the event's lower-priority identifiers and resolves the event on the rest. Amplitude does not merge two different user ids. Moving a device takes an identifier out of a set, which IDG-FR-12 forbids today.
-- **Limits.** Which types get a limit, and what is each value? Today no type has one, and the only bound is the 200 entries of a structure per device.
+- **Shared devices.** When a second account logs in on a device, should the graph merge the two accounts, as it does today, refuse the merge, or move the device to the account that logged in last? Platforms differ. Segment Unify gives each identifier type a limit and a priority. When an event would break a limit, it drops the event's lower-priority identifiers and resolves the event on the rest. Amplitude does not merge two different user ids. Moving a device takes an identifier out of a set, which IDG-FR-12 forbids today. [Decision 0047](../../decisions/0047-email-and-phone-are-guarded-match-keys-from-import-and-the-api.md) settles the email and phone case: a shared email or phone never joins two sets that each hold a `user_id`. The device case stays open.
+- **Limits.** Which types get a limit, and what is each value? Today no type has one, and the only bound is the 200 entries of a structure per device. [Decision 0047](../../decisions/0047-email-and-phone-are-guarded-match-keys-from-import-and-the-api.md) already refuses an email or phone link between two sets with a `user_id` each, which acts as a limit of one `user_id` for those links.
 - **Unmerge.** Should an operator be able to split a wrong merge? Jobs fold state on a merge, as [identity merges](identity-merges.md) describes, and a split cannot unfold it. A split would need its own contract.
 - **Convergence bound.** Is 5 seconds the right value for IDG-NFR-02? Today's recheck converges within 1 minute. A tighter bound costs more lookups or a faster way to tell resolvers about merges.
 - **Tenancy.** With more than one customer on a deployment, every identifier and merge record belongs to a tenant. See [decision 0027](../../decisions/0027-multi-tenancy.md).

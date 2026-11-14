@@ -41,7 +41,7 @@ Out of scope:
 | `user_id` | The logged-in account id. |
 | Identity set | The identifiers known to belong to one person. |
 | Root | The one member of a set that names it. Its value is the set's `canon_id`. |
-| Priority | A rank on a root: 3 for a `user_id` root, 2 for a `domain_userid` root, 1 for an `email` or `phone` root ([identifiers](identifiers.md#identifier-types)). The higher rank wins a merge. |
+| Priority | A rank on a root: 3 for a `user_id` root, 2 for a `domain_userid` root. The higher rank wins a merge. |
 | Seed | To load an identifier into state with a `canon_id` read from `identity_graph`, instead of deriving one. |
 
 ## Behavior

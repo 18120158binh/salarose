@@ -74,7 +74,7 @@ Apply these steps to every identifier before identity resolution sees it:
 
 1. Trim leading and trailing whitespace.
 2. If the value is blank, or equal to a placeholder id with case ignored, the identifier is absent.
-3. Apply the normalized form of the type. Lowercase an email address. Remove spaces, dashes, dots, and parentheses from a phone number, and write it in E.164. A number that starts with `+` or `00` already carries its country. Any other number is a national number of the deployment's default phone country, an ISO 3166 two-letter code: drop one leading `0` and prefix the country code. With no default country set, such a number does not fit.
+3. Apply the normalized form of the type. Lowercase an email address. Remove spaces, dashes, dots, and parentheses from a phone number, and write it in E.164. A number that starts with `+`, or with `00`, the international prefix, already carries its country; replace `00` with `+`. Any other number is a national number of the deployment's default phone country, an ISO 3166 two-letter code: drop one leading `0` and prefix the country code. With no default country set, such a number does not fit.
 4. If the value does not fit its type, the identifier is absent, and the drop is counted by type. An email address without exactly one `@` does not fit. A phone number with a letter, or with more than 15 digits, the E.164 maximum, does not fit.
 
 No other rewrite applies. An email address keeps its dots and any `+tag`, because those rules hold for some mail providers and not for others.
@@ -83,15 +83,19 @@ Two identifiers are equal only when their types are equal and their normalized v
 
 ### Derived roots
 
-Identity stitching gives an identifier with no stored mapping a root derived from its type and value, as [identity stitching](identity-stitching.md#derive-a-root) describes. A `user_id` derives its root from `canon:` and the value. A `domain_userid` derives it from `canon-domain_userid:` and the value. A `user_id` and a `domain_userid` with one value therefore derive different roots.
+Identity stitching gives an identifier with no stored mapping a root derived from its type and value, as [identity stitching](identity-stitching.md#derive-a-root) describes. A `user_id` derives its root from `canon:` and the value. A `domain_userid` derives it from `canon-domain_userid:` and the value. An `email` derives it from `canon-email:` and the normalized value, and a `phone` from `canon-phone:` and the normalized value. Identifiers of different types with one value therefore derive different roots. Identity stitching does not derive email or phone roots yet; it will when typed identifiers are built.
 
 ```mermaid
 flowchart LR
     A["(user_id, abc)"] --> K{"Stored mapping for (type, value)?"}
     B["(domain_userid, abc)"] --> K
+    E["(email, a@x.com)"] --> K
+    P["(phone, +84912345678)"] --> K
     K -- yes --> R["Stored root"]
     K -- "no, user_id" --> U["canon:abc"]
     K -- "no, domain_userid" --> D["canon-domain_userid:abc"]
+    K -- "no, email" --> EM["canon-email:a@x.com"]
+    K -- "no, phone" --> PH["canon-phone:+84912345678"]
 ```
 
 The `user_id` form is the one used before types were part of an identifier, so every `user_id` keeps its `canon_id`. The platform has never run in production, so no stored `canon_id` of a `domain_userid` had to be kept.
@@ -159,7 +163,7 @@ The `user_id` form is the one used before types were part of an identifier, so e
 [Decision 0047](../../decisions/0047-email-and-phone-are-guarded-match-keys-from-import-and-the-api.md) answered the sources of email and phone, email and phone as match keys, the default country, and customer-defined types on 2026-11-14. Two questions are the owner's:
 
 - **Hashing.** Should the graph store email addresses and phone numbers in clear text, or as hashes? Clear text puts personal data in one more table. The outbox cannot send a message to a hash. [Decision 0042](../../decisions/0042-keep-imported-contact-details-plain-behind-masking-and-tombstones.md) keeps imported contact details plain. Until the owner answers, the graph keeps them plain too.
-- **Existing `canon_id` values.** [Derived roots](#derived-roots) keeps every `user_id` root as it is, so no stored `canon_id` is rewritten. Does the owner confirm that no existing `canon_id` is rewritten, or should a rewrite be planned?
+- **Existing `canon_id` values.** [Derived roots](#derived-roots) keeps every `user_id` root as it is, so no stored `canon_id` is rewritten. The contract records that the platform has never run in production. Does the owner confirm that no existing `canon_id` is rewritten, or should a rewrite be planned?
 
 ## Related
 
