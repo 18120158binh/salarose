@@ -1,4 +1,4 @@
-package com.cdp.platform.jobs.importapplier;
+package com.cdp.platform.shared.batch;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -6,23 +6,23 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 
 /**
- * The applier lock (IAP-FR-23): a session-level advisory lock on the main
- * Postgres, held by one dedicated connection for the whole run. The lock dies
- * with that connection, so the applier checks the connection before each state
- * change and every few thousand rows, and stops when it is gone.
+ * A batch job's lock: a session-level advisory lock on the main Postgres, held
+ * by one dedicated connection for the whole run. The lock dies with that
+ * connection, so the job checks the connection before each state change and
+ * every batch, and stops when it is gone.
  */
-final class LockGuard {
+public final class LockGuard {
 
-    /**
-     * The advisory lock key, the ASCII of {@code IMPAPPLY}. Any process that takes
-     * it is an applier.
-     */
-    static final long LOCK_KEY = 0x494d_5041_5050_4c59L;
+    /** The import applier's key, the ASCII of {@code IMPAPPLY}. */
+    public static final long IMPORT_APPLIER = 0x494d_5041_5050_4c59L;
+
+    /** The import metric pass's key, the ASCII of {@code IMPMPASS}. */
+    public static final long IMPORT_METRIC_PASS = 0x494d_504d_5041_5353L;
 
     /** The lock's connection dropped: another instance may hold the lock now. */
-    static final class LockLost extends RuntimeException {
+    public static final class LockLost extends RuntimeException {
         LockLost() {
-            super("the applier lock's connection dropped");
+            super("the lock's connection dropped");
         }
     }
 
@@ -33,7 +33,7 @@ final class LockGuard {
     }
 
     /** A guard with no lock, for tests. */
-    static LockGuard none() {
+    public static LockGuard none() {
         return new LockGuard(null);
     }
 
@@ -41,9 +41,9 @@ final class LockGuard {
      * Takes the lock on the connection, or returns null when another session holds
      * it.
      */
-    static LockGuard tryAcquire(Connection connection) throws SQLException {
+    public static LockGuard tryAcquire(Connection connection, long key) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("SELECT pg_try_advisory_lock(?)")) {
-            statement.setLong(1, LOCK_KEY);
+            statement.setLong(1, key);
             try (ResultSet result = statement.executeQuery()) {
                 result.next();
                 return result.getBoolean(1) ? new LockGuard(connection) : null;
@@ -51,7 +51,7 @@ final class LockGuard {
         }
     }
 
-    void check() {
+    public void check() {
         if (connection == null) return;
         try {
             if (connection.isValid(5)) return;

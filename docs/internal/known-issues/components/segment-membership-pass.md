@@ -19,7 +19,7 @@ The nightly pass is built: the CronJob `segment-membership-pass` runs `SegmentMe
 - **Symptom.** A publish with **Also include current members** sends no member to the journey.
 - **Cause.** Nothing in `event-processor/` reads `current_member_entries`, and the table, the topic `current-member-entries`, and the every-minute schedule do not exist.
 - **Evidence.** Read from the code at `43060d0`: the package `jobs/segmentpass` holds only the nightly pass, and `infra/db/schema.sql` has no `current_member_entries`.
-- **Fix direction.** Add the duty as a second entry point and CronJob in `jobs/segmentpass`, reusing `WalGovernor` and `PostgresReadings`.
+- **Fix direction.** Add the duty as a second entry point and CronJob in `jobs/segmentpass`, reusing `WalGovernor` and `PostgresReadings` in `shared/batch/`.
 
 ## SMP-KI-02. A skipped segment loses the rows of a key that became tracked or left `customer_attributes`
 

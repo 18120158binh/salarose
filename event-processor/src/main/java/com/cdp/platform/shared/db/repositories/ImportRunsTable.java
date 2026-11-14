@@ -22,6 +22,7 @@ public final class ImportRunsTable {
     public static final String STATE = "state";
     public static final String REASON = "reason";
     public static final String COUNTS = "counts";
+    public static final String FIRST_PASS_ID = "first_pass_id";
     public static final String CREATED_AT = "created_at";
     public static final String CONFIRMED_AT = "confirmed_at";
     public static final String APPROVED_AT = "approved_at";

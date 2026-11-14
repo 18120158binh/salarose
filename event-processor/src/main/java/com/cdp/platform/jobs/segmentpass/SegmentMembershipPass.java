@@ -16,6 +16,7 @@ import com.cdp.platform.jobs.segmentpass.MetricPassWait.Start;
 import com.cdp.platform.jobs.segmentpass.PassStore.Member;
 import com.cdp.platform.jobs.segmentpass.PassStore.RunTotals;
 import com.cdp.platform.jobs.segmentpass.PassStore.SegmentRow;
+import com.cdp.platform.shared.batch.WalGovernor;
 import com.cdp.platform.shared.models.db.Segment;
 import com.cdp.platform.shared.models.node.PersonConditions;
 import com.cdp.platform.shared.models.node.RuleDocuments;
@@ -174,7 +175,8 @@ final class SegmentMembershipPass {
     }
 
     private RunTotals totals(String state, long[] totals, List<String> skipped) {
-        return new RunTotals(state, clock.instant(), totals[0], totals[1], List.copyOf(skipped), governor.pauses(),
+        return new RunTotals(state, clock.instant(), totals[0], totals[1], List.copyOf(skipped),
+            governor.pauses().size(),
             governor.pausedSeconds());
     }
 }

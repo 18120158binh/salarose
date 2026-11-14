@@ -10,6 +10,8 @@ import java.time.format.DateTimeParseException;
 import java.util.Map;
 import java.util.Optional;
 
+import com.cdp.platform.shared.batch.WalGovernor;
+
 /**
  * The pass's settings, read from the environment once at start
  * (SMP-NFR-02, SMP-NFR-04). A value that does not parse stops the job.

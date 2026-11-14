@@ -1,0 +1,7 @@
+# The import metric pass (docs/internal/architecture/components/import-metric-pass.md), a batch job on the batch jobs
+# image. No overlay lists it yet: it needs the secrets in docs/internal/operations/batch-jobs.md first.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: cdp
+resources:
+  - import-metric-pass.yaml
