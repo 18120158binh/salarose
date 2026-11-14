@@ -72,7 +72,7 @@ export function JourneyCanvasTab({
             {age.text === "just now" ? "a few seconds ago" : age.text}.
           </span>
         ) : (
-          <span className="text-muted-foreground" role="status">
+          <span className="text-muted-foreground">
             Updated {age.text} · refreshes every 5 seconds
           </span>
         )}

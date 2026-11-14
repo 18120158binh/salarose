@@ -41,12 +41,13 @@ describe("JourneyCanvasTab (JBD-FR-09)", () => {
   it("draws the builder's cards read-only, each with its all-time Completed count, 0 when it has no stats row", () => {
     open(jest.fn());
 
-    expect(card(/Order completed/)).toHaveTextContent("Completed 100");
-    expect(card(/Push/)).toHaveTextContent("Completed 0");
+    expect(card(/Order completed/)).toHaveTextContent(/Completeds*100$/);
+    expect(card(/Push/)).toHaveTextContent(/Completeds*0$/);
     const canvas = screen.getByRole("region", { name: "Journey canvas" });
     expect(within(canvas).queryAllByRole("button")).toEqual([]);
     expect(screen.queryByRole("complementary", { name: "Steps you can add" })).not.toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("Updated just now · refreshes every 5 seconds");
+    expect(screen.getByText("Updated just now · refreshes every 5 seconds")).toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("refreshes the counts every 5 seconds", async () => {
@@ -58,7 +59,7 @@ describe("JourneyCanvasTab (JBD-FR-09)", () => {
     await advance(1);
 
     expect(refresh).toHaveBeenCalledWith("CAMP-1");
-    expect(card(/Order completed/)).toHaveTextContent("Completed 104");
+    expect(card(/Order completed/)).toHaveTextContent(/Completeds*104$/);
   });
 
   it("runs no refresh while the browser tab is hidden", async () => {
@@ -93,12 +94,12 @@ describe("JourneyCanvasTab (JBD-FR-09)", () => {
     open(refresh);
 
     await advance(5000);
-    expect(card(/Order completed/)).toHaveTextContent("Completed 100");
+    expect(card(/Order completed/)).toHaveTextContent(/Completeds*100$/);
     expect(screen.getByRole("status")).toHaveTextContent("Counts could not refresh. Showing counts from a few seconds ago.");
 
     await advance(60_000);
     expect(refresh).toHaveBeenCalledTimes(2);
-    expect(card(/Order completed/)).toHaveTextContent("Completed 100");
+    expect(card(/Order completed/)).toHaveTextContent(/Completeds*100$/);
     expect(screen.getByRole("status")).toHaveTextContent("Showing counts from 1 min ago.");
   });
 });

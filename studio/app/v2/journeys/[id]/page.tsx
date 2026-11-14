@@ -121,7 +121,7 @@ export default async function V2JourneyAnalyticsPage({
           <Analytics id={id} rangeLabel={analyticsRangeLabel(range)} span={span} />
         </DataRegion>
       ) : (
-        <DataRegion errorMessage="The journey canvas could not load." loading={<RegionSkeleton className="h-96" />}>
+        <DataRegion errorMessage="The journey canvas could not load." loading={<CanvasSkeleton />}>
           <Canvas id={id} zone={zone} />
         </DataRegion>
       )}
@@ -140,6 +140,17 @@ async function Canvas({ id, zone }: { id: string; zone: TimeZone }) {
   return <JourneyCanvasTab completed={canvas.completed} events={canvas.events} id={id} readAt={canvas.readAt} root={canvas.root} zone={zone} />;
 }
 
+// The canvas's loading state: card-shaped blocks down the middle, as the canvas will draw them.
+function CanvasSkeleton() {
+  return (
+    <div aria-busy className="flex flex-col items-center gap-10 rounded-card border border-border p-8">
+      {[0, 1, 2].map((key) => (
+        <RegionSkeleton className="h-27 w-55 rounded-card" key={key} />
+      ))}
+    </div>
+  );
+}
+
 const TAB = "-mb-px rounded-t-sm border-b-2 px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 function JourneyTabs({ tab, analytics, journey }: { tab: JourneyTab; analytics: string; journey: string }) {
@@ -154,7 +165,7 @@ function JourneyTabs({ tab, analytics, journey }: { tab: JourneyTab; analytics: 
           aria-current={entry.id === tab ? "page" : undefined}
           className={
             entry.id === tab
-              ? `${TAB} border-primary font-medium text-foreground`
+              ? `${TAB} border-primary font-semibold text-primary`
               : `${TAB} border-transparent text-muted-foreground hover:text-foreground`
           }
           href={entry.href}

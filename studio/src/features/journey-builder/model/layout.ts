@@ -37,7 +37,13 @@ function rank(connection: CampaignConnection): number {
   return 1;
 }
 
-export function layoutGraph(graph: JourneyGraph): Layout {
+/**
+ * `extraHeight` makes every card that much taller, and every row with it, for a card that draws
+ * more under its face, such as the Completed row of the read-only canvas.
+ */
+export function layoutGraph(graph: JourneyGraph, extraHeight = 0): Layout {
+  const cardHeight = CARD.height + extraHeight;
+  const row = ROW + extraHeight;
   const ids = new Set(graph.nodes.map((n) => n.id));
   const children = new Map<string, CampaignConnection[]>();
   for (const c of graph.connections) {
@@ -59,7 +65,7 @@ export function layoutGraph(graph: JourneyGraph): Layout {
   const place = (id: string, depth: number, firstLane: number) => {
     if (nodes.has(id)) return;
     const span = width(id);
-    nodes.set(id, { id, x: SIDE + (firstLane + span / 2) * LANE - CARD.width / 2, y: TOP + depth * ROW });
+    nodes.set(id, { id, x: SIDE + (firstLane + span / 2) * LANE - CARD.width / 2, y: TOP + depth * row });
     depthMax = Math.max(depthMax, depth);
     let lane = firstLane;
     for (const c of children.get(id) ?? []) {
@@ -77,8 +83,8 @@ export function layoutGraph(graph: JourneyGraph): Layout {
     const parent = nodes.get(from);
     if (!parent) continue;
     const px = parent.x + CARD.width / 2;
-    const py = parent.y + CARD.height;
-    const mid = py + (ROW - CARD.height) / 2 - 4;
+    const py = parent.y + cardHeight;
+    const mid = py + (row - cardHeight) / 2 - 4;
     for (const c of outgoing) {
       const child = nodes.get(c.to);
       if (!child) continue;
@@ -92,5 +98,5 @@ export function layoutGraph(graph: JourneyGraph): Layout {
     }
   }
 
-  return { nodes, edges, width: SIDE * 2 + totalLanes * LANE, height: TOP + (depthMax + 1) * ROW };
+  return { nodes, edges, width: SIDE * 2 + totalLanes * LANE, height: TOP + (depthMax + 1) * row };
 }

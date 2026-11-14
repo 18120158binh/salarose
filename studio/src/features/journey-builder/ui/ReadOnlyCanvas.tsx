@@ -9,6 +9,9 @@ import { branchTag, StepCardFace } from "./StepCard";
 
 // JBD-FR-09: a published journey as the builder lays it out, with the same cards, and each step's
 // all-time Completed count. Nothing on it adds, moves, opens, or removes a step.
+// The Completed row under each card face: its border, padding, and one text-lg line.
+const COUNT_ROW = 38;
+
 export function ReadOnlyCanvas({
   graph,
   eventName,
@@ -18,7 +21,7 @@ export function ReadOnlyCanvas({
   eventName: EventName;
   completed: Readonly<Record<string, number>>;
 }) {
-  const layout = useMemo(() => layoutGraph(graph), [graph]);
+  const layout = useMemo(() => layoutGraph(graph, COUNT_ROW), [graph]);
   const byId = useMemo(
     () => new Map(graph.nodes.map((n) => [n.id, n])),
     [graph.nodes],
@@ -73,21 +76,14 @@ export function ReadOnlyCanvas({
                   left: place.x,
                   top: place.y,
                   width: CARD.width,
-                  height: node.type === "end" ? CARD.endHeight : CARD.height,
+                  height: (node.type === "end" ? CARD.endHeight : CARD.height) + COUNT_ROW,
                 }}
               >
-                <StepCardFace
-                  aside={
-                    <span className="text-xs">
-                      <span className="text-muted-foreground">Completed </span>
-                      <span className="font-heading font-semibold tabular-nums">
-                        {formatCount(completed[node.id] ?? 0)}
-                      </span>
-                    </span>
-                  }
-                  eventName={eventName}
-                  node={node}
-                />
+                <StepCardFace eventName={eventName} node={node} />
+                <span className="mt-auto flex items-baseline justify-between border-border border-t pt-1.5">
+                  <span className="text-muted-foreground text-xs">Completed</span>
+                  <span className="font-heading font-semibold text-lg tabular-nums">{formatCount(completed[node.id] ?? 0)}</span>
+                </span>
               </li>
             );
           })}
