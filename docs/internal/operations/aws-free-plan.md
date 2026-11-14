@@ -7,8 +7,8 @@ implementation: planned
 area: infra
 tags: [deployment, aws, kubernetes, environment]
 created: 2026-11-07
-updated: 2026-11-08
-version: 0.12
+updated: 2026-11-14
+version: 0.13
 ---
 
 # AWS Free Plan environment
@@ -98,6 +98,7 @@ Example. With $121.37 left and 162 hours to expiry, six `m7i-flex.large` nodes c
 | AFP-FR-13 | Every `FlinkDeployment` must set `DB_HOST`, `DB_USER`, `DB_DATABASE`, `DB_PASSWORD`, and `KAFKA_BROKERS` to the values in [Service addresses](#service-addresses), and the event parse job must set `KAFKA_EVENT_TOPIC_PATTERN=snowplow-good`. |
 | AFP-FR-14 | Every Flink pod must expose the Prometheus reporter from `infra/monitoring/flink-prometheus-reporter.yaml` on port 9249. A `PodMonitor` must scrape the pods, and `infra/monitoring/journey-engine-alerts.yaml` must load into Prometheus. |
 | AFP-FR-15 | Studio, the collector, Argo CD, Grafana, the Flink UI, and the Kafka browser must be reachable only over HTTPS on port 443, through the k3s Traefik ingress, with certificates from Let's Encrypt that cert-manager gets for the public hostnames. Port 80 is open only for the ACME challenge and the redirect to HTTPS. |
+| AFP-FR-36 | The collector must record each visitor's own public address as `user_ipaddress`, never a cluster address. The ingress must keep the client's source address, and must replace any `X-Forwarded-For` header a client sends with the address it received the request from, so a client cannot set its own `user_ipaddress`. |
 | AFP-FR-16 | No other port may be open to the internet. Operators reach the nodes and the Kubernetes API through AWS Systems Manager Session Manager. |
 | AFP-FR-17 | Studio must sign staff in through a Cognito user pool with a confidential app client. Membership in the Cognito group `studio-admin` must map to the studio role `admin`, and membership in `studio-editor` to `editor`. |
 | AFP-FR-18 | No secret may appear in git, user data, a tag, an image, an SSM command, or a command line. The server node generates the secrets it can, and reads the Cognito client secret with its own role. |
@@ -326,6 +327,7 @@ Cognito findings, measured on 2026-11-07 before the first sign-in:
 - [ ] A `studio-admin` member signed in to studio opens Argo CD, Grafana, the Kafka browser, and the Flink UI, each without a password prompt, and lands with the role AFP-FR-28 to AFP-FR-30 give (AFP-FR-27).
 - [ ] The Kafka browser refuses to produce a message or delete a topic, even for a `studio-admin` member. A signed-in user in no group gets no topic, group, or message, and `https://kafka.<ip>.sslip.io/metrics` without a session holds no metric of the cluster (AFP-FR-30).
 - [ ] With the Cognito domain unreachable, the break-glass `admin` logins still open Argo CD and Grafana (AFP-FR-32).
+- [ ] A tracker hit sent from a machine outside AWS lands in `snowplow-good` with that machine's public address as `user_ipaddress`, and the same hit sent with `X-Forwarded-For: 1.2.3.4` still carries the machine's address (AFP-FR-36).
 - [ ] A scan of the six nodes' public addresses from outside AWS finds only ports 80 and 443 open, and those only on `platform-1`.
 - [ ] After `sudo reboot` on a `compute` node, the five jobs return to `RUNNING` from a checkpoint within 10 minutes, with no operator action.
 - [x] A commit that changes the image tag in the overlay rolls each job through a savepoint, and the job resumes from that savepoint.

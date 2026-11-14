@@ -50,6 +50,10 @@ EOF
 
 # k3s applies this directory at start. Traefik runs on the platform node and redirects HTTP to HTTPS.
 # Let's Encrypt follows the redirect for HTTP-01 and does not check the certificate it lands on.
+# externalTrafficPolicy Local keeps the visitor's address: ServiceLB then skips the SNAT that made every request
+# come from 10.42.0.1 (AFP-FR-36). It costs nothing here, because only this node runs ServiceLB and Traefik.
+# Traefik trusts no incoming X-Forwarded-For (no forwardedHeaders.trustedIPs), so it overwrites the header with
+# the peer address, and the collector reads that header as user_ipaddress. A client cannot forge it.
 mkdir -p /var/lib/rancher/k3s/server/manifests
 cat >/var/lib/rancher/k3s/server/manifests/traefik-config.yaml <<'EOF'
 apiVersion: helm.cattle.io/v1
@@ -61,6 +65,9 @@ spec:
   valuesContent: |-
     nodeSelector:
       cdp.io/pool: platform
+    service:
+      spec:
+        externalTrafficPolicy: Local
     ports:
       web:
         # Traefik chart 41 reads the redirect under http:, and silently ignores it one level up.
