@@ -2,13 +2,13 @@
 title: Identity graph
 slug: identity-graph
 purpose: Keep one record of every identity set, shared by every device and job, so that a merge recorded anywhere applies everywhere.
-status: draft
+status: accepted
 implementation: planned
 area: event-processor
 tags: [identity, graph, merge, state]
 created: 2026-10-21
-updated: 2026-10-21
-version: 0.1
+updated: 2026-11-14
+version: 1.0
 known_issues: ../../../known-issues/components/identity/identity-graph.md
 ---
 
@@ -16,7 +16,7 @@ known_issues: ../../../known-issues/components/identity/identity-graph.md
 
 ## Purpose
 
-Today each device keeps its own copy of its identity set. When a merge on one device changes a person's `canon_id`, the person's other devices learn of it by rechecking the user's rows once a minute ([decision 0021](../../decisions/0021-recheck-a-users-rows-to-carry-merges-to-the-users-devices.md)). Until then their events build metrics and journeys under the old id, and nothing records the merge itself. The identity graph is one record of which identifiers belong to which identity set, shared by every device and every job. A merge recorded anywhere applies to every later resolution, and the graph keeps the history of every merge. It also holds the rules that allow or refuse a merge. This contract is a draft. The [open questions](#open-questions) must have answers before it is accepted.
+Today each device keeps its own copy of its identity set. When a merge on one device changes a person's `canon_id`, the person's other devices learn of it by rechecking the user's rows once a minute ([decision 0021](../../decisions/0021-recheck-a-users-rows-to-carry-merges-to-the-users-devices.md)). Until then their events build metrics and journeys under the old id, and nothing records the merge itself. The identity graph is one record of which identifiers belong to which identity set, shared by every device and every job. A merge recorded anywhere applies to every later resolution, and the graph keeps the history of every merge. It also holds the rules that allow or refuse a merge. [Decision 0050](../../decisions/0050-one-account-per-person-no-unmerge-and-a-5-second-merge-bound.md) settles shared devices, limits, unmerge, the convergence bound, tenancy, and readers. How the graph is stored is a separate decision record that amends decision 0005.
 
 ## Scope
 
@@ -49,15 +49,26 @@ The [identity resolution overview](README.md#terms) defines identity set, `canon
 
 ## Behavior
 
-A household shares a tablet. The example uses the merge rules of [identity stitching](identity-stitching.md#merge) and no limits. Write `U(x)` for the derived root of `x`, and assume `U(u1)` sorts before `U(u2)`.
+A household shares a tablet. The example uses the merge rules of [identity stitching](identity-stitching.md#merge) and the [limits](#limits). Write `U(x)` for the derived root of `x`, and assume `U(u1)` sorts before `U(u2)`.
 
 1. `u2` logs in on a laptop, device `dA`. The graph holds the set `{dA, u2}` with `canon_id` `U(u2)`.
 2. `u2` logs in on a phone, device `dB`. The graph finds `u2` and adds `dB` to its set. The event gets `U(u2)`.
 3. `u1` logs in on the tablet, device `dS`. The graph holds a second set `{dS, u1}` with `canon_id` `U(u1)`.
-4. `u2` logs in on `dS`. The event links the two sets. Both roots are `user_id` roots, so the tie goes to the root that sorts first, and `U(u1)` wins. The graph records one merge: `U(u2)` retired into `U(u1)`.
-5. The next event from `dA` gets `U(u1)`, and so does the next event from `dB`. Today `dA` and `dB` reach `U(u1)` at their first event after their next recheck, up to a minute later, and no record of the merge exists.
+4. `u2` logs in on `dS`. The event links the two sets, and each holds a `user_id`. A set holds at most one `user_id`, so the graph refuses the merge and counts it. Both sets stay apart, and the event resolves to `U(u2)`, the set of its `user_id`. `dS` stays in `U(u1)`'s set.
+5. An anonymous phone `dC` browses, then `u2` logs in on it. The event links `{dC}` with `u2`'s set, and only one of them holds a `user_id`. The graph records one merge: `U(dC)` retired into `U(u2)`. `dA` and `dB` keep `U(u2)`.
 
-Whether step 4 should merge two accounts at all is an [open question](#open-questions). With a limit of one `user_id` for each set, the graph refuses the merge in step 4, both sets stay apart, and the event resolves to `U(u2)`, the set of its `user_id`.
+Today the platform merges the two accounts in step 4, and `dA` and `dB` reach the winner at their next recheck, up to a minute later, with no record of the merge.
+
+### Limits
+
+| Type | Most values in one set |
+|---|---|
+| `user_id` | 1 |
+| `email` | 5 |
+| `phone` | 5 |
+| `domain_userid` | No limit of its own. The resolver's bound of 200 entries for each structure applies. |
+
+A refused merge resolves the event to the set of its `user_id`, or, when it has none, to the set of its highest-priority identifier. No identifier moves between sets.
 
 ## Algorithm
 
@@ -67,12 +78,13 @@ When an event links two identity sets:
 
 1. Find the root of each set.
 2. If the roots are equal, the sets are already merged. Stop.
-3. Check the limits. If the joined set would hold more identifiers of a type than that type's limit, refuse the merge. Count it and log both `canon_id` values. Stop.
-4. Pick the winner by the [merge rules](identity-stitching.md#merge) of identity stitching. The higher priority wins, and on equal priority the root that sorts first as a string wins.
-5. Point the retired root at the winning root. Every identifier of the retired set now resolves to the winning `canon_id`.
-6. Write one merge record and publish it, as [identity merges](identity-merges.md) describes.
+3. If the link comes only through an `email` or `phone`, and both sets hold a `user_id`, refuse the merge. Count it as a conflict by type. Stop. See [identifiers](identifiers.md#identifier-types) (IDN-FR-08).
+4. Check the limits. If the joined set would hold more identifiers of a type than that type's limit, refuse the merge. Count it and log both `canon_id` values. Stop.
+5. Pick the winner by the [merge rules](identity-stitching.md#merge) of identity stitching. The higher priority wins, and on equal priority the root that sorts first as a string wins.
+6. Point the retired root at the winning root. Every identifier of the retired set now resolves to the winning `canon_id`.
+7. Write one merge record and publish it, as [identity merges](identity-merges.md) describes.
 
-Steps 1 to 6 run as one change for both sets. No other change to either set runs between them.
+Steps 1 to 7 run as one change for both sets. No other change to either set runs between them.
 
 ### Follow a merge chain
 
@@ -94,15 +106,16 @@ A lookup by a retired `canon_id` follows the chain to the end and returns the cu
 | IDG-FR-10 | The graph must not forget an identifier or a merge record because of inactivity. Only the deletion of a person, which is not specified yet, may remove them. |
 | IDG-FR-11 | The graph must answer a lookup by identifier, and a lookup by `canon_id`, with the set's current `canon_id` and its identifiers. |
 | IDG-FR-12 | A merge must never split a set. A retired `canon_id` must never name a set again. |
+| IDG-FR-13 | The graph must enforce the [limits](#limits). |
+| IDG-FR-14 | The graph must offer no way to split a set. A wrong merge stays. |
+| IDG-FR-15 | Staff must be able to read a person's identifiers and merge records in [customer lookup](../../../features/customer-lookup.md), with email and phone masked. Jobs read the graph through identity stitching only. |
 
 ## Non-functional requirements
-
-Numbers marked "proposed" are starting values for review, not decisions.
 
 | Id | Requirement |
 |---|---|
 | IDG-NFR-01 | Resolving an identifier whose set has not changed must not query Postgres, as identity stitching requires today (IDS-NFR-01). |
-| IDG-NFR-02 | After the graph records a merge, every resolution must return the winning `canon_id` within 5 seconds. Proposed. |
+| IDG-NFR-02 | After the graph records a merge, every resolution must return the winning `canon_id` within 5 seconds at the 99th percentile. |
 | IDG-NFR-03 | A recorded merge must survive a restart of any job, with or without a checkpoint. |
 | IDG-NFR-04 | Lookups must read the copy where the graph records merges, never a replica that can lag it. |
 
@@ -112,7 +125,7 @@ Numbers marked "proposed" are starting values for review, not decisions.
 |---|---|---|
 | In | Resolution requests from [identity stitching](identity-stitching.md) | The normalized identifiers of one event, and its `event_id` and event time |
 | Out | The `canon_id` for a request | UUID string, or null for an event with no identifier |
-| Read and write | Identity graph tables | Proposed. One row per identifier: type, value, `canon_id`. One row per merge record. They replace `identity_graph`, which holds one row per `domain_userid`. The decision record that chooses the storage names the tables. |
+| Read and write | Identity graph tables | One row per identifier: type, value, `canon_id`. One row per merge record. They replace `identity_graph`, which holds one row per `domain_userid`. The decision record that chooses the storage names the tables. |
 | Out | Kafka `identity-merges` | One message per merge record. [Identity merges](identity-merges.md#interfaces) defines the key and the message. |
 
 ## Failure handling
@@ -133,18 +146,15 @@ Numbers marked "proposed" are starting values for review, not decisions.
 - Given a merge recorded for causing event `e1`, when `e1` arrives again, then the graph holds one merge record for it, and the winner does not change. (IDG-FR-09)
 - Given two events on two subtasks that each link set `S` with another set at the same moment, then every identifier of the three sets resolves to one `canon_id`, and the graph holds two merge records. (IDG-FR-01, IDG-FR-02)
 - Given a device that sent its last event 30 days ago, when it sends an event, then it resolves to the current `canon_id` of its set. (IDG-FR-10)
-- Given a limit of one `user_id` for each set, when `u2` logs in on a device in `u1`'s set, then the graph records no merge, the refused-merge count rises by 1, and the event gets the `canon_id` of `u2`'s set. (IDG-FR-07)
+- Given the limits, when `u2` logs in on a device in `u1`'s set, then the graph records no merge, the refused-merge count rises by 1, and the event gets the `canon_id` of `u2`'s set. (IDG-FR-07)
+- Given a set holding five emails, when an event links it with a sixth email's set, then the graph records no merge and the refused-merge count rises by 1. (IDG-FR-13)
+- Given an anonymous set `{dC}`, when `u2` logs in on `dC`, then the graph retires `U(dC)` into `U(u2)`, and `u2`'s other devices keep `U(u2)`. (IDG-FR-06, IDG-FR-13)
 - Given a merge, then its record holds both `canon_id` values, the causing `event_id` and event time, the linking identifiers, and the time of the merge. (IDG-FR-08)
 - Given a job restarted without a checkpoint, when a device of a merged set sends an event, then it gets the winning `canon_id`. (IDG-NFR-03)
 
 ## Open questions
 
-- **Shared devices.** When a second account logs in on a device, should the graph merge the two accounts, as it does today, refuse the merge, or move the device to the account that logged in last? Platforms differ. Segment Unify gives each identifier type a limit and a priority. When an event would break a limit, it drops the event's lower-priority identifiers and resolves the event on the rest. Amplitude does not merge two different user ids. Moving a device takes an identifier out of a set, which IDG-FR-12 forbids today.
-- **Limits.** Which types get a limit, and what is each value? Today no type has one, and the only bound is the 200 entries of a structure per device.
-- **Unmerge.** Should an operator be able to split a wrong merge? Jobs fold state on a merge, as [identity merges](identity-merges.md) describes, and a split cannot unfold it. A split would need its own contract.
-- **Convergence bound.** Is 5 seconds the right value for IDG-NFR-02? Today's recheck converges within 1 minute. A tighter bound costs more lookups or a faster way to tell resolvers about merges.
-- **Tenancy.** With more than one customer on a deployment, every identifier and merge record belongs to a tenant. See [decision 0027](../../decisions/0027-multi-tenancy.md).
-- **Who reads the graph.** Should `studio` show a person's identifiers and merge history to staff, for support and for checking a merge?
+None. [Decision 0050](../../decisions/0050-one-account-per-person-no-unmerge-and-a-5-second-merge-bound.md) answered shared devices, limits, unmerge, the convergence bound, tenancy, and who reads the graph on 2026-11-14.
 
 ## Related
 
@@ -155,6 +165,7 @@ Numbers marked "proposed" are starting values for review, not decisions.
 - [0002. Key every stateful write by its owner](../../decisions/0002-key-every-write-by-its-owner.md)
 - [0005. Keep live state in Flink and a durable copy in Postgres](../../decisions/0005-keep-live-state-in-flink.md)
 - [0012. Resolve events without a device from the durable copy](../../decisions/0012-resolve-events-without-a-device-from-the-durable-copy.md)
+- [0050. One account per person, no unmerge, and a 5 second merge bound](../../decisions/0050-one-account-per-person-no-unmerge-and-a-5-second-merge-bound.md)
 - [Known issues](../../../known-issues/components/identity/identity-graph.md)
 - Segment Unify, [Identity resolution settings](https://www.twilio.com/docs/segment/unify/identity-resolution/identity-resolution-settings)
 - Amplitude, [Track unique users](https://amplitude.com/docs/data/sources/instrument-track-unique-users)

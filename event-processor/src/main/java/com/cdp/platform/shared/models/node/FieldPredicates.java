@@ -1,5 +1,6 @@
 package com.cdp.platform.shared.models.node;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -46,23 +47,47 @@ public final class FieldPredicates {
 
     /**
      * Evaluates the tree, reading the left side of each comparison through
-     * {@code fields}.
+     * {@code fields}, without a check time: a relative-date comparison fails.
      */
     public static boolean evaluate(Predicate predicate, Function<String, String> fields) {
+        return evaluate(predicate, fields, null);
+    }
+
+    /**
+     * Evaluates the tree, reading the left side of each comparison through
+     * {@code fields}. A relative-date comparison measures from
+     * {@code checkTime}, the time of the evaluation, never the wall clock, so a
+     * replay reaches the same answer (DEC-FR-42). Without a check time it fails.
+     */
+    public static boolean evaluate(Predicate predicate, Function<String, String> fields, Instant checkTime) {
         if (predicate == null) return true;
         return switch (predicate) {
             case And(var expressions) -> expressions == null
-                || expressions.stream().allMatch(expression -> evaluate(expression, fields));
+                || expressions.stream().allMatch(expression -> evaluate(expression, fields, checkTime));
             case Or(var expressions) -> expressions != null
-                && expressions.stream().anyMatch(expression -> evaluate(expression, fields));
-            case Not(var expression) -> !evaluate(expression, fields);
+                && expressions.stream().anyMatch(expression -> evaluate(expression, fields, checkTime));
+            case Not(var expression) -> !evaluate(expression, fields, checkTime);
             // A rule restored from state may predate the parse-time checks, so a
             // missing left field or an unknown operator is read as false.
             case Comparison comparison -> comparison.left() != null && FieldOperator
                 .of(comparison.op())
-                .map(operator -> compare(fields.apply(comparison.left()), operator, comparison.right()))
+                .map(operator -> compare(fields.apply(comparison.left()), operator, comparison.right(), checkTime))
                 .orElse(false);
         };
+    }
+
+    /**
+     * The number of days in a relative-date comparison's value: a whole number of
+     * at least 1, or empty (DEC-FR-43).
+     */
+    public static Optional<Long> days(String value) {
+        if (value == null) return Optional.empty();
+        try {
+            long days = Long.parseLong(value.trim());
+            return days >= 1 ? Optional.of(days) : Optional.empty();
+        } catch (NumberFormatException notWhole) {
+            return Optional.empty();
+        }
     }
 
     private static Optional<String> firstProblem(Predicate predicate) {
@@ -84,18 +109,24 @@ public final class FieldPredicates {
         String left = comparison.left();
         if (isBlank(left)) return Optional.of("Comparison has no left field");
         if (isBlank(comparison.op())) return Optional.of("Comparison on %s has no operator".formatted(left));
-        return FieldOperator.of(comparison.op()).isPresent()
-            ? Optional.empty()
-            : Optional.of("Comparison on %s has unknown operator %s".formatted(left, comparison.op()));
+        Optional<FieldOperator> operator = FieldOperator.of(comparison.op());
+        if (operator.isEmpty()) {
+            return Optional.of("Comparison on %s has unknown operator %s".formatted(left, comparison.op()));
+        }
+        if (operator.get().isRelativeDate() && days(comparison.right()).isEmpty()) {
+            return Optional.of("Comparison on %s needs a whole number of days of at least 1".formatted(left));
+        }
+        return Optional.empty();
     }
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
 
-    private static boolean compare(String left, FieldOperator operator, String right) {
+    private static boolean compare(String left, FieldOperator operator, String right, Instant checkTime) {
         if (left == null || right == null) return false;
         return switch (operator) {
+            case MORE_THAN_DAYS_AGO, WITHIN_LAST_DAYS -> relativeDate(left, operator, right, checkTime);
             case GREATER, AT_LEAST, LESS, AT_MOST -> order(left, operator, right);
             case EQUALS -> left.equals(right);
             case NOT_EQUALS -> !left.equals(right);
@@ -115,6 +146,20 @@ public final class FieldPredicates {
         return instant(right)
             .map(rightInstant -> holds(operator, leftInstant.get().compareTo(rightInstant)))
             .orElse(false);
+    }
+
+    // The boundary is N times 86,400 seconds before the check time. More than N
+    // days ago is strictly before it. Within the last N days is from it up to the
+    // check time, both included, so a value after the check time fails.
+    private static boolean relativeDate(String left, FieldOperator operator, String right, Instant checkTime) {
+        if (checkTime == null) return false;
+        Optional<Long> days = days(right);
+        Optional<Instant> value = instant(left);
+        if (days.isEmpty() || value.isEmpty()) return false;
+        Instant boundary = checkTime.minus(Duration.ofDays(days.get()));
+        return operator == FieldOperator.MORE_THAN_DAYS_AGO
+            ? value.get().isBefore(boundary)
+            : !value.get().isBefore(boundary) && !value.get().isAfter(checkTime);
     }
 
     private static boolean holds(FieldOperator operator, int sign) {

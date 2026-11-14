@@ -49,5 +49,11 @@ Each record explains one choice that shapes the architecture: the context, the d
 | [0043](0043-apply-schema-changes-as-migrations-on-every-sync.md) | Apply schema changes as versioned migrations on every sync | Accepted | 2026-11-08 |
 | [0044](0044-classify-event-field-changes-as-safe-asks-first-or-breaking.md) | Classify event field changes as Safe, Asks first, or Breaking | Accepted | 2026-11-08 |
 | [0045](0045-adopt-the-salarose-design-system-and-approve-a-visual-draft-before-ui-code.md) | Adopt the Salarose design system, and approve a visual draft before UI code | Accepted | 2026-11-08 |
+| [0046](0046-cap-fan-out-at-10000-exact-items-and-thresholds-as-filters.md) | Cap fan-out at 10,000 people, match exact items, and express thresholds as filters | Accepted | 2026-11-14 |
+| [0047](0047-email-and-phone-are-guarded-match-keys-from-import-and-the-api.md) | Email and phone are guarded match keys, learned from imports and the API | Accepted | 2026-11-14 |
+| [0048](0048-ingestion-keeps-tracker-parity-a-per-replica-limit-and-two-keys-for-rotation.md) | The ingestion API ignores catalog status, counts its rate limit per replica, and allows two keys per app id | Accepted | 2026-11-14 |
+| [0049](0049-the-ingestion-api-writes-plain-json-to-its-own-topic-and-leaves-history-to-import.md) | The ingestion API writes plain JSON to its own topic, and leaves history to the import | Accepted | 2026-11-05 |
+| [0050](0050-one-account-per-person-no-unmerge-and-a-5-second-merge-bound.md) | One account per person, no unmerge, and a 5 second merge bound | Accepted | 2026-11-14 |
+| [0051](0051-fold-to-the-earliest-instance-and-count-nodes-through-merge-history.md) | Fold to the earliest instance, accept the fold window, and count nodes through merge history | Accepted | 2026-11-14 |
 
 To add a decision, copy [the template](../../_templates/decision.md) to the next free number. Never edit an accepted record to reverse it. Write a new record and set `superseded_by` on the old one.

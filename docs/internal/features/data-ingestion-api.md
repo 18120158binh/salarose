@@ -7,8 +7,8 @@ implementation: shipped
 area: event-processor
 tags: [ingestion, api, onboarding, identity]
 created: 2026-10-18
-updated: 2026-11-08
-version: 1.4
+updated: 2026-11-14
+version: 1.5
 known_issues: ../known-issues/features/data-ingestion-api.md
 ---
 
@@ -36,7 +36,7 @@ Out of scope:
 - The Snowplow tracker protocol as a request body. The API takes only the plain JSON below.
 - More than one customer on a deployment. A deployment serves one tenant, so a source key names a source, not a customer. See [decision 0027](../architecture/decisions/0027-multi-tenancy.md).
 
-The owner decided on 2026-11-05 that the API writes to topics of its own, whose format carries no Snowplow fields, that the body is plain JSON only, that backfill is out of scope, that a deployment has one tenant, and that an admin creates and revokes source keys in `studio`.
+The owner decided on 2026-11-05 that the API writes to topics of its own, whose format carries no Snowplow fields, that the body is plain JSON only, that backfill is out of scope, that a deployment has one tenant, and that an admin creates and revokes source keys in `studio`. [Decision 0049](../architecture/decisions/0049-the-ingestion-api-writes-plain-json-to-its-own-topic-and-leaves-history-to-import.md) records these choices and their reasons. History arrives through the [data import](data-import.md) instead.
 
 ## Terms
 
@@ -167,7 +167,7 @@ flowchart LR
 
 ### Source keys
 
-An admin opens the source keys page, `/data/sources` in studio v2 ([data health](data-health.md#source-keys-view)), enters an app id, and creates a key. Until cutover, the classic page `/admin/source-keys` does the same. `studio` shows the key once and stores only its SHA-256 hash, with the app id. An app id has at most one key that is not revoked. To rotate a key, the admin revokes it and creates a new one for the same app id. A revoked key is refused with `401` from the next request on.
+An admin opens the source keys page, `/data/sources` in studio v2 ([data health](data-health.md#source-keys-view)), enters an app id, and creates a key. Until cutover, the classic page `/admin/source-keys` does the same. `studio` shows the key once and stores only its SHA-256 hash, with the app id. An app id has at most two keys that are not revoked. To rotate a key, the admin creates a second key for the app id, switches the sender to it, and then revokes the old one, so the sender is never without a valid key ([decision 0048](../architecture/decisions/0048-ingestion-keeps-tracker-parity-a-per-replica-limit-and-two-keys-for-rotation.md)). A third create for the app id is refused until one key is revoked. A revoked key is refused with `401` from the next request on.
 
 A key can also be granted record types for [data import](data-import.md#writers-and-scopes), in `import_source_scopes`. A key without scopes imports nothing, and revoking a key stops its imports too (DIA-FR-40). A rotated key starts with no scopes, and the admin grants them again.
 
@@ -192,6 +192,8 @@ A key can also be granted record types for [data import](data-import.md#writers-
 | DIA-FR-15 | `POST /v1/events` must reject an event whose name is a catalog event of kind `business`, and name the business route. |
 | DIA-FR-16 | Only an admin may create or revoke a source key. Creating one must show the key once and store only its hash. |
 | DIA-FR-17 | A revoked key must be refused like a key that does not exist. |
+| DIA-FR-18 | An app id must hold at most two keys that are not revoked. Creating a third must fail and write nothing. |
+| DIA-FR-19 | Both routes must accept an event whatever its catalog entry's status. Status hides an event from the journey builder only. |
 | DIA-FR-40 | A source key must import only into the record types `import_source_scopes` grants it, and a revoked key must import nothing, by the rules of [data import](data-import.md#writers-and-scopes). |
 
 ## Non-functional requirements
@@ -199,7 +201,7 @@ A key can also be granted record types for [data import](data-import.md#writers-
 | Id | Requirement |
 |---|---|
 | DIA-NFR-01 | A batch holds at most 500 events and 1 MiB. A larger request gets `413` and stores nothing. |
-| DIA-NFR-02 | Each source key has a rate limit, default 100 requests per second and configurable. Over the limit, the API returns `429` with `Retry-After`. |
+| DIA-NFR-02 | Each source key has a rate limit, default 100 requests per second and configurable. Each app replica counts it on its own, so a deployment with N replicas accepts up to N times the limit and sets the limit to its intended total divided by N ([decision 0048](../architecture/decisions/0048-ingestion-keeps-tracker-parity-a-per-replica-limit-and-two-keys-for-rotation.md)). Over the limit, the API returns `429` with `Retry-After`. |
 | DIA-NFR-03 | An accepted event reaches `snowplow-parsed` within 5 seconds at the 99th percentile. |
 | DIA-NFR-04 | `200` means every accepted event is durably stored. A client that gets a timeout or a `5xx` may resend the whole batch. DIA-FR-08 makes that safe. |
 | DIA-NFR-05 | Source keys are stored hashed, can be revoked, and never appear in logs. |
@@ -228,6 +230,8 @@ Event fields:
 | `event_time` | Yes | When the event happened, not when it was sent |
 | `user_id` | One of the two | The logged-in account id, the same value the customer's trackers send as the user id |
 | `anonymous_id` | One of the two | A device or cookie id, the same value the trackers send as the domain user id |
+| `email` | No | The person's email address. A guarded match key, normalized by the [identifiers](../architecture/components/identity/identifiers.md#normalize-an-identifier) rules. It does not replace `user_id` or `anonymous_id`. |
+| `phone` | No | The person's phone number, in E.164 or in the deployment's default phone country. Same rules as `email`. |
 | `attributes` | No | The event's data |
 
 ## Failure handling
@@ -258,6 +262,14 @@ Event fields:
 - Given a key with no import scopes, when it posts `POST /v1/imports` for `orders`, then the response is `403`, and its `POST /v1/events` still works. Given the key revoked, then both return `401`. (DIA-FR-40)
 - Given a key that an admin revoked, when a batch is posted with it, then the response is `401` and nothing reaches `business-events`. (DIA-FR-17)
 - Given a key posting more requests in one second than its rate limit, then the next request gets `429` with `Retry-After`. (DIA-NFR-02)
+- Given an app id with one active key, when an admin creates a second, then both keys are accepted until one is revoked. When the admin tries a third, then the create fails and writes nothing. (DIA-FR-18)
+- Given a business event whose catalog entry is `inactive`, when it is posted with a valid item key, then it is accepted and reaches `business-events`. (DIA-FR-19)
+
+## Open questions
+
+[Decision 0048](../architecture/decisions/0048-ingestion-keeps-tracker-parity-a-per-replica-limit-and-two-keys-for-rotation.md) settled catalog status, the rate limit, and key rotation on 2026-11-14. One question is the owner's:
+
+- **Where the API runs.** The API runs inside `studio`, so ingestion uptime and scaling follow `studio`. Keep it there, or move it to its own service? The answer decides where `POST /v1/events` and the rate limit live, and sets infrastructure cost.
 
 ## Related
 
@@ -266,6 +278,7 @@ Event fields:
 - [Business event fan-out](../architecture/components/business-event-fan-out.md)
 - [0032. Fan out business events to interested people](../architecture/decisions/0032-fan-out-business-events-to-interested-people.md)
 - [Event catalog](event-catalog.md)
+- [0049. The ingestion API writes plain JSON to its own topic, and leaves history to the import](../architecture/decisions/0049-the-ingestion-api-writes-plain-json-to-its-own-topic-and-leaves-history-to-import.md)
 - [Onboard a customer](../operations/onboard-a-customer.md)
 - [Tracking integration guide](../integration/tracking-guide.md)
 - [Data import](data-import.md)

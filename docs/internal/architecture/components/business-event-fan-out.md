@@ -2,13 +2,13 @@
 title: Business event fan-out
 slug: business-event-fan-out
 purpose: Turn each business event, such as a price drop, into one record per person that a campaign should reach.
-status: draft
+status: accepted
 implementation: planned
 area: event-processor
 tags: [business-events, fan-out, flink, interest, segments]
 created: 2026-10-21
-updated: 2026-10-21
-version: 0.1
+updated: 2026-11-14
+version: 1.0
 known_issues: ../../known-issues/components/business-event-fan-out.md
 ---
 
@@ -16,7 +16,7 @@ known_issues: ../../known-issues/components/business-event-fan-out.md
 
 ## Purpose
 
-A business event is about an item, not a person: a product's price dropped, or it is back in stock. A campaign that starts on one has to reach the people it concerns: the people who viewed that product recently, or the members of a segment. This component keeps an index of who is interested in each item and who is in each segment, and turns each business event into one record per person and campaign for [customer decision](customer-decision.md). This contract is a draft. The [open questions](#open-questions) must have answers before it is accepted.
+A business event is about an item, not a person: a product's price dropped, or it is back in stock. A campaign that starts on one has to reach the people it concerns: the people who viewed that product recently, or the members of a segment. This component keeps an index of who is interested in each item and who is in each segment, and turns each business event into one record per person and campaign for [customer decision](customer-decision.md). [Decision 0046](../decisions/0046-cap-fan-out-at-10000-exact-items-and-thresholds-as-filters.md) settles its caps, the segment broadcast, thresholds, and item matching.
 
 ## Scope
 
@@ -93,6 +93,9 @@ A match carries the business event's `event_id`, name, time, item key, and attri
 | BEF-FR-06 | A segment audience must reach every person the segment member index holds for that segment. |
 | BEF-FR-07 | When an interest selects more people than the cap, the fan-out must emit to the most recently interested first, and must count the people it leaves out. |
 | BEF-FR-08 | The index must start counting an interest when an active campaign starts using it. It must not invent earlier interest. |
+| BEF-FR-09 | An interest must match only the exact item key. It must not match a related item, such as one in the same category. |
+| BEF-FR-10 | The fan-out must not rate-limit or delay matches. A segment audience emits every match as soon as its shard reads the business event. |
+| BEF-FR-11 | A threshold, such as a minimum stock level, is a filter on the business event's attributes. The fan-out must not hold a business event to re-check it later. |
 
 ## Non-functional requirements
 
@@ -100,8 +103,8 @@ Numbers marked "proposed" are starting values for review, not decisions.
 
 | Id | Requirement |
 |---|---|
-| BEF-NFR-01 | An item keeps at most 10,000 people per interest. Proposed. |
-| BEF-NFR-02 | One business event emits at most 10,000 matches per interest campaign. Proposed. |
+| BEF-NFR-01 | An item keeps at most 10,000 people per interest. |
+| BEF-NFR-02 | One business event emits at most 10,000 matches per interest campaign. |
 | BEF-NFR-03 | The fan-out remembers the last 1,000 business event ids per item key. |
 | BEF-NFR-04 | Matches for an interest campaign reach `business-event-matches` within 10 seconds of the business event at the 99th percentile. Proposed. |
 | BEF-NFR-05 | Delivery is at least once. Customer decision and journey execution make a repeated match harmless by its entry id. See [decision 0006](../decisions/0006-at-least-once-delivery-with-idempotent-writes.md). |
@@ -153,13 +156,13 @@ A match:
 - Given 12,000 people interested in one item, when its business event arrives, then the fan-out emits 10,000 matches, to the most recently interested, and counts 2,000. (BEF-FR-07)
 - Given views of `SKU-123` that happened before any active campaign used the interest, then they do not count. (BEF-FR-08)
 - Given two campaigns with the same interest, then the index counts each view once, and each campaign gets its own match. (BEF-FR-01)
+- Given views of `SKU-124` in the same category as `SKU-123`, when a `price_drop` for `SKU-123` arrives, then no match is emitted for that viewer. (BEF-FR-09)
+- Given a segment audience of 50,000 indexed members, when the business event arrives, then the fan-out emits 50,000 matches without holding any back. (BEF-FR-10)
+- Given a business trigger with the filter `quantity >= 5`, when `back_in_stock` arrives with `quantity` 2, then the campaign gets no match, and the fan-out keeps no state to check it again. (BEF-FR-04, BEF-FR-11)
 
 ## Open questions
 
-- **Caps.** Are 10,000 people per item and 10,000 matches per business event and campaign the right limits? Customer.io caps object triggers at 1,000 and drops all of them above it.
-- **Segment broadcast size.** A segment audience emits one match per member, with no cap. Does a large broadcast need a rate limit, so that it does not delay interest matches?
-- **Restock thresholds and a safety wait.** Bloomreach counts a restock only above a threshold, and can wait and check stock again before sending. Should business triggers support that, or is it the sender's job to post a business event only for a real change?
-- **Interest across items.** Klaviyo's price drop reaches only viewers of that exact product. Should an interest match a related item, such as the same category?
+None. [Decision 0046](../decisions/0046-cap-fan-out-at-10000-exact-items-and-thresholds-as-filters.md) answered the caps, the segment broadcast size, restock thresholds, and interest across items on 2026-11-14.
 
 ## Related
 
@@ -170,4 +173,5 @@ A match:
 - [Segments](../../features/segments.md)
 - [0032. Fan out business events to interested people](../decisions/0032-fan-out-business-events-to-interested-people.md)
 - [0033. A journey instance is one entry](../decisions/0033-a-journey-instance-is-one-entry.md)
+- [0046. Cap fan-out at 10,000 people, match exact items, and express thresholds as filters](../decisions/0046-cap-fan-out-at-10000-exact-items-and-thresholds-as-filters.md)
 - [Known issues](../../known-issues/components/business-event-fan-out.md)

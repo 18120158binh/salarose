@@ -7,8 +7,8 @@ implementation: planned
 area: event-processor
 tags: [identity, identifiers, normalization]
 created: 2026-10-21
-updated: 2026-11-04
-version: 0.2
+updated: 2026-11-14
+version: 0.3
 known_issues: ../../../known-issues/components/identity/identifiers.md
 ---
 
@@ -16,7 +16,7 @@ known_issues: ../../../known-issues/components/identity/identifiers.md
 
 ## Purpose
 
-Identity resolution can link only what it can compare. Today the platform knows two identifiers, `domain_userid` and `user_id`, and compares them as plain strings with no type. Messages need email addresses and phone numbers, customers already send a phone number as `user_id`, and the same string can be a device id in one place and an account id in another. This contract fixes the list of identifier types, the normalized form of each, and which types may link two identity sets. It is a draft. The [open questions](#open-questions) must have answers before it is accepted.
+Identity resolution can link only what it can compare. Today the platform knows two identifiers, `domain_userid` and `user_id`, and compares them as plain strings with no type. Messages need email addresses and phone numbers, customers already send a phone number as `user_id`, and the same string can be a device id in one place and an account id in another. This contract fixes the list of identifier types, the normalized form of each, and which types may link two identity sets. [Decision 0047](../../decisions/0047-email-and-phone-are-guarded-match-keys-from-import-and-the-api.md) settles the sources of email and phone, their match-key rule, the default phone country, and the fixed type list. It stays a draft until the owner answers the [open questions](#open-questions) on hashing and existing `canon_id` values.
 
 ## Scope
 
@@ -54,11 +54,17 @@ An app sends `uid = 0912345678` when the shopper logs in. The platform reads it 
 |---|---|---|---|---|
 | `user_id` | The tracker's `uid`, and `user_id` in the [data ingestion API](../../../features/data-ingestion-api.md) | Trimmed. Case is kept. | Yes | 3 |
 | `domain_userid` | The tracker's `duid`, or the mobile session context | Trimmed. Case is kept. | Yes | 2 |
-| `email` | Not decided | Trimmed and lowercased | Not decided | Not decided |
-| `phone` | Not decided | E.164: `+`, the country code, and the national number, with digits only | Not decided | Not decided |
+| `email` | The email role of an import's type mapping, and `email` on a person event of the [data ingestion API](../../../features/data-ingestion-api.md) | Trimmed and lowercased | Yes, guarded | 1 |
+| `phone` | The phone role of an import's type mapping, and `phone` on a person event of the data ingestion API | E.164: `+`, the country code, and the national number, with digits only | Yes, guarded | 1 |
 | `network_userid` | The collector's cookie | Not used | No | None |
 
 The merge priority decides which root wins when two identity sets merge, as [identity stitching](identity-stitching.md#merge) describes. A higher number wins.
+
+A guarded match key links sets with one exception: it must never join two sets that each hold a `user_id`. Such a link is refused, and counted as a conflict by type.
+
+The type list is fixed. A customer cannot add a type. A loyalty card number or a CRM id stays an imported attribute.
+
+Trackers do not send email or phone. The profile data feed in `customer_profiles` is not a source.
 
 `profile.cdp_uuid` in `customer_profiles` is not an identifier type. Jobs match it against `user_id` to find a person's profile.
 
@@ -68,7 +74,7 @@ Apply these steps to every identifier before identity resolution sees it:
 
 1. Trim leading and trailing whitespace.
 2. If the value is blank, or equal to a placeholder id with case ignored, the identifier is absent.
-3. Apply the normalized form of the type. Lowercase an email address. Remove spaces, dashes, dots, and parentheses from a phone number, and write it in E.164.
+3. Apply the normalized form of the type. Lowercase an email address. Remove spaces, dashes, dots, and parentheses from a phone number, and write it in E.164. A number that starts with `+`, or with `00`, the international prefix, already carries its country; replace `00` with `+`. Any other number is a national number of the deployment's default phone country, an ISO 3166 two-letter code: drop one leading `0` and prefix the country code. With no default country set, such a number does not fit.
 4. If the value does not fit its type, the identifier is absent, and the drop is counted by type. An email address without exactly one `@` does not fit. A phone number with a letter, or with more than 15 digits, the E.164 maximum, does not fit.
 
 No other rewrite applies. An email address keeps its dots and any `+tag`, because those rules hold for some mail providers and not for others.
@@ -77,15 +83,19 @@ Two identifiers are equal only when their types are equal and their normalized v
 
 ### Derived roots
 
-Identity stitching gives an identifier with no stored mapping a root derived from its type and value, as [identity stitching](identity-stitching.md#derive-a-root) describes. A `user_id` derives its root from `canon:` and the value. A `domain_userid` derives it from `canon-domain_userid:` and the value. A `user_id` and a `domain_userid` with one value therefore derive different roots.
+Identity stitching gives an identifier with no stored mapping a root derived from its type and value, as [identity stitching](identity-stitching.md#derive-a-root) describes. A `user_id` derives its root from `canon:` and the value. A `domain_userid` derives it from `canon-domain_userid:` and the value. An `email` derives it from `canon-email:` and the normalized value, and a `phone` from `canon-phone:` and the normalized value. Identifiers of different types with one value therefore derive different roots. Identity stitching does not derive email or phone roots yet; it will when typed identifiers are built.
 
 ```mermaid
 flowchart LR
     A["(user_id, abc)"] --> K{"Stored mapping for (type, value)?"}
     B["(domain_userid, abc)"] --> K
+    E["(email, a@x.com)"] --> K
+    P["(phone, +84912345678)"] --> K
     K -- yes --> R["Stored root"]
     K -- "no, user_id" --> U["canon:abc"]
     K -- "no, domain_userid" --> D["canon-domain_userid:abc"]
+    K -- "no, email" --> EM["canon-email:a@x.com"]
+    K -- "no, phone" --> PH["canon-phone:+84912345678"]
 ```
 
 The `user_id` form is the one used before types were part of an identifier, so every `user_id` keeps its `canon_id`. The platform has never run in production, so no stored `canon_id` of a `domain_userid` had to be kept.
@@ -101,6 +111,9 @@ The `user_id` form is the one used before types were part of an identifier, so e
 | IDN-FR-05 | Only match keys may link identity sets. A stored identifier must never cause a merge. |
 | IDN-FR-06 | Normalization must drop an identifier that does not fit its type, and count the drop by type. The event must continue with its other identifiers. |
 | IDN-FR-07 | Identity resolution must not use `network_userid` as an identifier. |
+| IDN-FR-08 | A link through `email` or `phone` must never join two identity sets that each hold a `user_id`. Identity resolution must refuse it, keep both sets, and count the conflict by type. |
+| IDN-FR-09 | A phone number without a country must be read in the deployment's default phone country. With none set, it does not fit its type. |
+| IDN-FR-10 | Identity resolution must accept only the types in the [type table](#identifier-types). |
 
 ## Non-functional requirements
 
@@ -114,8 +127,9 @@ The `user_id` form is the one used before types were part of an identifier, so e
 
 | Direction | Interface | Contract |
 |---|---|---|
-| In | Parsed event fields | `user_id` and `domain_userid`, read by [event ingestion](../event-ingestion.md). Sources for `email` and `phone` are an open question. |
-| In | Data ingestion API events | `user_id` and `anonymous_id`. See [the data ingestion API](../../../features/data-ingestion-api.md). |
+| In | Parsed event fields | `user_id` and `domain_userid`, read by [event ingestion](../event-ingestion.md). Tracker hits carry no `email` or `phone`. |
+| In | Data ingestion API events | `user_id`, `anonymous_id`, and optional `email` and `phone`. See [the data ingestion API](../../../features/data-ingestion-api.md). |
+| In | Import identifier observations | `email` and `phone` from the import's email and phone roles, keyed by the customer key. See [data import](../../../features/data-import.md). |
 | Out | Identifiers handed to identity resolution | A list of (type, normalized value) pairs. Absent identifiers are left out. |
 
 ## Failure handling
@@ -124,6 +138,7 @@ The `user_id` form is the one used before types were part of an identifier, so e
 |---|---|
 | Blank value or placeholder id | The identifier is absent. Count nothing. |
 | Value that does not fit its type | The identifier is absent. Count the drop by type. The event keeps its other identifiers. |
+| Email or phone that would join two sets with a `user_id` each | Refuse the link. Keep both sets. Count the conflict by type (IDN-FR-08). |
 | Event with no identifier left | Event ingestion publishes the event with a null `canon_id`, as it does today ([event ingestion](../event-ingestion.md#failure-handling)). |
 
 ## Acceptance criteria
@@ -137,14 +152,18 @@ The `user_id` form is the one used before types were part of an identifier, so e
 - Given a stored identifier type, when one event carries a value of it that is already stored on another person's set, then the two sets do not merge. (IDN-FR-05)
 - Given an event with only a `network_userid`, then its `canon_id` is null. (IDN-FR-07)
 - Given the same email and configuration, when event ingestion and the data ingestion API normalize it, then both give the same value. (IDN-NFR-02)
+- Given sets holding `user_id` `u1` and `u2`, when an event carries `u1` and the email `a@x.com`, which the `u2` set already holds, then the sets stay apart and the email conflict count rises by 1. (IDN-FR-08)
+- Given an anonymous set on `domain_userid` `d1`, when an event carries `d1` and the email `a@x.com`, which the set of `u1` holds, then the sets merge under the root of `u1`. (IDN-FR-08)
+- Given the default phone country `VN`, then `0912345678` normalizes to `+84912345678`. (IDN-FR-09)
+- Given no default phone country, then `0912345678` is absent and the phone drop count rises by 1. (IDN-FR-09)
+- Given an event with an identifier of type `cardcode`, then identity resolution ignores it. (IDN-FR-10)
 
 ## Open questions
 
-- **Sources of email and phone.** Where does the platform learn them? The options are an `identify` event from the trackers that carries the person's details, fields on the data ingestion API, or the profile data feed, which already holds `phone` and `email` for each `cdp_uuid`. The feed is the cheapest, but another system owns `customer_profiles`.
-- **Email and phone as match keys.** If they are match keys, a family that shares one email address becomes one person, as a shared device does today. If they are stored identifiers, they link nothing, and the outbox can read them as contact details. The [identity graph](identity-graph.md#open-questions) asks the related question of a limit per type.
-- **Default country for phone numbers.** A number such as `0912345678` has no country code. Is there one default country for each deployment?
-- **Customer-defined types.** Should a customer be able to add a type, such as a loyalty card number (`cardcode`) or a CRM id (`customer_id`)? The profile data already holds both.
-- **Hashing.** Should the graph store email addresses and phone numbers in clear text, or as hashes? Clear text puts personal data in one more table. The outbox cannot send a message to a hash.
+[Decision 0047](../../decisions/0047-email-and-phone-are-guarded-match-keys-from-import-and-the-api.md) answered the sources of email and phone, email and phone as match keys, the default country, and customer-defined types on 2026-11-14. Two questions are the owner's:
+
+- **Hashing.** Should the graph store email addresses and phone numbers in clear text, or as hashes? Clear text puts personal data in one more table. The outbox cannot send a message to a hash. [Decision 0042](../../decisions/0042-keep-imported-contact-details-plain-behind-masking-and-tombstones.md) keeps imported contact details plain. Until the owner answers, the graph keeps them plain too.
+- **Existing `canon_id` values.** [Derived roots](#derived-roots) keeps every `user_id` root as it is, so no stored `canon_id` is rewritten. The contract records that the platform has never run in production. Does the owner confirm that no existing `canon_id` is rewritten, or should a rewrite be planned?
 
 ## Related
 
@@ -154,5 +173,6 @@ The `user_id` form is the one used before types were part of an identifier, so e
 - [Event ingestion](../event-ingestion.md)
 - [Data ingestion API](../../../features/data-ingestion-api.md)
 - [Notification outbox](../notification-outbox.md)
+- [0047. Email and phone are guarded match keys, learned from imports and the API](../../decisions/0047-email-and-phone-are-guarded-match-keys-from-import-and-the-api.md)
 - [Tracking integration guide](../../../integration/tracking-guide.md#identity)
 - [Known issues](../../../known-issues/components/identity/identifiers.md)
