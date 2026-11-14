@@ -3,11 +3,11 @@ title: Import metric pass
 slug: import-metric-pass
 purpose: Once a night, compute every imported metric and profile attribute from the import store, and publish only the values that changed, without filling the main Postgres's WAL.
 status: accepted
-implementation: planned
+implementation: partial
 area: event-processor
 tags: [data-import, batch, metrics, wal, idempotency]
 created: 2026-11-08
-updated: 2026-11-08
+updated: 2026-11-14
 version: 1.0
 known_issues: ../../known-issues/components/import-metric-pass.md
 ---

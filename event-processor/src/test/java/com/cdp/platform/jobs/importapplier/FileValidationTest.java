@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+import com.cdp.platform.shared.batch.LockGuard;
+import com.cdp.platform.shared.batch.Tombstones;
 import com.cdp.platform.shared.models.imports.DatasetVersion;
 import com.cdp.platform.shared.utils.PlaceholderIds;
 

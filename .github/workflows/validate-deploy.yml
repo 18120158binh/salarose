@@ -42,7 +42,7 @@ jobs:
           overlay=infra/k8s/envs/aws-free-plan
           kustomize build "$overlay" >/dev/null
           cp "$overlay/kustomization.yaml" /tmp/kustomization.yaml
-          for layer in data apps/flink-sinks apps/flink-decision apps/flink-parse apps/web apps/flink-ui apps/kafka-ui apps/monitoring apps/import-applier; do
+          for layer in data apps/flink-sinks apps/flink-decision apps/flink-parse apps/web apps/flink-ui apps/kafka-ui apps/monitoring apps/import-applier apps/import-metric-pass; do
             grep -q "^  - ../../$layer$" "$overlay/kustomization.yaml" ||
               sed -i "/^  - ..\/..\/platform$/a\\  - ../../$layer" "$overlay/kustomization.yaml"
           done

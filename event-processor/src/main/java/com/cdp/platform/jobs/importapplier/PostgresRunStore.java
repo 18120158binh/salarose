@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import com.cdp.platform.shared.batch.LockGuard;
 import com.cdp.platform.shared.db.repositories.ImportRecordTypesTable;
 import com.cdp.platform.shared.db.repositories.PersonTombstonesTable;
 import com.cdp.platform.shared.models.imports.DatasetVersion;

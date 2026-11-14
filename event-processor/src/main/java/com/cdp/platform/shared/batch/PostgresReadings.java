@@ -1,4 +1,4 @@
-package com.cdp.platform.jobs.segmentpass;
+package com.cdp.platform.shared.batch;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -9,6 +9,10 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.InstantSource;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.Optional;
 import java.util.OptionalDouble;
 
@@ -24,9 +28,10 @@ import org.slf4j.LoggerFactory;
  * set is a missing reading. The disk share is the worse of the node
  * filesystem's free share, from the monitoring query, and the database's free
  * share of its claim. No query configured, or one that fails, is a missing
- * reading.
+ * reading. The cluster WAL rate is the change in {@code pg_current_wal_lsn()}
+ * over the last 60 seconds of samples, missing until two samples exist.
  */
-final class PostgresReadings implements WalGovernor.Readings {
+public final class PostgresReadings implements WalGovernor.Readings {
 
     private static final Logger LOG = LoggerFactory.getLogger(PostgresReadings.class);
     private static final Duration QUERY_TIMEOUT = Duration.ofSeconds(10);
@@ -37,16 +42,25 @@ final class PostgresReadings implements WalGovernor.Readings {
                (SELECT min(safe_wal_size) FROM pg_replication_slots)
         """;
     private static final String DATABASE_BYTES_SQL = "SELECT pg_database_size(current_database())";
+    private static final String LSN_SQL = "SELECT pg_current_wal_lsn() - '0/0'::pg_lsn";
+    static final Duration RATE_WINDOW = Duration.ofSeconds(60);
+
+    /** One LSN sample, in bytes since the start of WAL. */
+    record Sample(Instant at, double lsn) {
+    }
 
     private final Connection connection;
     private final Optional<URI> freeDiskQuery;
     private final long claimBytes;
+    private final InstantSource clock;
+    private final Deque<Sample> samples = new ArrayDeque<>();
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(QUERY_TIMEOUT).build();
 
-    PostgresReadings(Connection connection, Optional<URI> freeDiskQuery, long claimBytes) {
+    public PostgresReadings(Connection connection, Optional<URI> freeDiskQuery, long claimBytes, InstantSource clock) {
         this.connection = connection;
         this.freeDiskQuery = freeDiskQuery;
         this.claimBytes = claimBytes;
+        this.clock = clock;
     }
 
     @Override
@@ -54,7 +68,37 @@ final class PostgresReadings implements WalGovernor.Readings {
         OptionalDouble disk = OptionalDouble.empty();
         OptionalDouble node = nodeFreeShare();
         if (node.isPresent()) disk = OptionalDouble.of(Math.min(node.getAsDouble(), databaseFreeShare()));
-        return new WalGovernor.Reading(slotShare(), disk);
+        return new WalGovernor.Reading(slotShare(), disk, sampleClusterRate());
+    }
+
+    /**
+     * Takes an LSN sample and returns the rate since the oldest sample kept. A job
+     * calls it once at start, so its first reading has a rate.
+     */
+    public OptionalDouble sampleClusterRate() throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(LSN_SQL);
+            ResultSet row = statement.executeQuery()) {
+            row.next();
+            return rate(samples, new Sample(clock.instant(), row.getDouble(1)));
+        }
+    }
+
+    /**
+     * Adds the sample, drops samples no longer needed for a 60-second window, and
+     * returns the rate from the oldest kept sample in bytes per second.
+     */
+    static OptionalDouble rate(Deque<Sample> samples, Sample now) {
+        samples.addLast(now);
+        Instant windowStart = now.at().minus(RATE_WINDOW);
+        while (samples.size() > 2) {
+            Sample second = samples.stream().skip(1).findFirst().orElseThrow();
+            if (second.at().isAfter(windowStart)) break;
+            samples.removeFirst();
+        }
+        Sample oldest = samples.getFirst();
+        double seconds = Duration.between(oldest.at(), now.at()).toMillis() / 1e3;
+        if (seconds <= 0) return OptionalDouble.empty();
+        return OptionalDouble.of(Math.max(0, now.lsn() - oldest.lsn()) / seconds);
     }
 
     private OptionalDouble slotShare() throws SQLException {
@@ -102,7 +146,7 @@ final class PostgresReadings implements WalGovernor.Readings {
     }
 
     /** {@code data.result[0].value[1]} of a Prometheus vector, if it is a share. */
-    static OptionalDouble freeShare(JsonNode body) {
+    public static OptionalDouble freeShare(JsonNode body) {
         JsonNode value = body.path("data").path("result").path(0).path("value").path(1);
         if (!value.isTextual()) return OptionalDouble.empty();
         try {

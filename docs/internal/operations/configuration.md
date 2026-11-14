@@ -236,25 +236,29 @@ The import applier reads its settings once at start, and stops before it takes t
 
 | Setting | Read by | Default | Effect |
 |---|---|---|---|
-| Reporting time zone | Import metric pass, import applier, studio | `Asia/Ho_Chi_Minh` | IANA zone of the nightly schedule and of datetimes without an offset. Shown read-only on `/settings`. |
+| Reporting time zone, `REPORTING_TIME_ZONE` in the passes | Import metric pass, import applier, studio | `Asia/Ho_Chi_Minh` | IANA zone of the nightly schedule and of datetimes without an offset. Shown read-only on `/settings`. |
 | Default phone country, `IMPORT_DEFAULT_PHONE_COUNTRY` in the applier | Import applier, studio | `VN` | ISO 3166-1 region for phone numbers without a country code. Shown read-only on `/settings`. A region the phone library does not know stops the applier at start. |
-| Tombstone key, `IMPORT_TOMBSTONE_KEY` in studio and the applier | Import applier, import metric pass, studio | None, required | Secret that keys the tombstone HMAC. Created once per deployment and never rotated, because a new key makes every tombstone miss. Keep it in a secret and in the deployment's secret backup. |
-| Import store connection, `IMPORT_DB_HOST`, `IMPORT_DB_PORT`, `IMPORT_DB_DATABASE`, `IMPORT_DB_USER`, `IMPORT_DB_PASSWORD` in the applier | Import applier, import metric pass, studio | None, except the port `5432` | Host, database, user, and password of the import store. Studio's user may only read. |
+| Tombstone key, `IMPORT_TOMBSTONE_KEY` in studio, the applier, and the import metric pass | Import applier, import metric pass, studio | None, required | Secret that keys the tombstone HMAC. Created once per deployment and never rotated, because a new key makes every tombstone miss. Keep it in a secret and in the deployment's secret backup. |
+| Import store connection, `IMPORT_DB_HOST`, `IMPORT_DB_PORT`, `IMPORT_DB_DATABASE`, `IMPORT_DB_USER`, `IMPORT_DB_PASSWORD` in the applier and the import metric pass | Import applier, import metric pass, studio | None, except the port `5432` | Host, database, user, and password of the import store. The import metric pass and studio connect as `import_reader`, which may only read. |
 | Drop zone bucket and prefix, `IMPORTS_BUCKET` in studio and the applier | Import applier, studio | `imports/` in the deployment's bucket | Where files land. Lifecycle: `incoming/` 30 days, `rejects/` 14 days. |
 | Applier interval, the `schedule` of the CronJob `import-applier` | Import applier | 10 minutes | How often the applier starts and drains the queue |
 | Reject threshold, `IMPORT_REJECT_THRESHOLD` | Import applier | `0.05` | Share of rejected rows, from 0 to 1, above which a run is quarantined |
 | Snapshot shrink ratio, `IMPORT_SHRINK_RATIO` | Import applier | `0.8` | Share, from 0 to 1, of the type's last source-key snapshot below which a snapshot is quarantined |
 | Record cap, `IMPORT_RECORD_CAP` | Import applier | `5000000` | Most rows `import_records` may hold. A positive integer. |
 | History limit, future limit, `IMPORT_HISTORY_LIMIT` and `IMPORT_FUTURE_LIMIT` | Import applier | `P3Y`, `P1D` | Event time range a row may have, around the run's start, as positive ISO-8601 periods |
-| Pass schedule | Import metric pass | 03:00 | Local time of the nightly pass, in the reporting time zone |
-| Pass job interval | Import metric pass | 10 minutes | How often the pass job starts to look for the night's pass or a requested retry |
-| Batch size | Import metric pass | 500 rows | Upserts between two governor checks |
-| Own WAL rate | Import metric pass | 0.25 MB/s | Most WAL the pass's own statements write per second on the main Postgres |
-| Cluster WAL pause and resume | Import metric pass | 2 MB/s and 1.5 MB/s | Pause while the main Postgres's total WAL rate is above the first, resume under the second |
-| Slot pause and resume, `WAL_GOVERNOR_SLOT_PAUSE` and `WAL_GOVERNOR_SLOT_RESUME` in the segment membership pass | Import metric pass, segment membership pass | Half and two thirds of `max_slot_wal_keep_size` | Pause while any slot's `safe_wal_size` is under the first, resume above the second. No cap set counts as a missing reading, so the pass pauses. |
-| Disk pause and resume, `WAL_GOVERNOR_DISK_PAUSE` and `WAL_GOVERNOR_DISK_RESUME` in the segment membership pass | Import metric pass, segment membership pass | 20% and 25% free | Pause while the worse of the node filesystem's free share and the database's free share of its claim is under the first, or either is unknown. Resume when both are above the second. |
-| Free disk source, `WAL_GOVERNOR_FREE_DISK_QUERY` in the segment membership pass | Import metric pass, segment membership pass | None | The monitoring query that gives the free bytes of the main Postgres node's root filesystem |
-| Main Postgres claim size, `WAL_GOVERNOR_CLAIM_BYTES` in the segment membership pass | Import metric pass, segment membership pass | The claim's size, 8 GiB today | The size the database's bytes are compared with |
+| Pass schedule, `METRIC_PASS_SCHEDULE` | Import metric pass | `03:00` | Local time of the nightly pass, in the reporting time zone. The first start at or after it runs the night's pass. |
+| Pass job interval, the `schedule` of the CronJob `import-metric-pass` | Import metric pass | 10 minutes | How often the pass job starts to look for the night's pass or a requested retry |
+| Batch size, `METRIC_PASS_BATCH_SIZE` | Import metric pass | 500 rows | Upserts or deletes between two governor checks |
+| Own WAL rate, `METRIC_PASS_OWN_WAL_BYTES_PER_SECOND` | Import metric pass | 0.25 MB/s, `262144` | Most WAL the pass's own statements write per second on the main Postgres |
+| Cluster WAL pause and resume, `WAL_GOVERNOR_CLUSTER_PAUSE_BYTES_PER_SECOND` and `WAL_GOVERNOR_CLUSTER_RESUME_BYTES_PER_SECOND` | Import metric pass | 2 MB/s and 1.5 MB/s, `2097152` and `1572864` | Pause while the main Postgres's total WAL rate is above the first, resume under the second |
+| Slot pause and resume, `WAL_GOVERNOR_SLOT_PAUSE` and `WAL_GOVERNOR_SLOT_RESUME` | Import metric pass, segment membership pass | Half and two thirds of `max_slot_wal_keep_size` | Pause while any slot's `safe_wal_size` is under the first, resume above the second. No cap set counts as a missing reading, so the pass pauses. |
+| Disk pause and resume, `WAL_GOVERNOR_DISK_PAUSE` and `WAL_GOVERNOR_DISK_RESUME` | Import metric pass, segment membership pass | 20% and 25% free | Pause while the worse of the node filesystem's free share and the database's free share of its claim is under the first, or either is unknown. Resume when both are above the second. |
+| Free disk source, `WAL_GOVERNOR_FREE_DISK_QUERY` | Import metric pass, segment membership pass | None | A Prometheus instant-query URL whose first sample is the node filesystem's free share, from 0 to 1 |
+| Main Postgres claim size, `WAL_GOVERNOR_CLAIM_BYTES` | Import metric pass, segment membership pass | The claim's size, 8 GiB today | The size the database's bytes are compared with |
+
+## Import metric pass
+
+The [import metric pass](../architecture/components/import-metric-pass.md) runs as the CronJob `import-metric-pass` in `infra/k8s/apps/import-metric-pass/`, on the batch jobs image. It reads the settings in the table above, the `DB_` variables for the main Postgres, and `EVENT_PARSE_PLACEHOLDER_IDS` for the placeholder ids that count as shared values. A value that does not parse stops the pass before it takes the pass lock. `WAL_GOVERNOR_POLL_SECONDS`, default `30`, sets how often a paused pass reads the limits again, at most once a minute, so a pause checks its deadline at least that often.
 
 ## Segment membership pass
 
@@ -271,7 +275,7 @@ The nightly [segment membership pass](../architecture/components/segment-members
 | `WAL_GOVERNOR_DISK_PAUSE`, `WAL_GOVERNOR_DISK_RESUME` | `0.20`, `0.25` | Free shares. Pause while the worse of the node filesystem's and the database's claim is under the first, resume above the second. |
 | `WAL_GOVERNOR_FREE_DISK_QUERY` | None | A Prometheus instant-query URL whose first sample is the node filesystem's free share, from 0 to 1. Unset or failing counts as a missing reading, so the pass pauses. The manifest sets the worst root filesystem of any node. |
 | `WAL_GOVERNOR_CLAIM_BYTES` | `8589934592` | Size of the main Postgres claim, against which `pg_database_size` gives the database's free share |
-| `WAL_GOVERNOR_POLL_SECONDS` | `30` | How often a paused pass reads the limits again |
+| `WAL_GOVERNOR_POLL_SECONDS` | `30` | How often a paused pass reads the limits again, from 1 to 60 |
 
 ## Database bootstrap
 
