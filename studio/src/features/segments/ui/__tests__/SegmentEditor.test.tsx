@@ -95,7 +95,9 @@ describe("SegmentEditor", () => {
     await waitFor(() => expect(field).toHaveFocus());
     expect(screen.getByText("WHERE")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove filter 1" }));
+    expect(screen.getByRole("group", { name: "Event filters for com.acme/add_to_cart" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Filter 1 value" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Remove filter" }));
     expect(screen.queryByRole("combobox", { name: "Filter 1 field" })).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "filter" })).toHaveFocus());
   });
@@ -109,7 +111,9 @@ describe("SegmentEditor", () => {
 
     expect(screen.getByText("Group 2, condition 1, filter 1 needs a value. Fill it in, or remove the filter. Nothing you typed was lost.")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Filter 1 value" })).toHaveAttribute("aria-invalid", "true");
-    expect(screen.getByText("Needs a value")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Filter 1 value" })).toHaveAccessibleDescription("Needs a value");
+    expect(screen.getByText("product.price")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove filter Product price" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Filter 1 field" })).toHaveTextContent("Product price");
     expect(save).not.toHaveBeenCalled();
   });

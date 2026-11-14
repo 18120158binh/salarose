@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { PlusIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,6 +46,7 @@ export interface EventFiltersProps {
 // SEG-FR-11: the WHERE rows under a behavior condition. Every filter must pass for an event to count.
 // "+ filter" moves focus to the new filter's field; removing a filter returns focus to "+ filter".
 export function EventFilters({ filters, event, mark, onChange }: EventFiltersProps) {
+  const idBase = useId();
   const addRef = useRef<HTMLButtonElement>(null);
   const fieldRefs = useRef<(HTMLButtonElement | null)[]>([]);
   // Where focus goes after the next render, which adds or removes the filter row.
@@ -71,14 +72,23 @@ export function EventFilters({ filters, event, mark, onChange }: EventFiltersPro
 
   return (
     <div className="flex w-full flex-col gap-2">
+      {filters.length > 0 && (
+        <div
+          aria-label={`Event filters for ${event?.name ?? "this event"}`}
+          className="grid gap-2 rounded-r-card border-primary/40 border-l-2 bg-primary/5 px-3 py-2.5"
+          role="group"
+        >
       {filters.map((filter, index) => {
         const field = fields.find((item) => item.value === filter.field);
         const operators = operatorsFor(field);
         const marked = mark?.filter === index ? mark.field : null;
+        const errorId = `${idBase}-filter-${index}-error`;
+        const described = marked ? errorId : undefined;
+        const noField = !filter.field;
         const fieldOptions = fields.map((item) => ({ value: item.value, label: item.label || item.value }));
         if (filter.field && !field) fieldOptions.push({ value: filter.field, label: filter.field });
         return (
-          <div className="flex flex-wrap items-center gap-2 pl-4" key={index}>
+          <div className="flex flex-wrap items-center gap-2" key={index}>
             <span className="w-12 font-heading font-semibold text-muted-foreground text-xs">{index === 0 ? "WHERE" : "AND"}</span>
             <Select
               onValueChange={(next) => {
@@ -89,6 +99,7 @@ export function EventFilters({ filters, event, mark, onChange }: EventFiltersPro
               value={filter.field}
             >
               <SelectTrigger
+                aria-describedby={marked === "filter-field" ? described : undefined}
                 aria-invalid={marked === "filter-field" || undefined}
                 aria-label={`Filter ${index + 1} field`}
                 className="w-44"
@@ -110,7 +121,8 @@ export function EventFilters({ filters, event, mark, onChange }: EventFiltersPro
                 ))}
               </SelectPopup>
             </Select>
-            <Select onValueChange={(next) => setFilter(index, { ...filter, op: next as PropertyOperator })} value={filter.op}>
+            {filter.field && <span className="font-mono text-ink-muted text-xs">{filter.field}</span>}
+            <Select disabled={noField} onValueChange={(next) => setFilter(index, { ...filter, op: next as PropertyOperator })} value={filter.op}>
               <SelectTrigger aria-label={`Filter ${index + 1} operator`} className="w-36" size="sm">
                 <SelectValue>{OP_LABELS[filter.op]}</SelectValue>
               </SelectTrigger>
@@ -121,23 +133,30 @@ export function EventFilters({ filters, event, mark, onChange }: EventFiltersPro
               </SelectPopup>
             </Select>
             <Input
+              aria-describedby={marked === "filter-value" ? described : undefined}
               aria-invalid={marked === "filter-value" || undefined}
               aria-label={`Filter ${index + 1} value`}
               className="w-40"
+              disabled={noField}
               inputMode={isNumberField(field) && filter.op !== "IN" ? "decimal" : undefined}
               onChange={(change) => setFilter(index, { ...filter, value: change.target.value })}
               placeholder={filter.op === "IN" ? "Shoes, Bags" : "Value"}
               size="sm"
               value={filter.value}
             />
-            <Button aria-label={`Remove filter ${index + 1}`} onClick={() => remove(index)} size="icon-sm" variant="ghost">
+            <Button aria-label={noField ? "Remove filter" : `Remove filter ${fieldOptions.find((item) => item.value === filter.field)?.label ?? filter.field}`} onClick={() => remove(index)} size="icon-sm" variant="ghost">
               <XIcon />
             </Button>
-            {marked === "filter-value" && <span className="w-full pl-14 text-destructive text-xs">Needs a value</span>}
-            {marked === "filter-field" && <span className="w-full pl-14 text-destructive text-xs">Needs a field</span>}
+            {marked && (
+              <span className="w-full pl-14 text-destructive text-xs" id={errorId}>
+                {marked === "filter-value" ? "Needs a value" : "Needs a field"}
+              </span>
+            )}
           </div>
         );
       })}
+        </div>
+      )}
       <Button className="self-start" onClick={add} ref={addRef} size="xs" variant="ghost">
         <PlusIcon aria-hidden /> filter
       </Button>
