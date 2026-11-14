@@ -230,7 +230,7 @@ function behaviorCondition(fields: Fields, path: string, walk: Walk): BehaviorCo
     value: positiveNumber(windowFields, "value", `${path}.window`, walk),
     unit: oneOf(windowFields, "unit", `${path}.window`, WINDOW_UNITS, walk),
   });
-  return filled<BehaviorCondition>({
+  const condition = filled<BehaviorCondition>({
     type: "behavior",
     event: nonEmptyString(fields, "event", path, walk),
     measure: offeredMeasure(nonEmptyString(fields, "measure", path, walk), `${path}.measure`, walk),
@@ -241,6 +241,25 @@ function behaviorCondition(fields: Fields, path: string, walk: Walk): BehaviorCo
     value: finiteNumber(fields, "value", path, walk),
     ...(metricId ? { metric_id: metricId } : {}),
   });
+  zeroCount(condition, path, walk);
+  return condition;
+}
+
+const COUNT_PHRASE: Partial<Record<BehaviorCondition["op"], string>> = { "=": "", "<=": "at most ", "<": "fewer than " };
+
+// A count is kept only for events that happen, so a count that must be 0 never matches (JBD-FR-44).
+function zeroCount(condition: BehaviorCondition, path: string, walk: Walk): void {
+  const { event, measure, op, value, window } = condition;
+  if (!walk.tree.registry || !event || measure !== "COUNT" || typeof value !== "number" || !window) return;
+  // Counts are whole numbers from 0, so "<= v" with v < 1 and "< v" with v <= 1 (0.5, 0, or below)
+  // can hold only for 0, or never.
+  const onlyZero = op === "=" ? value === 0 : op === "<=" ? value < 1 : op === "<" ? value <= 1 : false;
+  if (!onlyZero) return;
+  const unit = window.unit.toLowerCase().replace(/s$/, "");
+  const span = window.value === 1 ? unit : `${window.value} ${unit}s`;
+  problem(walk, path,
+    `"did ${event} ${COUNT_PHRASE[op]}${value} times in the last ${span}" never matches, because a count is only kept for events that happen. Replace or remove it`,
+    { severity: "warning", rule: "runtime" });
 }
 
 function personCondition(value: unknown, path: string, walk: Walk): PersonCondition | undefined {

@@ -1,4 +1,5 @@
-import type { JourneyProblem } from "@/entities/journey/model/parseCampaign";
+import { type JourneyProblem, validateJourney } from "@/entities/journey/model/parseCampaign";
+import { RUNTIME_REGISTRY } from "@/entities/journey/model/registry";
 import { CART_ROOT, EVENTS } from "../__fixtures__/cart";
 import { graphFromRoot } from "../builder";
 import { buildChecklist } from "../checklist";
@@ -43,5 +44,23 @@ describe("buildChecklist", () => {
     expect(checklist.missingEvents).toEqual(["com.acme/order_completed"]);
     expect(checklist.knownEvents).toEqual(["Added to cart"]);
     expect(checklist.groups[0].nodeId).toBe("waitev");
+  });
+  it("warns, without blocking, on a Check step that tests an event 0 times (JBD-FR-44)", () => {
+    const check = {
+      type: "check", id: "bought", label: "Bought before?", eventName: "com.acme/order_completed",
+      conditions: { groups: [{ conditions: [{
+        type: "behavior", event: "com.acme/order_completed", measure: "COUNT", window: { value: 30, unit: "DAYS" }, op: "=", value: 0,
+      }] }] },
+      next: { type: "YesPath", yes: { type: "end" } },
+    };
+    const root = { ...CART_ROOT, next: { ...(CART_ROOT.next as object), next: { type: "SuccessOrTimeoutPath", success: check, timeout: { type: "end" } } } };
+    const { problems } = validateJourney(root, RUNTIME_REGISTRY);
+    const checklist = buildChecklist(problems, graphFromRoot(root)!, catalog, eventName);
+    expect(checklist.blocks).toBe(0);
+    expect(checklist.warnings).toBe(1);
+    const group = checklist.groups.find((found) => found.nodeId === "bought")!;
+    expect(group.items).toHaveLength(1);
+    expect(group.items[0]).toMatchObject({ severity: "warning", field: "Conditions" });
+    expect(group.items[0].message).toMatch(/Replace or remove it\.$/);
   });
 });
