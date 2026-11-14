@@ -8,7 +8,7 @@ area: event-processor
 tags: [data-import, batch, validation, idempotency, privacy]
 created: 2026-11-08
 updated: 2026-11-14
-version: 1.1
+version: 1.2
 known_issues: ../../known-issues/components/import-applier.md
 ---
 
@@ -179,7 +179,7 @@ The run report names each condition that held. A [re-derive](#8-re-derive) skips
 
 ### 5. Apply
 
-The applier writes a run's records and its commit marker, with the run's counts, in one transaction on the import store. The metric pass reads the store in one repeatable-read snapshot, so it sees a run's records all or none.
+Validation writes nothing. A run that passes moves to `applying`, and the applier reads its file a second time, validating each row again with the same inputs, and writes its records and its commit marker, with the run's counts, in one transaction on the import store. The metric pass reads the store in one repeatable-read snapshot, so it sees a run's records all or none.
 
 For an `event` dataset, each valid row upserts on (`record_type_id`, `record_id`):
 
@@ -194,7 +194,7 @@ A row belongs to the writer that last delivered it. The newest delivery wins, wh
 Then, by delivery mode:
 
 - **Incremental.** A row whose deleted flag is true removes the stored row with its key instead of upserting it, whoever wrote that row. When the type maps `updated_at` and the stored row's is later than the row's, the stored row stays. A removed profile also removes its identifiers.
-- **Snapshot.** After the upserts, remove every stored row of the type whose key no row of the file holds, valid or rejected, unless its `writer` is `studio`. A rejected row whose key the applier can read protects its stored row. A reject with no readable key, such as `customer_key_missing`, names no row, so it protects nothing. A type has one source key at a time, so this also removes rows that an earlier source key of the type delivered and the current one no longer sends. The deleted flag has no meaning in a snapshot file, and the applier ignores it.
+- **Snapshot.** After the upserts, remove every stored row of the type whose key no row of the file holds, valid or rejected, unless its `writer` is `studio`. A rejected row whose key the applier can read protects its stored row: the record id of an `event` row, or the customer key of a `profile` row, when it is non-blank text and, for a customer key, not a placeholder id. A reject with no readable key, such as `customer_key_missing`, names no row, so it protects nothing. A type has one source key at a time, so this also removes rows that an earlier source key of the type delivered and the current one no longer sends. The deleted flag has no meaning in a snapshot file, and the applier ignores it.
 - **Studio upload to a snapshot type.** Applies as incremental. It removes nothing except by a deleted flag.
 
 A rejected row never removes a stored row.
@@ -213,7 +213,7 @@ The run report holds:
 - Each quarantine condition that held, and each file-level failure.
 - Up to 100 sample rejected rows, each with its line number and reason. Their values stay in the rejects file.
 
-The report goes to `reports/<run_id>.json` in the drop zone without row values, and its counts go on the run's `counts`. The counts are `rows_read`, `valid`, `rejected`, `rejected_by_reason` by reason, `contacts_dropped` and `contacts_shared` by `email` and `phone`, `distinct_customer_keys`, `match_rate` from 0 to 1 when the file has a valid row, and `new_records`, the valid event rows whose record id the store lacks. The report adds `quarantine_conditions` (`reject_threshold`, `snapshot_shrink`, `record_cap`), `file_failures`, and `sample_rejects`, each with its `line` and `reason`. The run's `reason` joins the conditions or the failures with `, `. The rejected rows with their values go to `rejects/<run_id>.ndjson.gz`, which only admins may download. Studio reads the sample rows' values from the rejects file and masks every PII value in them for every role, as [data import](../../features/data-import.md#privacy) requires.
+The report goes to `reports/<run_id>.json` in the drop zone without row values, and its counts go on the run's `counts`. The counts are `rows_read`, `valid`, `rejected`, `rejected_by_reason` by reason, `contacts_dropped` and `contacts_shared` by `email` and `phone`, `distinct_customer_keys`, `match_rate` from 0 to 1 when the file has a valid row, `new_records`, the valid event rows whose record id the store lacks, and, once the run applies, `rows_new`, `rows_updated`, `rows_unchanged`, and `rows_removed`. A row the store already holds counts as unchanged when its values equal the stored row's or the stored `updated_at` is later, and a deleted flag for a key the store lacks counts as unchanged too. `rows_removed` counts deleted flags and snapshot removals. The report adds `quarantine_conditions` (`reject_threshold`, `snapshot_shrink`, `record_cap`), `file_failures`, and `sample_rejects`, each with its `line` and `reason`. The run's `reason` joins the conditions or the failures with `, `. The rejected rows with their values go to `rejects/<run_id>.ndjson.gz`, which only admins may download. Studio reads the sample rows' values from the rejects file and masks every PII value in them for every role, as [data import](../../features/data-import.md#privacy) requires.
 
 ### 7. Delete a person
 

@@ -50,4 +50,4 @@ The CronJob `import-applier` starts `com.cdp.platform.jobs.importapplier.ImportA
 
 It needs `s3:GetObject` on `imports/incoming/*`, and `s3:PutObject` on `imports/reports/*` and `imports/rejects/*`.
 
-Until apply exists, a run that passes validation goes back to the queue with its report, and the applier validates it again at each start. Don't deploy the applier before apply lands ([known issues](../known-issues/components/import-applier.md)).
+The applier also writes `import_records`, `import_profiles`, `import_identifiers`, and `import_run_commits` on the import store, as `cdp_import`, the user of `cdp-import-pg-app`, which owns those tables. It does not yet delete a tombstoned person's rows ([known issues](../known-issues/components/import-applier.md)).

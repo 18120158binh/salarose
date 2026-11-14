@@ -43,7 +43,6 @@ public final class ImportApplierMain {
             try (Connection importStore = DriverManager
                 .getConnection(config.importStoreUrl(),
                     config.importStoreUser(), config.importStorePassword())) {
-                importStore.setReadOnly(true);
                 run(config, main, importStore, lock);
             }
         }
@@ -51,13 +50,13 @@ public final class ImportApplierMain {
 
     private static void run(ApplierConfig config, Connection main, Connection importStore, LockGuard lock)
         throws Exception {
-        RunStore runs = new RunStore(main, lock);
-        PostgresLookups lookups = new PostgresLookups(main, importStore);
-        recover(runs, lookups);
+        RunStore runs = new PostgresRunStore(main, lock);
+        ImportStore store = new PostgresImportStore(importStore);
+        recover(runs, store);
         int expired = runs.expireUploads();
         if (expired > 0) LOG.info("expired {} runs whose upload never arrived", expired);
-        RunProcessor processor = new RunProcessor(runs, lookups, new S3DropZone(config.bucket()), config,
-            new Tombstones(config.tombstoneKey(), runs.tombstones()), lock);
+        RunProcessor processor = new RunProcessor(runs, new PostgresLookups(main, importStore), store,
+            new S3DropZone(config.bucket()), config, new Tombstones(config.tombstoneKey(), runs.tombstones()), lock);
         drain(runs, processor);
     }
 
@@ -65,10 +64,10 @@ public final class ImportApplierMain {
      * IAP-FR-24, and IAP-FR-15's recovery: the lock proves no other instance works
      * on these runs.
      */
-    static void recover(RunStore runs, PostgresLookups lookups) throws SQLException {
+    static void recover(RunStore runs, ImportStore store) throws SQLException {
         for (RunStore.Stranded run : runs.stranded()) {
             Optional<ObjectNode> marker = run.state().equals("applying")
-                ? lookups.commitMarker(run.id())
+                ? store.commitMarker(run.id())
                 : Optional.empty();
             boolean moved = marker.isPresent() ? runs.markApplied(run.id(), marker.get()) : runs.reset(run);
             LOG
@@ -78,9 +77,9 @@ public final class ImportApplierMain {
     }
 
     /**
-     * Takes runs until no type has one to take. A type whose run went back to
-     * the queue, or could not be read, is done for this start, so each start
-     * ends.
+     * Takes runs until no type has one to take, one run of a type at a time
+     * (IAP-FR-01). A type whose run was left where it waited, or whose version
+     * could not be read, is done for this start, so each start ends.
      */
     static void drain(RunStore runs, RunProcessor processor) throws Exception {
         Set<String> doneTypes = new HashSet<>();
@@ -106,13 +105,8 @@ public final class ImportApplierMain {
                     type -> versions.get(type).ordered());
             if (next.isEmpty()) return;
             for (OpenRun run : next) {
-                if (run.source().equals("rederive")) {
-                    LOG.info("run {} is a re-derive, which the applier does not run yet (DI-04)", run.id());
-                    doneTypes.add(run.recordTypeId());
-                    continue;
-                }
                 RunProcessor.Outcome outcome = processor.process(run, versions.get(run.recordTypeId()));
-                if (outcome != RunProcessor.Outcome.QUARANTINED) doneTypes.add(run.recordTypeId());
+                if (outcome == RunProcessor.Outcome.LEFT) doneTypes.add(run.recordTypeId());
             }
         }
     }

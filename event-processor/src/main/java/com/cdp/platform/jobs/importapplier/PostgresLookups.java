@@ -9,16 +9,11 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 import com.cdp.platform.shared.db.repositories.IdentityGraphTable;
 import com.cdp.platform.shared.db.repositories.ImportIdentifiersTable;
 import com.cdp.platform.shared.db.repositories.ImportRecordsTable;
-import com.cdp.platform.shared.db.repositories.ImportRunCommitsTable;
-import com.cdp.platform.shared.utils.JacksonMapper;
-
-import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
  * {@link Lookups} on the two Postgres clusters: {@code identity_graph} on the
@@ -93,24 +88,6 @@ final class PostgresLookups implements Lookups {
             return row.getLong(1);
         } catch (SQLException e) {
             throw new IllegalStateException("counting import_records failed", e);
-        }
-    }
-
-    /**
-     * The counts of the run's commit marker, or empty when the run has none
-     * (IAP-FR-15).
-     */
-    Optional<ObjectNode> commitMarker(String runId) throws SQLException {
-        String sql = "SELECT %s FROM %s WHERE %s = ?::uuid"
-            .formatted(ImportRunCommitsTable.COUNTS,
-                ImportRunCommitsTable.TABLE_NAME, ImportRunCommitsTable.RUN_ID);
-        try (PreparedStatement statement = importStore.prepareStatement(sql)) {
-            statement.setString(1, runId);
-            try (ResultSet row = statement.executeQuery()) {
-                return row.next()
-                    ? Optional.of((ObjectNode) JacksonMapper.readTree(row.getString(1)))
-                    : Optional.empty();
-            }
         }
     }
 
