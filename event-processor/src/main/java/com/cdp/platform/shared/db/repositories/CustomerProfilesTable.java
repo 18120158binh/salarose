@@ -2,6 +2,7 @@ package com.cdp.platform.shared.db.repositories;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -47,6 +48,10 @@ public final class CustomerProfilesTable {
     private static final List<String> FIELD_PREFIXES = List.of("profile.", "user.");
     private static final Table<?> TABLE = DSL.table(DSL.name(TABLE_NAME));
     private static final Field<String> CDP_UUID_FIELD = DSL.field(DSL.name(CDP_UUID), String.class);
+    private static final String PROFILE_ALIAS = "p";
+    private static final String PERSON = "person";
+    private static final String PERSON_ID = "id";
+    private static final String PROFILE_FOUND = "profile_found";
 
     private CustomerProfilesTable() {
     }
@@ -79,6 +84,50 @@ public final class CustomerProfilesTable {
             .where(CDP_UUID_FIELD.eq(DSL.val(null, CDP_UUID_FIELD)))
             .limit(DSL.inline(1))
             .getSQL(ParamType.INDEXED);
+    }
+
+    /**
+     * The given columns of the profile whose {@code cdp_uuid} is the one
+     * parameter, and the imported attributes of the given sources for the
+     * {@code customer_key} that is the same parameter, in one round trip
+     * (DEC-FR-41). The sources are valid {@code source_id}s, and there is at
+     * least one. With no column, the query reads no profile.
+     */
+    static String lookupSql(Collection<String> columns, Collection<String> sources) {
+        Field<String> personId = DSL.field(DSL.name(PERSON, PERSON_ID), String.class);
+        var person = DSL
+            .using(SQLDialect.POSTGRES)
+            .with(DSL.name(PERSON).fields(PERSON_ID).as(DSL.select(DSL.val(null, String.class))));
+        Field<String> imported = CustomerAttributesTable.importedOf(personId, sources);
+        if (columns.isEmpty()) {
+            return person.select(imported).from(DSL.table(DSL.name(PERSON))).getSQL(ParamType.INDEXED);
+        }
+        Field<String> profileCdpUuid = DSL.field(DSL.name(PROFILE_ALIAS, CDP_UUID), String.class);
+        List<Field<?>> fields = new ArrayList<>();
+        columns.forEach(name -> fields.add(DSL.field(DSL.name(PROFILE_ALIAS, name))));
+        fields.add(imported);
+        fields.add(profileCdpUuid.isNotNull().as(PROFILE_FOUND));
+        return person
+            .select(fields)
+            .from(DSL.table(DSL.name(PERSON)))
+            .leftJoin(TABLE.as(PROFILE_ALIAS))
+            .on(profileCdpUuid.eq(personId))
+            .limit(DSL.inline(1))
+            .getSQL(ParamType.INDEXED);
+    }
+
+    /**
+     * What the current row of a {@link #lookupSql(Collection, Collection)}
+     * result found: the profile's columns, when it read some and the profile
+     * exists, with the imported fields it read. Empty when it found neither.
+     */
+    static Optional<UserProfile> profileWithImported(ResultSet row, Collection<String> columns)
+        throws SQLException {
+        String imported = row.getString(CustomerAttributesTable.IMPORTED);
+        boolean profileFound = !columns.isEmpty() && row.getBoolean(PROFILE_FOUND);
+        if (!profileFound && imported == null) return Optional.empty();
+        UserProfile profile = profileFound ? profile(row, columns) : UserProfile.empty();
+        return Optional.of(profile.withImported(CustomerAttributesTable.fields(imported)));
     }
 
     /**

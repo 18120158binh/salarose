@@ -360,7 +360,8 @@ class SegmentMembershipConditionTest {
     private final class CityProfiles implements ProfileLookupFunction.ProfileStore {
 
         @Override
-        public CompletableFuture<UserProfile> find(String userId, String canonId, Set<String> columns) {
+        public CompletableFuture<UserProfile> find(String userId, String canonId, Set<String> columns,
+            Set<String> sources) {
             profileLookups.add(new TreeSet<>(columns).toString());
             return CompletableFuture
                 .completedFuture(new UserProfile(null, null, null, null, null, null, null, null, null, null,

@@ -696,7 +696,8 @@ class MetricConditionDecisionTest {
     private final class HanoiProfiles implements ProfileLookupFunction.ProfileStore {
 
         @Override
-        public CompletableFuture<UserProfile> find(String userId, String canonId, Set<String> columns) {
+        public CompletableFuture<UserProfile> find(String userId, String canonId, Set<String> columns,
+            Set<String> sources) {
             profileLookups.add(userId + " " + canonId + " " + new TreeSet<>(columns));
             return CompletableFuture
                 .completedFuture(new UserProfile(null, null, null, null, null, null, null, null, null, null,
