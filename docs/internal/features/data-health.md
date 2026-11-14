@@ -114,7 +114,7 @@ The side panel lists the catalog as the tracking plan, with each event's system 
 
 `/data/sources`, for admins only, lists every row of `ingestion_source_keys`: the app id, the key hint, the email of the staff user who created it, the creation time, and the status, Active or Revoked with the revocation time. Active keys come first, then by app id. The page never shows a stored key's hash, and shows a key only once, when it is created.
 
-- **Create key** asks for the app id. The result dialog shows the new key once, with **Copy** and "You will not see this key again." Closing the dialog clears the key from the page. The [data ingestion API](data-ingestion-api.md) sets the rules, such as one key that is not revoked per app id and only the hash stored (DIA-FR-16).
+- **Create key** asks for the app id. The result dialog shows the new key once, with **Copy** and "You will not see this key again." Closing the dialog clears the key from the page. The [data ingestion API](data-ingestion-api.md) sets the rules, such as at most two keys that are not revoked per app id and only the hash stored (DIA-FR-16).
 - **Revoke** asks for confirmation in a dialog that names the app id and says "Requests with this key will be refused." A revoked key is refused from the next request on (DIA-FR-17).
 
 A "How to send data" card shows a request sample with the deployment's ingestion address and the batch rules of the data ingestion API. The card samples `POST /v1/events` and says that business events go to `POST /v1/business-events` with the same key, as Tracking setup does (DHL-FR-16). A note says that the website and the app send through the tracker and need no key. Until cutover, **Manage in classic** opens `/admin/source-keys`.
