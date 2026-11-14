@@ -85,11 +85,19 @@ SQL
 }
 
 DBS="mig_fresh mig_reference mig_live mig_stray mig_tampered mig_session mig_concurrent"
+IMPORT_DB=mig_import_store
 sql postgres postgres <<SQL
 $(for db in $DBS; do echo "DROP DATABASE IF EXISTS $db;"; done)
+DROP DATABASE IF EXISTS $IMPORT_DB;
 DROP ROLE IF EXISTS cdp;
+DROP ROLE IF EXISTS import_reader;
+DROP ROLE IF EXISTS cdp_import;
 CREATE ROLE cdp LOGIN REPLICATION;
 $(for db in $DBS; do echo "CREATE DATABASE $db OWNER cdp;"; done)
+-- The import store's roles, as the cluster cdp-import-pg creates them (infra/k8s/data/import-store.yaml).
+CREATE ROLE cdp_import LOGIN;
+CREATE ROLE import_reader LOGIN IN ROLE pg_read_all_data;
+CREATE DATABASE $IMPORT_DB OWNER cdp_import;
 SQL
 
 V0001="$DB_DIR/migrations/V0001__baseline.sql"
@@ -110,6 +118,31 @@ sql cdp mig_reference <"$DB_DIR/schema.sql" >/dev/null
 diff -u <(dump mig_reference) <(dump mig_fresh) >"$WORK/drift.diff" || {
   cat "$WORK/drift.diff"; fail "the migrations and infra/db/schema.sql build different schemas (- schema.sql, + migrations)"; }
 pass "migrations match schema.sql"
+
+# IMP-NFR-04: customer_attributes keeps the default replica identity and joins no publication.
+ident=$(echo "SELECT c.relreplident::text || '|' || count(p.pubname) FROM pg_class c LEFT JOIN pg_publication_tables p
+  ON p.schemaname = 'public' AND p.tablename = c.relname WHERE c.oid = 'public.customer_attributes'::regclass
+  GROUP BY c.relreplident" | sql postgres mig_fresh)
+[[ $ident == "d|0" ]] || fail "customer_attributes must have replica identity default and no publication, got $ident"
+pass "customer_attributes has replica identity default and is in no publication"
+
+# The import store's DDL applies as its owner, the way the Job import-store-ddl runs it, and again with no change.
+# The reader role reads every table and writes none.
+import_ddl() {
+  docker run --rm -i --network host "$PG_IMAGE" psql -X -q --single-transaction -v ON_ERROR_STOP=1 -h localhost     -U cdp_import -d "$IMPORT_DB" <"$DB_DIR/import-store/schema.sql"
+}
+import_ddl >/dev/null || fail "the import store DDL on an empty database"
+first=$(dump "$IMPORT_DB")
+import_ddl >/dev/null || fail "a second run of the import store DDL"
+[[ $(dump "$IMPORT_DB") == "$first" ]] || fail "a second run of the import store DDL changed the schema"
+tables=$(echo "SELECT string_agg(tablename, ' ' ORDER BY tablename) FROM pg_tables WHERE schemaname = 'public' AND tableowner = 'cdp_import'" |
+  sql postgres "$IMPORT_DB")
+[[ $tables == "import_identifiers import_profiles import_records import_run_commits" ]] ||
+  fail "the import store tables owned by cdp_import are '$tables'"
+echo "SELECT count(*) FROM import_records" | sql import_reader "$IMPORT_DB" >/dev/null || fail "import_reader cannot read the store"
+if echo "INSERT INTO import_run_commits (run_id, record_type_id, counts) VALUES (gen_random_uuid(), gen_random_uuid(), '{}')" |
+  sql import_reader "$IMPORT_DB" >/dev/null 2>&1; then fail "import_reader wrote to the store"; fi
+pass "the import store DDL applies twice as cdp_import, and import_reader only reads"
 
 # MIG-AC: a database deployed before Flyway is baselined at 1 and runs only the later files.
 sql cdp mig_live <"$V0001" >/dev/null
@@ -200,5 +233,5 @@ flyway "$WORK/concurrent" mig_concurrent migrate >"$WORK/recovered.log" 2>&1 || 
 [[ $(history mig_concurrent) == *"9003|SQL|t " ]] || fail "the fixed concurrent index did not apply: $(history mig_concurrent)"
 pass "a concurrent index builds, and a failed one recovers with the skill's steps and a fixed file"
 
-for db in $DBS; do echo "DROP DATABASE $db;"; done | sql postgres postgres
+{ for db in $DBS $IMPORT_DB; do echo "DROP DATABASE $db;"; done; echo "DROP ROLE import_reader; DROP ROLE cdp_import;"; } | sql postgres postgres
 echo "all migration checks passed"

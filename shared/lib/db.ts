@@ -83,6 +83,7 @@ const REQUIRED_TABLES = [
   "import_metric_passes",
   "pii_access_log",
   "person_tombstones",
+  "customer_attributes",
   "user_campaign_state_transitions",
   "event_volume",
 ];

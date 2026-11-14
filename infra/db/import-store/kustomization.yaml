@@ -1,0 +1,8 @@
+# The import store's DDL as a ConfigMap for the Job import-store-ddl. Kustomize reads only files under its own root, so
+# it is generated here. The name hash changes with the content.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+configMapGenerator:
+  - name: import-store-ddl
+    files:
+      - schema.sql
