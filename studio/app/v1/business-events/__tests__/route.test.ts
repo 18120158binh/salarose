@@ -33,8 +33,8 @@ beforeEach(() => {
   delete process.env.INGESTION_RATE_LIMIT_PER_SECOND;
   key = `${KEY}_${++keyNumber}`;
   const stored = new Map([
-    [hashSourceKey(key), { appId: "inventory-service", revoked: false }],
-    [hashSourceKey(REVOKED_KEY), { appId: "old-service", revoked: true }],
+    [hashSourceKey(key), { id: "sk_1", appId: "inventory-service", revoked: false }],
+    [hashSourceKey(REVOKED_KEY), { id: "sk_0", appId: "old-service", revoked: true }],
   ]);
   jest.mocked(db.findSourceKeyByHash).mockImplementation(async (hash) => stored.get(hash) ?? null);
   jest.mocked(db.getCatalogEventKinds).mockResolvedValue(

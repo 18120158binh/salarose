@@ -19,12 +19,12 @@ verified_at: 6c15fc1d
 ## DIA-KI-02. The app does not refuse plain HTTP
 
 - **Symptom.** A request that reaches the app over HTTP is served, and its source key crosses the network in clear text.
-- **Cause.** `handleBatch` in `src/features/data-ingestion/model/batchRoute.ts`, which both routes use, does not check the scheme. It relies on the ingress to terminate TLS and redirect HTTP.
+- **Cause.** `authenticateSourceKey` in `src/features/data-ingestion/model/sourceKeyAuth.ts`, which both routes and the data import routes use, does not check the scheme. It relies on the ingress to terminate TLS and redirect HTTP.
 - **Evidence.** Read from the code. Whether each deployment's ingress redirects HTTP is not checked.
 
 ## DIA-KI-03. The rate limit is counted per app process
 
-- **Symptom.** With N `studio` replicas, a source key can send up to N times its limit per second.
+- **Symptom.** With N `studio` replicas, a source key can send up to N times its limit per second, across the event routes and the data import routes together.
 - **Cause.** `createKeyRateLimiter` in `src/features/data-ingestion/model/rateLimit.ts` keeps its counts in process memory, as AI journey generation does.
 - **Evidence.** Read from the code.
 

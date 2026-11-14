@@ -12,4 +12,16 @@ export const PUBLIC_PATHS: ReadonlySet<string> = new Set([
   "/api/auth/logout",
   "/v1/business-events",
   "/v1/events",
+  "/v1/imports",
 ]);
+
+// The source-key routes whose path holds an id, matched whole. Each route checks the key itself.
+const PUBLIC_PATH_PATTERNS: readonly RegExp[] = [
+  /^\/v1\/imports\/[^/]+$/,
+  /^\/v1\/imports\/[^/]+\/complete$/,
+  /^\/v1\/records\/[^/]+$/,
+];
+
+export function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.has(pathname) || PUBLIC_PATH_PATTERNS.some((pattern) => pattern.test(pathname));
+}

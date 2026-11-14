@@ -2105,6 +2105,7 @@ export async function revokeSourceKey(id: string): Promise<void> {
 }
 
 export interface StoredSourceKey {
+  id: string;
   appId: string;
   revoked: boolean;
 }
@@ -2112,11 +2113,12 @@ export interface StoredSourceKey {
 export async function findSourceKeyByHash(keyHash: string): Promise<StoredSourceKey | null> {
   await ensureDbInitialized();
   const res = await getPool().query(
-    `SELECT app_id, revoked_at FROM ingestion_source_keys WHERE key_hash = $1`,
+    `SELECT id, app_id, revoked_at FROM ingestion_source_keys WHERE key_hash = $1`,
     [keyHash],
   );
   if (res.rowCount === 0) return null;
-  return { appId: String(res.rows[0].app_id), revoked: res.rows[0].revoked_at !== null };
+  const row = res.rows[0];
+  return { id: String(row.id), appId: String(row.app_id), revoked: row.revoked_at !== null };
 }
 
 // The catalog kind and item key of each named event that is in the catalog.
