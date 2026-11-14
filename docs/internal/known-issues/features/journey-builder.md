@@ -10,7 +10,6 @@ verified_at: 49973e0
 | Id | Severity | Issue | Breaks |
 |---|---|---|---|
 | JBD-KI-27 | Wrong result | No segment entry or business event triggers, no segment conditions, and the condition split is still a segment node | JBD-FR-05, JBD-FR-15, JBD-FR-16, JBD-FR-17 |
-| JBD-KI-33 | Missing | The checklist does not warn about a zero-count condition | JBD-FR-44 |
 | JBD-KI-34 | Missing | A published journey's page has no Journey tab | JBD-FR-09 |
 | JBD-KI-35 | Missing | The v2 journey list offers no move for drafts kept in this browser | JBD-FR-28 |
 
@@ -23,13 +22,6 @@ verified_at: 49973e0
 - **Fixed by.** [JBD-FR-31](../../features/journey-builder.md#functional-requirements) with [JBD-FR-15 and JBD-FR-17](../../features/journey-builder.md#runtime-registry) (studio v3, not built yet). The v2 builder offers no business-event trigger while customer decision does not read business-event matches, and offers segment membership and segment entry once customer decision evaluates them. The segment-entry and segment-condition parts of this issue go when those registry entries ship in the v2 builder. The business-event trigger and the condition-split `node_type` rename stay open. The v2 builder says "Condition split" from the start, and the stored `segment` type changes only in the cross-stack commit above. The classic builder keeps this issue until it is removed.
 
 Tracked in #223.
-
-## JBD-KI-33. The checklist does not warn about a zero-count condition
-
-- **Symptom.** A Check that tests "did an event 0 times in the last 30 days" publishes with no warning.
-- **Cause.** The validator warns only about the `INACTION` measure (`problem(..., "which the runtime never matches")` in `studio/src/entities/journey/model/parseCampaign.ts`). It has no rule for a count of 0.
-- **Evidence.** Read from the code.
-- **Fix direction.** Add a warning rule for a behavior condition whose count must be 0, in the shared validator, so the browser and the server agree (JBD-FR-25).
 
 ## JBD-KI-34. A published journey's page has no Journey tab
 

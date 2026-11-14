@@ -150,4 +150,34 @@ describe("validateJourney with the runtime registry", () => {
     ]);
     expect(readOnlyNodeIds(problems)).toEqual(new Set());
   });
+  describe("a COUNT condition that must be 0 (JBD-FR-44)", () => {
+    const checkWith = (op: string, value: number, measure = "COUNT") => setup({
+      type: "check", id: "check_1", label: "Bought?", eventName: "view_product",
+      conditions: { groups: [{ conditions: [
+        { type: "behavior", event: "com.acme/order_completed", measure, window: { value: 30, unit: "DAYS" }, op, value },
+      ] }] },
+      next: { type: "YesPath", yes: end },
+    });
+
+    it.each([["=", 0], ["<=", 0], ["<", 1], ["<", 0]])("warns on %s %d and keeps the tree", (op, value) => {
+      const { root, problems } = validateJourney(checkWith(op, value), RUNTIME_REGISTRY);
+      expect(root).toBeDefined();
+      expect(problems).toEqual([
+        {
+          severity: "warning", rule: "runtime", nodeId: "check_1", field: "conditions.groups[0].conditions[0]",
+          path: "root.next.conditions.groups[0].conditions[0]",
+          message: "\"did com.acme/order_completed 0 times in the last 30 days\" never matches, because a count is only kept for events that happen. Replace or remove it",
+        },
+      ]);
+    });
+
+    it.each([[">=", 1], ["=", 3], ["<", 2], ["!=", 0]])("does not warn on %s %d", (op, value) => {
+      expect(validateJourney(checkWith(op, value), RUNTIME_REGISTRY).problems).toEqual([]);
+    });
+
+    it("does not warn for other measures, or without a registry", () => {
+      expect(validateJourney(checkWith("<", 0, "SUM"), RUNTIME_REGISTRY).problems).toEqual([]);
+      expect(validateJourney(checkWith("=", 0)).problems).toEqual([]);
+    });
+  });
 });
