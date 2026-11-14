@@ -33,7 +33,7 @@ How the graph is stored is a separate record that amends [decision 0005](0005-ke
 
 **Limits.** One `user_id` is the rule above. Five emails and five phones let a person change address or carry a work and a home address, and stop one value from pulling an unbounded number of anonymous sets together. Devices grow without anyone doing anything wrong: a cleared cookie or a new browser makes a new `domain_userid` for the same person, so a low device limit would refuse good merges. The 200-entry bound already caps a runaway set.
 
-**No unmerge.** A split cannot unfold the state that jobs merged: metric buckets were added together, and journey instances were folded. Amplitude's unmap only removes a mapping going forward and restores no history. With a `user_id` limit of 1, the merge that most needs a split, two accounts, no longer happens. What remains is an anonymous device folded into an account, which is the purpose of the graph. A split needs its own contract if a customer shows a case.
+**No unmerge.** A split cannot unfold the state that jobs merged: metric buckets were added together, and journey instances were folded. Amplitude's [unmap](https://amplitude.com/docs/apis/analytics/user-mapping) only removes a mapping going forward and restores no history. With a `user_id` limit of 1, the merge that most needs a split, two accounts, no longer happens. What remains is an anonymous device folded into an account, which is the purpose of the graph. A split needs its own contract if a customer shows a case.
 
 **5 seconds.** With the limit, a merge almost always folds an anonymous set into a set that holds a `user_id`, and the `user_id` root wins by priority. Every device of the account keeps its `canon_id`. Only the members of the retired anonymous set change, and those are usually the one device that caused the merge, which sees the result at once. So the bound costs little in practice, and it is short enough that a journey step a few seconds after login sees one person.
 
@@ -54,7 +54,7 @@ How the graph is stored is a separate record that amends [decision 0005](0005-ke
 
 - A shopper who logs in to two accounts on one device stays two people. The device's anonymous history belongs to the first account that claimed it.
 - The refused-merge count by type shows how often devices are shared.
-- Customer lookup gains an identifiers and merges view. Its contract changes when that view is built.
+- Customer lookup gains an identifiers and merges view (CUS-FR-42), not built yet (CUS-KI-08).
 - The storage record that amends decision 0005 can now be written.
 
 ## Related

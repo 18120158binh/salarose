@@ -7,8 +7,8 @@ implementation: partial
 area: studio
 tags: [ui, studio-v2, identity, journeys, metrics]
 created: 2026-11-07
-updated: 2026-11-08
-version: 0.4
+updated: 2026-11-14
+version: 0.5
 known_issues: ../known-issues/features/customer-lookup.md
 ---
 
@@ -170,6 +170,7 @@ Every staff user may search and open any profile. The design made this call for 
 | CUS-FR-14 | The profile must list the segments the person is in now, from stored membership. |
 | CUS-FR-15 | Devices and accounts, Journeys, and Metrics must each show the empty-state text in [Profile](#profile) when they have no rows. |
 | CUS-FR-40 | The profile must show the person's imported attributes by source, as [Profile](#profile) says, with every PII value masked on the server for every viewer, and **Reveal** for admins as a separate logged request that returns one value. |
+| CUS-FR-42 | The profile must show the person's identifiers by type and the merge records of their identity set, newest first: the winning and retired person ids, the linking identifiers, and the time of the merge. The view is read-only, needs a staff session checked on the server, and masks every email and phone on the server, as CUS-FR-40 does. It comes from the [identity graph](../architecture/components/identity/identity-graph.md) (IDG-FR-15, [decision 0050](../architecture/decisions/0050-one-account-per-person-no-unmerge-and-a-5-second-merge-bound.md)). |
 | CUS-FR-41 | A search equal to the customer key of an imported-only customer must open a profile titled with that key that shows only its imported attributes, under the imported-only note in [Profile](#profile). |
 
 ## Non-functional requirements
@@ -236,6 +237,7 @@ Every staff user may search and open any profile. The design made this call for 
 - Given an editor, when she opens a profile of a person in another user's journey, then it loads. (CUS-FR-09)
 - Given any profile, then no email, phone, or name appears except as a user id or an imported attribute. (CUS-FR-10)
 - Given a person with user id `0912345678` and a `customers` row with `loyalty_tier` `Gold` and `emails` `["nguyen@gmail.com"]`, when an editor opens the profile, then the Customers section shows `Gold` and `n***@gmail.com`, and the response holds no clear email. When an admin opens it, then the response is masked the same way. When the admin reveals the email, then one request returns only it, and `pii_access_log` gains a `reveal` row. (CUS-FR-40)
+- Given a person whose set retired `U(dC)` into `U(u2)` and holds the email `nguyen@gmail.com`, when an editor opens the profile, then it lists the merge with both person ids and the time, and shows the email as `n***@gmail.com`, with no clear email in the response and no control to change or split the set. Given no session, then the request returns no data. (CUS-FR-42)
 - Given a customer key `c-77` with an `orders` row and no `identity_graph` row, when the viewer searches `c-77`, then a profile titled `c-77` opens with only its imported attributes and the imported-only note. (CUS-FR-41)
 
 ## Open questions
