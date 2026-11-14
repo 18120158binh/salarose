@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.flink.api.common.typeinfo.Types;
+import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
 import org.apache.flink.streaming.api.operators.KeyedProcessOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.util.KeyedOneInputStreamOperatorTestHarness;
@@ -14,6 +15,7 @@ import org.apache.flink.streaming.util.KeyedOneInputStreamOperatorTestHarness;
 import com.cdp.platform.shared.models.Event;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -147,6 +149,37 @@ class BusinessEventFanoutTest {
         }
         assertEquals(newest, Set.copyOf(canonIds(matches)));
         assertEquals(2_000L, leftOut());
+    }
+
+    @Test
+    void atTheCapAPurchaseByANewPersonPushesOutNoViewer() throws Exception {
+        activeCampaign("CAMP-0042", PRICE_DROP_INTEREST.replace("\"min_count\":2", "\"min_count\":1"));
+        for (int person = 0; person < IndexFunction.CAP; person++) {
+            view("P" + person, "SKU-123", T - DAY + person);
+        }
+        personEvent("BUYER", "purchase", "SKU-123", T - 1);
+
+        List<Match> matches = post(priceDrop("bev-1", "SKU-123", 15));
+
+        assertEquals(IndexFunction.CAP, matches.size());
+        assertTrue(!canonIds(matches).contains("BUYER"));
+        assertEquals(1L, leftOut());
+    }
+
+    @Test
+    void aBusinessEventSeenBeforeARestoreIsDroppedAfterIt() throws Exception {
+        BusinessEvent event = priceDrop("bev-1", "SKU-123", 15);
+        seen.processElement(new StreamRecord<>(event));
+        OperatorSubtaskState snapshot = seen.snapshot(1L, 1L);
+        seen.close();
+
+        seen = new KeyedOneInputStreamOperatorTestHarness<>(new KeyedProcessOperator<>(new SeenEventFilter()),
+            BusinessEvent::key, Types.STRING);
+        seen.initializeState(snapshot);
+        seen.open();
+        seen.processElement(new StreamRecord<>(event));
+
+        assertEquals(List.of(), seen.extractOutputValues());
     }
 
     @Test

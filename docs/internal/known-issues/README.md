@@ -15,7 +15,7 @@ Every issue has an id, a severity, and the requirement it breaks. Fix an issue a
 | [Profile writer](components/profile-writer.md) | 1 | 0 | 0 | 1 |
 | [Journey execution](components/journey-execution.md) | 0 | 0 | 0 | 1 |
 | [Notification outbox](components/notification-outbox.md) | 0 | 0 | 0 | 0 |
-| [Business event fan-out](components/business-event-fan-out.md) | 2 | 0 | 0 | 0 |
+| [Business event fan-out](components/business-event-fan-out.md) | 1 | 0 | 0 | 0 |
 | [Segment membership pass](components/segment-membership-pass.md), not built | 1 | 0 | 0 | 0 |
 | [Import applier](components/import-applier.md), not built | 0 | 0 | 0 | 0 |
 | [Import metric pass](components/import-metric-pass.md), not built | 0 | 0 | 0 | 0 |

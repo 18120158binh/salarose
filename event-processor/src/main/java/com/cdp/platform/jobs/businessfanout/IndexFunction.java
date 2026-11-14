@@ -95,6 +95,13 @@ final class IndexFunction extends KeyedProcessFunction<String, IndexInput, Match
         if (entry == null) {
             entry = InterestEntry.EMPTY;
             int count = interestedCount.value() == null ? 0 : interestedCount.value();
+            if (count >= CAP && observation.kind() == IndexInput.Kind.EXCLUSION) {
+                // A newcomer with no interest ranks below everyone, so it is the
+                // one left out, not a viewer.
+                peopleDropped.inc();
+                context.output(LEFT_OUT, new LeftOut(indexKey, null, null, 1));
+                return;
+            }
             if (count >= CAP) {
                 dropLeastRecent();
                 peopleDropped.inc();

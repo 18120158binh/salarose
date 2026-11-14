@@ -7,12 +7,11 @@ verified_at: 5ee5ce0
 
 # Business event fan-out known issues
 
-The job is built: `BusinessEventFanoutJob` in `event-processor/src/main/java/com/cdp/platform/jobs/businessfanout/` keeps the interest and segment member indexes and writes `business-event-matches`, which `infra/k8s/data/topics.yaml` declares. Nothing runs it yet, and nothing reads its output: customer decision does not read matches (DEC-KI-41).
+The job is built: `BusinessEventFanoutJob` in `event-processor/src/main/java/com/cdp/platform/jobs/businessfanout/` keeps the interest and segment member indexes and reads `business-events` and writes `business-event-matches`, which `infra/k8s/data/topics.yaml` declares. Nothing runs it yet, and nothing reads its output: customer decision does not read matches (DEC-KI-41).
 
 | Id | Severity | Issue | Breaks |
 |---|---|---|---|
 | BEF-KI-01 | Blocking | No deployment runs the job | BEF-FR-01, BEF-NFR-04 |
-| BEF-KI-02 | Blocking | The topic `business-events` is not declared | BEF-FR-01 |
 
 ## BEF-KI-01. No deployment runs the job
 
@@ -21,9 +20,3 @@ The job is built: `BusinessEventFanoutJob` in `event-processor/src/main/java/com
 - **Evidence.** Read from the code at `5ee5ce0`: `infra/k8s/apps/flink-decision/` deploys customer decision only.
 - **Fix direction.** Add a FlinkDeployment beside `flink-decision`, with the variables in [configuration](../../operations/configuration.md#business-event-fan-out), once customer decision reads matches.
 
-## BEF-KI-02. The topic `business-events` is not declared
-
-- **Symptom.** The job's business event source finds no topic to read.
-- **Cause.** The data ingestion API writes `business-events`, and that work has not declared the topic in `infra/k8s/data/topics.yaml`.
-- **Evidence.** `infra/k8s/data/topics.yaml` at `5ee5ce0` has no `business-events` entry.
-- **Fix direction.** Declare it with the ingestion API's business event route.
