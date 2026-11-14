@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getAuthConfig } from "@/shared/auth/config";
-import { PUBLIC_PATHS } from "@/shared/auth/constants";
+import { isPublicPath } from "@/shared/auth/constants";
 import { clearSessionCookie, hasSessionCookie, verifySessionCookie } from "@/shared/auth/cookies";
 
 // First filter only: checks the session cookie's signature and expiry without a database
@@ -8,7 +8,7 @@ import { clearSessionCookie, hasSessionCookie, verifySessionCookie } from "@/sha
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
-  if (PUBLIC_PATHS.has(pathname)) {
+  if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
 

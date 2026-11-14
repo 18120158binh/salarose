@@ -88,8 +88,8 @@ describe("source key actions", () => {
       values: ["sk_1"],
     });
 
-    mockRespond = () => ({ rows: [{ app_id: "inventory-service", revoked_at: new Date() }], rowCount: 1 });
-    expect(await findSourceKeyByHash("h")).toEqual({ appId: "inventory-service", revoked: true });
+    mockRespond = () => ({ rows: [{ id: "sk_1", app_id: "inventory-service", revoked_at: new Date() }], rowCount: 1 });
+    expect(await findSourceKeyByHash("h")).toEqual({ id: "sk_1", appId: "inventory-service", revoked: true });
   });
 
   it("says so when the key to revoke is gone", async () => {

@@ -117,7 +117,18 @@ describe("proxy", () => {
     expect(isPassedThrough(response)).toBe(true);
   });
 
-  it.each(["/v1x", "/v1/other", "/v1/business-events/x"])(
+  it.each([
+    "/v1/imports",
+    "/v1/imports/5f0c8a2e-1b7d-4c39-9a51-2d3e4f5a6b7c",
+    "/v1/imports/5f0c8a2e-1b7d-4c39-9a51-2d3e4f5a6b7c/complete",
+    "/v1/records/orders",
+  ])("lets the import route %p through without a cookie, for the route to check its source key", async (path) => {
+    const response = await proxy(request(path, { method: "POST" }));
+
+    expect(isPassedThrough(response)).toBe(true);
+  });
+
+  it.each(["/v1x", "/v1/other", "/v1/business-events/x", "/v1/imports/a/b", "/v1/records", "/v1/records/a/b"])(
     "still redirects %p, which is not a listed ingestion route",
     async (path) => {
       const response = await proxy(request(path, { method: "POST" }));
