@@ -1,0 +1,10 @@
+{"customer_id": "c-1", "email": " Ann@Example.COM ", "phone": "0912 345 678", "age": 31, "vip": true}
+{"customer_id": "c-2", "email": "no-at-sign", "mobile": "12", "vip": "FALSE"}
+{"customer_id": "c-1", "email": "ann@example.com"}
+{"customer_id": "gone-1", "email": "gone@example.com"}
+{"customer_id": "c-3", "age": "31"}
+{"customer_id": null, "email": "x@example.com"}
+{"customer_id": 42}
+{"customer_id": "c-4", "phone": "+84 912 345 679", "signed_up": "2024-02-29T10:00:00", "email": "a@b@c"}
+{"customer_id": "c-5", "signed_up": "29/02/2024"}
+

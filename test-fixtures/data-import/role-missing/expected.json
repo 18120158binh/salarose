@@ -1,0 +1,6 @@
+{
+  "fileFailures": [
+    "role_missing:customer_key"
+  ],
+  "conditions": []
+}

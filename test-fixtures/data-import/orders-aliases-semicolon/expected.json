@@ -1,0 +1,50 @@
+{
+  "counts": {
+    "rows_read": 3,
+    "valid": 3,
+    "rejected": 0,
+    "rejected_by_reason": {},
+    "contacts_dropped": {
+      "email": 0,
+      "phone": 0
+    }
+  },
+  "rejects": [],
+  "validRows": [
+    {
+      "line": 2,
+      "customerKey": "c-1",
+      "recordId": "o-1",
+      "data": {
+        "order_id": "o-1",
+        "customer_id": "c-1",
+        "event_time": "2026-11-07T08:00:00Z",
+        "amount": 1
+      }
+    },
+    {
+      "line": 3,
+      "customerKey": "c;2",
+      "recordId": "o-2",
+      "data": {
+        "order_id": "o-2",
+        "customer_id": "c;2",
+        "event_time": "2026-11-07T08:00:00.5-05:00",
+        "amount": 2
+      }
+    },
+    {
+      "line": 4,
+      "customerKey": "multi\nline",
+      "recordId": "o-3",
+      "data": {
+        "order_id": "o-3",
+        "customer_id": "multi\nline",
+        "event_time": "2026-11-07T00:00:00+07:00",
+        "amount": 3
+      }
+    }
+  ],
+  "fileFailures": [],
+  "conditions": []
+}

@@ -1,0 +1,91 @@
+{
+  "counts": {
+    "rows_read": 9,
+    "valid": 3,
+    "rejected": 6,
+    "rejected_by_reason": {
+      "customer_key_duplicate": 1,
+      "customer_key_missing": 1,
+      "deleted_person": 1,
+      "type_mismatch:age": 1,
+      "type_mismatch:customer_id": 1,
+      "type_mismatch:signed_up": 1
+    },
+    "contacts_dropped": {
+      "email": 2,
+      "phone": 1
+    }
+  },
+  "rejects": [
+    {
+      "line": 3,
+      "reason": "customer_key_duplicate"
+    },
+    {
+      "line": 4,
+      "reason": "deleted_person"
+    },
+    {
+      "line": 5,
+      "reason": "type_mismatch:age"
+    },
+    {
+      "line": 6,
+      "reason": "customer_key_missing"
+    },
+    {
+      "line": 7,
+      "reason": "type_mismatch:customer_id"
+    },
+    {
+      "line": 9,
+      "reason": "type_mismatch:signed_up"
+    }
+  ],
+  "conditions": [
+    "reject_threshold"
+  ],
+  "validRows": [
+    {
+      "line": 1,
+      "customerKey": "c-1",
+      "data": {
+        "customer_id": "c-1",
+        "email": "ann@example.com",
+        "phone": "+84912345678",
+        "age": 31,
+        "vip": true
+      },
+      "emails": [
+        "ann@example.com"
+      ],
+      "phones": [
+        "+84912345678"
+      ]
+    },
+    {
+      "line": 2,
+      "customerKey": "c-2",
+      "data": {
+        "customer_id": "c-2",
+        "vip": false
+      },
+      "emails": [],
+      "phones": []
+    },
+    {
+      "line": 8,
+      "customerKey": "c-4",
+      "data": {
+        "customer_id": "c-4",
+        "phone": "+84912345679",
+        "signed_up": "2024-02-29T10:00:00+07:00"
+      },
+      "emails": [],
+      "phones": [
+        "+84912345679"
+      ]
+    }
+  ],
+  "fileFailures": []
+}

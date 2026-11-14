@@ -30,6 +30,7 @@ import org.apache.flink.util.OutputTag;
 import com.cdp.platform.shared.models.CollectorPayload;
 import com.cdp.platform.shared.models.ParsedEvent;
 import com.cdp.platform.shared.utils.JacksonMapper;
+import com.cdp.platform.shared.utils.PlaceholderIds;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
