@@ -7,7 +7,7 @@ verified_at: 7e88968c
 
 # Import metric pass known issues
 
-The import metric pass is not built. Neither the job nor `customer_attributes` of the [contract](../../architecture/components/import-metric-pass.md) exists at `7e88968c`. This page lists defects once code exists. Until then the open work is tracked by the data-import issues, which cite the contract's requirement ids.
+The import metric pass is not built. Its table `customer_attributes` exists, but the job of the [contract](../../architecture/components/import-metric-pass.md) does not. This page lists defects once code exists. Until then the open work is tracked by the data-import issues, which cite the contract's requirement ids.
 
 | Id | Severity | Issue | Breaks |
 |---|---|---|---|

@@ -229,8 +229,10 @@ export function graphToTree(
     outgoingMap.set(conn.from, list);
   });
 
+  // A step with no child ends the journey with the goal a drawn End gets, so the first save
+  // matches every later save (JBD-FR-02).
   function getNextNodes(conns: CampaignConnection[]): CampaignTreeRef {
-    if (!conns || conns.length === 0) return { type: "end" };
+    if (!conns || conns.length === 0) return { type: "end", goalId: "goal_default" };
     if (conns.length === 1) return buildNode(conns[0].to);
     return conns.map(c => buildNode(c.to));
   }

@@ -4,8 +4,12 @@ namespace: cdp
 resources:
   # Generates the ConfigMap db-migrations from infra/db/migrations.
   - ../../db
+  # Generates the ConfigMap import-store-ddl from infra/db/import-store.
+  - ../../db/import-store
   - db-migrate.yaml
   - postgres-monitoring.yaml
   - postgres.yaml
+  - import-store.yaml
+  - import-store-ddl.yaml
   - kafka.yaml
   - topics.yaml

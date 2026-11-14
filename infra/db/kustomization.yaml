@@ -8,5 +8,6 @@ configMapGenerator:
       - migrations/V0002__journey_drafts_and_preview.sql
       - migrations/V0003__event_volume_and_metric_creator.sql
       - migrations/V0004__data_import_tables.sql
+      - migrations/V0005__customer_attributes.sql
       - migrations/V0006__segment_members.sql
       - migrations/beforeMigrate.sql

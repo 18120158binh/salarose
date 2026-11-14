@@ -1,0 +1,53 @@
+# The import store (docs/internal/architecture/data-model.md#import-store, decision 0040). Only the import applier
+# writes it, without a WAL governor, so it runs on a compute node and never on data-1, which holds the main Postgres and
+# Kafka (IAP-NFR-07). It holds no replication slot (IAP-NFR-06): one instance, no replicas, and no CDC, so max_wal_size
+# alone bounds its WAL.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cdp-import-pg
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.15-standard-trixie
+  postgresql:
+    parameters:
+      max_wal_size: 1GB
+      max_connections: "50"
+      shared_buffers: 256MB
+  # Off by default for one instance. Stated so that a later change to instances does not add slots silently.
+  replicationSlots:
+    highAvailability:
+      enabled: false
+    synchronizeReplicas:
+      enabled: false
+  bootstrap:
+    initdb:
+      database: imports
+      # The applier's role. The Job import-store-ddl applies the tables as this role, so it owns them.
+      owner: cdp_import
+  managed:
+    roles:
+      # Read-only, for the import metric pass and studio's metric preview. Its password comes from a basic-auth
+      # secret that the operator creates once (docs/internal/operations/configuration.md).
+      - name: import_reader
+        ensure: present
+        login: true
+        inRoles:
+          - pg_read_all_data
+        passwordSecret:
+          name: cdp-import-pg-reader
+  storage:
+    storageClass: local-path
+    size: 10Gi
+  affinity:
+    nodeSelector:
+      cdp.io/pool: compute
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 1Gi

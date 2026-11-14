@@ -21,6 +21,7 @@ DROP TABLE IF EXISTS user_event_fields CASCADE;
 DROP TABLE IF EXISTS user_event_fields CASCADE;
 DROP TABLE IF EXISTS identity_graph CASCADE;
 DROP TABLE IF EXISTS system_user_id_tokens;
+DROP TABLE IF EXISTS customer_attributes;
 DROP TABLE IF EXISTS pii_access_log;
 DROP TABLE IF EXISTS person_tombstones;
 DROP TABLE IF EXISTS import_runs;
@@ -534,6 +535,19 @@ CREATE TABLE IF NOT EXISTS person_tombstones (
     requested_by text NOT NULL,
     requested_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     state text NOT NULL CHECK (state IN ('requested', 'done'))
+);
+-- The import metric pass's per-customer results (docs/internal/architecture/components/import-metric-pass.md). One row
+-- per customer and imported source, where source_id is the dataset's name. The pass is the only writer, and it rewrites
+-- a row only when attributes_hash changes. Default replica identity and in no publication (IMP-NFR-04): with
+-- wal_level=logical, replica identity full would log the old row on every update.
+CREATE TABLE IF NOT EXISTS customer_attributes (
+    customer_key text NOT NULL CHECK (customer_key <> ''),
+    source_id text NOT NULL CHECK (source_id ~ '^[a-z][a-z0-9_]*$'),
+    attributes jsonb NOT NULL CHECK (jsonb_typeof(attributes) = 'object'),
+    attributes_hash text NOT NULL CHECK (attributes_hash ~ '^[0-9a-f]{64}$'),
+    pass_id uuid NOT NULL REFERENCES import_metric_passes(id),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    primary key (customer_key, source_id)
 );
 -- Each CDC source upserts its slot's row on every heartbeat. The write reaches every slot through
 -- its publication, so a slot moves its confirmed position while its captured table is quiet.

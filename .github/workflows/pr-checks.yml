@@ -122,6 +122,8 @@ jobs:
           java-version: '21'
           cache: maven
           cache-dependency-path: event-processor/pom.xml
+      - name: Test how the previous commit is picked
+        run: bash event-processor/scripts/test-restore-check.sh
       - name: Restore the running image's savepoint
         env:
           BASE_REF: origin/${{ github.base_ref || 'deploy/aws-free-plan' }}
