@@ -228,6 +228,8 @@ Event fields:
 | `event_time` | Yes | When the event happened, not when it was sent |
 | `user_id` | One of the two | The logged-in account id, the same value the customer's trackers send as the user id |
 | `anonymous_id` | One of the two | A device or cookie id, the same value the trackers send as the domain user id |
+| `email` | No | The person's email address. A guarded match key, normalized by the [identifiers](../architecture/components/identity/identifiers.md#normalize-an-identifier) rules. It does not replace `user_id` or `anonymous_id`. |
+| `phone` | No | The person's phone number, in E.164 or in the deployment's default phone country. Same rules as `email`. |
 | `attributes` | No | The event's data |
 
 ## Failure handling
