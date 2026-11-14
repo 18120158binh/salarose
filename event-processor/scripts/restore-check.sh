@@ -26,6 +26,7 @@ ENTRY=com.cdp.platform.jobs.eventparser.EventParseJob
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 previous=${1:-}
+explicit=$previous
 pin="$BASE_REF:infra/k8s/apps/flink-parse/pin-image.yaml"
 if [[ -z $previous ]] && git -C "$ROOT" cat-file -e "$pin" 2>/dev/null; then
   previous=$(git -C "$ROOT" show "$pin" | sed -n 's/^ *image: .*flink-jobs:sha-\([0-9a-f]*\)$/\1/p')
@@ -38,6 +39,7 @@ fi
 if resolved=$(git -C "$ROOT" rev-parse -q --verify "$previous^{commit}"); then
   previous=$resolved
 else
+  [[ -z $explicit ]] || fail "commit $explicit is not in this repository"
   missing=$previous
   previous=$(git -C "$ROOT" rev-parse --verify "$BASE_REF^{commit}")
   warning="the running image's commit $missing is not in this repository; restoring from $BASE_REF ($previous) instead"

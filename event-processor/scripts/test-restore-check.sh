@@ -49,6 +49,9 @@ out=$(resolve || true)
 expect "a tag outside the history warns" "WARNING: the running image's commit d6d59d45c02c is not in this repository" "$out"
 expect "a tag outside the history falls back to the base ref" "previous commit: $head" "$out"
 
+out=$(BASE_REF=base RESTORE_CHECK_RESOLVE_ONLY=1 bash "$repo/event-processor/scripts/restore-check.sh" d6d59d45c02c 2>&1 || true)
+expect "a missing commit given as an argument fails" "FAIL: commit d6d59d45c02c is not in this repository" "$out"
+
 printf 'images: []\n' >"$repo/infra/k8s/envs/aws-free-plan/kustomization.yaml"
 commit "no flink-jobs tag" >/dev/null
 if out=$(resolve); then
