@@ -75,8 +75,10 @@ The job keeps its state in RocksDB and sets that itself. A `state.backend.type` 
 | `PROFILE_WRITER_KAFKA_BROKERS` | `KAFKA_BROKERS` | Brokers |
 | `PROFILE_WRITER_GROUP_ID` | `KAFKA_GROUP_ID`, then `customer-profile-writer` | Consumer group. Without a checkpoint to restore, the job starts at the earliest offset, even for a group with committed offsets. |
 | `KAFKA_PROFILE_MUTATION_TOPIC` | `customer-profile-mutations` | Input |
+| `KAFKA_SEGMENT_MEMBERSHIP_TOPIC` | `segment-membership-changes` | Membership changes, read with the same group |
+| `SEGMENT_MEMBERS_MAX_ROWS_PER_SECOND` | `1000` | Cap on membership changes written to `segment_members` a second, shared evenly by the job's subtasks. A value that is not a positive number stops the job at start. |
 
-The checkpoint interval is fixed at 30 seconds. The JDBC sink batches 100 rows or 500 ms and retries 3 times.
+The checkpoint interval is fixed at 30 seconds. Each JDBC sink batches 100 rows or 500 ms and retries 3 times.
 
 ## Journey execution
 

@@ -5,6 +5,7 @@ DROP TABLE IF EXISTS journey_publishes;
 DROP TABLE IF EXISTS journey_drafts;
 DROP TABLE IF EXISTS event_volume;
 DROP TABLE IF EXISTS campaigns CASCADE;
+DROP TABLE IF EXISTS segment_members;
 DROP TABLE IF EXISTS segments CASCADE;
 -- The input table and functions of the old Postgres journey engine, which
 -- databases created before it was removed still hold.
@@ -275,6 +276,16 @@ CREATE TABLE IF NOT EXISTS segments (
     created_by text references system_users(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+-- Tracked members of each segment (decision 0038). The profile writer is the only
+-- writer: it inserts on an entered change and deletes on an exited one, so a deleted segment's rows
+-- leave through the exited changes customer decision publishes, not through a foreign key.
+-- In no publication.
+CREATE TABLE IF NOT EXISTS segment_members (
+    segment_id text NOT NULL CHECK (segment_id ~ '^SEG-[0-9A-Fa-f]{16}$'),
+    canon_id text NOT NULL CHECK (canon_id <> ''),
+    since TIMESTAMP WITH TIME ZONE NOT NULL,
+    primary key (segment_id, canon_id)
 );
 -- A series is its buckets, not its occurrences. Drop a table built with the
 -- old occurrence arrays, so that CREATE TABLE IF NOT EXISTS builds the new one.

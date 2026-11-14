@@ -11,10 +11,14 @@ import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 
 import com.cdp.platform.jobs.profilewriter.transforms.CustomerProfileMutationMapper;
+import com.cdp.platform.jobs.profilewriter.transforms.RatePacer;
+import com.cdp.platform.jobs.profilewriter.transforms.SegmentMembershipChangeMapper;
 import com.cdp.platform.shared.config.DatabaseConfig;
 import com.cdp.platform.shared.config.KafkaSecurityConfig;
+import com.cdp.platform.shared.db.repositories.SegmentMemberRepository;
 import com.cdp.platform.shared.db.repositories.UserMetricRepository;
 import com.cdp.platform.shared.models.CustomerProfileMutationEvent;
+import com.cdp.platform.shared.models.SegmentMembershipChange;
 import com.cdp.platform.shared.models.db.UserMetric;
 import com.cdp.platform.shared.models.source.KafkaSourceConfig;
 
@@ -24,6 +28,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 public final class CustomerProfileWriterJob {
 
     private static final String JOB_NAME = "customer-profile-writer-job";
+    private static final double DEFAULT_SEGMENT_MEMBERS_MAX_ROWS_PER_SECOND = 1_000;
 
     private CustomerProfileWriterJob() {
     }
@@ -71,6 +76,53 @@ public final class CustomerProfileWriterJob {
             .uid("decode-user-metrics");
 
         UserMetricRepository.attach(metrics, databaseConfig);
+
+        String membershipTopic = System
+            .getenv()
+            .getOrDefault("KAFKA_SEGMENT_MEMBERSHIP_TOPIC", "segment-membership-changes");
+        KafkaSource<String> membershipSource = KafkaSource
+            .<String>builder()
+            .setBootstrapServers(sourceConfig.brokers())
+            .setTopics(membershipTopic)
+            .setGroupId(sourceConfig.groupId())
+            .setStartingOffsets(OffsetsInitializer.earliest())
+            .setValueOnlyDeserializer(new SimpleStringSchema())
+            .setProperties(sourceConfig.toProperties())
+            .build();
+
+        DataStream<SegmentMembershipChange> changes = environment
+            .fromSource(membershipSource, WatermarkStrategy.noWatermarks(), "Segment Membership Changes")
+            .uid("segment-membership-changes-source")
+            .flatMap(new SegmentMembershipChangeMapper())
+            .returns(TypeInformation.of(SegmentMembershipChange.class))
+            .name("Decode Segment Membership Changes")
+            .uid("decode-segment-membership-changes")
+            .map(new RatePacer<SegmentMembershipChange>(
+                segmentMembersMaxRowsPerSecond(System.getenv("SEGMENT_MEMBERS_MAX_ROWS_PER_SECOND"))))
+            .returns(TypeInformation.of(SegmentMembershipChange.class))
+            .name("Pace Segment Membership Changes")
+            .uid("pace-segment-membership-changes");
+
+        SegmentMemberRepository.attach(changes, databaseConfig);
         environment.execute(JOB_NAME);
+    }
+
+    /**
+     * The cap on {@code segment_members} writes a second (PRW-NFR-06), 1,000 when
+     * unset.
+     */
+    static double segmentMembersMaxRowsPerSecond(String configured) {
+        if (configured == null || configured.isBlank()) return DEFAULT_SEGMENT_MEMBERS_MAX_ROWS_PER_SECOND;
+        double rows;
+        try {
+            rows = Double.parseDouble(configured.strip());
+        } catch (NumberFormatException invalid) {
+            throw new IllegalArgumentException("SEGMENT_MEMBERS_MAX_ROWS_PER_SECOND is not a number: " + configured,
+                invalid);
+        }
+        if (!(rows > 0) || Double.isInfinite(rows)) {
+            throw new IllegalArgumentException("SEGMENT_MEMBERS_MAX_ROWS_PER_SECOND must be positive: " + configured);
+        }
+        return rows;
     }
 }

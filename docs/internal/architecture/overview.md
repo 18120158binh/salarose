@@ -277,7 +277,7 @@ Each step's workflow and checks are in [the AWS Free Plan environment](../operat
 | `journey-engine-segment-checks` | State machine | Customer decision | `canon_id` |
 | `journey-engine-outbound-noti` | Outbox | Sender, not in this repo | None |
 | `business-events`, planned | Data ingestion API | Business event fan-out | Event name + U+001F + item key |
-| `segment-membership-changes`, planned | Customer decision | Profile writer, business event fan-out | `canon_id` |
+| `segment-membership-changes` | Customer decision | Profile writer, business event fan-out | `canon_id` |
 | `current-member-entries`, planned | Segment membership pass | Customer decision | `canon_id` |
 | `business-event-matches`, planned | Business event fan-out | Customer decision | `canon_id` |
 

@@ -79,6 +79,8 @@ A deleted segment's rows go the same way. Customer decision publishes `exited` f
 
 A replay delivers the same changes in the same order for each person and segment, so the table converges on the same rows. The writer generates no id.
 
+The writer reads the changes no faster than the cap of PRW-NFR-06, so a backlog, such as the rollout of flags, waits in the topic and not in the database.
+
 ## Functional requirements
 
 | Id | Requirement |
@@ -132,7 +134,8 @@ The table has no event context JSON. Each row holds at most the buckets that cus
 | Older behavior version | Ignore the row. |
 | Duplicate mutation | Ignore the row, because its version is not higher. |
 | Restart | Replay from the last checkpoint, or from the earliest offset without one. |
-| Membership change does not decode, or has no `canon_id`, `segment_id`, or a change other than `entered` or `exited` | Skip it and log it. |
+| Membership change does not decode, has no `canon_id` or `segment_id`, has a change other than `entered` or `exited`, or is an `entered` change with no `event_time` | Skip it and log it. |
+| Membership change the database rejects, such as a `segment_id` that is not a segment id | Skip it, log it, and count it. The writer keeps running. |
 | Duplicate membership change | Apply it again. The row ends as it was. |
 | `exited` for a row that does not exist | Do nothing. |
 
