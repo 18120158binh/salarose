@@ -120,7 +120,7 @@ diff -u <(dump mig_reference) <(dump mig_fresh) >"$WORK/drift.diff" || {
 pass "migrations match schema.sql"
 
 # IMP-NFR-04: customer_attributes keeps the default replica identity and joins no publication.
-ident=$(echo "SELECT c.relreplident || '|' || count(p.pubname) FROM pg_class c LEFT JOIN pg_publication_tables p
+ident=$(echo "SELECT c.relreplident::text || '|' || count(p.pubname) FROM pg_class c LEFT JOIN pg_publication_tables p
   ON p.schemaname = 'public' AND p.tablename = c.relname WHERE c.oid = 'public.customer_attributes'::regclass
   GROUP BY c.relreplident" | sql postgres mig_fresh)
 [[ $ident == "d|0" ]] || fail "customer_attributes must have replica identity default and no publication, got $ident"

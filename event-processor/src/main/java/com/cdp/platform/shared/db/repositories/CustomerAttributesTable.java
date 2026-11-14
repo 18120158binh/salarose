@@ -20,7 +20,8 @@ public final class CustomerAttributesTable {
     public static final String UPDATED_AT = "updated_at";
 
     /** Every column, in the order of the {@code CREATE TABLE}. */
-    public static final List<String> COLUMNS = List.of(CUSTOMER_KEY, SOURCE_ID, ATTRIBUTES, ATTRIBUTES_HASH, PASS_ID, UPDATED_AT);
+    public static final List<String> COLUMNS = List
+        .of(CUSTOMER_KEY, SOURCE_ID, ATTRIBUTES, ATTRIBUTES_HASH, PASS_ID, UPDATED_AT);
 
     private CustomerAttributesTable() {
     }

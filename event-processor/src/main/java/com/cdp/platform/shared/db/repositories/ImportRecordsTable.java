@@ -21,7 +21,8 @@ public final class ImportRecordsTable {
     public static final String RUN_ID = "run_id";
 
     /** Every column, in the order of the {@code CREATE TABLE}. */
-    public static final List<String> COLUMNS = List.of(RECORD_TYPE_ID, RECORD_ID, CUSTOMER_KEY, EVENT_TIME, UPDATED_AT, DATA, WRITER, RUN_ID);
+    public static final List<String> COLUMNS = List
+        .of(RECORD_TYPE_ID, RECORD_ID, CUSTOMER_KEY, EVENT_TIME, UPDATED_AT, DATA, WRITER, RUN_ID);
 
     private ImportRecordsTable() {
     }
