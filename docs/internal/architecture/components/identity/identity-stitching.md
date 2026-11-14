@@ -230,7 +230,7 @@ All three identifiers now resolve to `U(usr_1001)`.
 
 ## Open questions
 
-- Should a device shared by two accounts merge them, or should the second login start a new set? Today they merge. Since the recheck, the merged root also reaches every other device of each account that signed in on the shared device within one recheck interval, so a kiosk can give many people one `canon_id` on all their devices. The 200-entry bound limits how many accounts one structure joins, not how far the joined root spreads. The [identity graph](identity-graph.md#open-questions) contract lists the options.
+- Should a device shared by two accounts merge them, or should the second login start a new set? Today they merge. Since the recheck, the merged root also reaches every other device of each account that signed in on the shared device within one recheck interval, so a kiosk can give many people one `canon_id` on all their devices. The 200-entry bound limits how many accounts one structure joins, not how far the joined root spreads. [Decision 0050](../../decisions/0050-one-account-per-person-no-unmerge-and-a-5-second-merge-bound.md) answers it for the [identity graph](identity-graph.md#limits): a set holds one `user_id`, and the second login is refused a merge. Until the graph is built, they merge as described here.
 
 ## Related
 

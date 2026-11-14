@@ -1,7 +1,7 @@
 ---
 title: Customer lookup known issues
 contract: ../../features/customer-lookup.md
-updated: 2026-11-08
+updated: 2026-11-14
 verified_at: 8de15919
 ---
 
@@ -18,6 +18,7 @@ Studio paths are relative to `studio/`.
 | CUS-KI-05 | Missing | No delivery status reaches studio | CUS-FR-13 |
 | CUS-KI-06 | Missing | The profile does not list segments, and stored membership does not exist | CUS-FR-14 |
 | CUS-KI-07 | Missing | The title shows no name | CUS-FR-04 |
+| CUS-KI-08 | Missing | The profile shows no identifiers by type and no merge history | CUS-FR-42 |
 | CUS-KI-10 | Missing | The profile shows no imported attributes, and an imported-only customer has no profile | CUS-FR-40, CUS-FR-41 |
 
 ## CUS-KI-01. No command palette entry starts a search
@@ -75,3 +76,10 @@ Studio paths are relative to `studio/`.
 - **Cause.** `customer_attributes` does not exist yet. No query in `src/features/customer-lookup/model/` reads imported attributes, and `app/v2/customers/[canonId]/page.tsx` has no imported-only branch.
 - **Evidence.** Read from `infra/db/schema.sql` and the code.
 - **Fix direction.** Build after data import stores `customer_attributes`. Mask on the server, and log each reveal in `pii_access_log`.
+
+## CUS-KI-08. The profile shows no identifiers by type and no merge history
+
+- **Symptom.** The profile lists devices and accounts, but no email or phone identifiers and no merge records.
+- **Cause.** The identity graph is not built. Typed identifiers and merge records do not exist, and `identity_graph` holds one row per `domain_userid`. The contract added the view on 2026-11-14 ([decision 0050](../../architecture/decisions/0050-one-account-per-person-no-unmerge-and-a-5-second-merge-bound.md)).
+- **Evidence.** Read from the contract of the [identity graph](../../architecture/components/identity/identity-graph.md) and its known issues.
+- **Fix direction.** Build the view when the identity graph stores typed identifiers and merge records.
