@@ -3,7 +3,7 @@ title: Business event fan-out
 slug: business-event-fan-out
 purpose: Turn each business event, such as a price drop, into one record per person that a campaign should reach.
 status: accepted
-implementation: planned
+implementation: partial
 area: event-processor
 tags: [business-events, fan-out, flink, interest, segments]
 created: 2026-10-21

@@ -98,6 +98,14 @@ public final class RuleDocuments {
         }
     }
 
+    /**
+     * A trigger's filters on its event's attributes, or null when there are none.
+     * Throws IllegalArgumentException when they do not parse.
+     */
+    public static Predicate eventFilters(JsonNode filters) {
+        return filters(filters);
+    }
+
     /** Filters on an event, as an {@code and} of one {@code or} per group. */
     private static Predicate filters(JsonNode filters) {
         List<List<JsonNode>> groups = groups(filters);

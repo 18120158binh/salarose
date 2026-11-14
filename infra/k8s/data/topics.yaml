@@ -135,3 +135,18 @@ metadata:
 spec:
   partitions: 3
   replicas: 1
+---
+# One message per person and campaign that a business event concerns, keyed by
+# canon_id. Business event fan-out writes it; customer decision reads it.
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: business-event-matches
+  labels:
+    strimzi.io/cluster: cdp
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  partitions: 3
+  replicas: 1
