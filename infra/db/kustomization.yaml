@@ -10,4 +10,5 @@ configMapGenerator:
       - migrations/V0004__data_import_tables.sql
       - migrations/V0005__customer_attributes.sql
       - migrations/V0006__segment_members.sql
+      - migrations/V0007__segment_import_members.sql
       - migrations/beforeMigrate.sql

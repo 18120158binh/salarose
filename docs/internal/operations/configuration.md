@@ -238,10 +238,27 @@ The import applier reads its settings once at start, and stops before it takes t
 | Batch size | Import metric pass | 500 rows | Upserts between two governor checks |
 | Own WAL rate | Import metric pass | 0.25 MB/s | Most WAL the pass's own statements write per second on the main Postgres |
 | Cluster WAL pause and resume | Import metric pass | 2 MB/s and 1.5 MB/s | Pause while the main Postgres's total WAL rate is above the first, resume under the second |
-| Slot pause and resume | Import metric pass | Half and two thirds of `max_slot_wal_keep_size` | Pause while any slot's `safe_wal_size` is under the first, resume above the second. No cap set counts as a missing reading, so the pass pauses. |
-| Disk pause and resume | Import metric pass | 20% and 25% free | Pause while the worse of the node filesystem's free share and the database's free share of its claim is under the first, or either is unknown. Resume when both are above the second. |
-| Free disk source | Import metric pass | None | The monitoring query that gives the free bytes of the main Postgres node's root filesystem |
-| Main Postgres claim size | Import metric pass | The claim's size, 8 GiB today | The size the database's bytes are compared with |
+| Slot pause and resume, `WAL_GOVERNOR_SLOT_PAUSE` and `WAL_GOVERNOR_SLOT_RESUME` in the segment membership pass | Import metric pass, segment membership pass | Half and two thirds of `max_slot_wal_keep_size` | Pause while any slot's `safe_wal_size` is under the first, resume above the second. No cap set counts as a missing reading, so the pass pauses. |
+| Disk pause and resume, `WAL_GOVERNOR_DISK_PAUSE` and `WAL_GOVERNOR_DISK_RESUME` in the segment membership pass | Import metric pass, segment membership pass | 20% and 25% free | Pause while the worse of the node filesystem's free share and the database's free share of its claim is under the first, or either is unknown. Resume when both are above the second. |
+| Free disk source, `WAL_GOVERNOR_FREE_DISK_QUERY` in the segment membership pass | Import metric pass, segment membership pass | None | The monitoring query that gives the free bytes of the main Postgres node's root filesystem |
+| Main Postgres claim size, `WAL_GOVERNOR_CLAIM_BYTES` in the segment membership pass | Import metric pass, segment membership pass | The claim's size, 8 GiB today | The size the database's bytes are compared with |
+
+## Segment membership pass
+
+The nightly [segment membership pass](../architecture/components/segment-membership-pass.md) runs as the CronJob `segment-membership-pass` in `infra/k8s/apps/segment-membership-pass/`. It is a plain Java process from the Flink jobs image, so it reads the `DB_*` variables of [all Flink jobs](#all-flink-jobs) and no Flink setting. A value that does not parse stops the pass, and the CronJob records the failure.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `SEGMENT_PASS_SCHEDULE` | `03:00` | Local time of the scheduled time, in `REPORTING_TIME_ZONE`. Set it equal to the CronJob's `schedule` and `timeZone`. A pod that starts late still runs for the latest scheduled time at or before its start. |
+| `SEGMENT_PASS_FALLBACK` | `05:00` | Local time at which the pass starts on the attributes already published if tonight's metric pass has not reached `done` (SMP-NFR-04) |
+| `REPORTING_TIME_ZONE` | `Asia/Ho_Chi_Minh` | IANA zone of both times |
+| `SEGMENT_PASS_BATCH_SIZE` | `500` | Customer keys per page, and stale rows per delete. The governor is checked before each page that writes and before each delete. |
+| `SEGMENT_PASS_METRIC_POLL_SECONDS` | `30` | How often the pass looks at `import_metric_passes` while it waits |
+| `WAL_GOVERNOR_SLOT_PAUSE`, `WAL_GOVERNOR_SLOT_RESUME` | `0.5`, `0.6667` | Shares of `max_slot_wal_keep_size`. Pause while any slot's `safe_wal_size` is under the first, resume above the second. No cap set pauses. |
+| `WAL_GOVERNOR_DISK_PAUSE`, `WAL_GOVERNOR_DISK_RESUME` | `0.20`, `0.25` | Free shares. Pause while the worse of the node filesystem's and the database's claim is under the first, resume above the second. |
+| `WAL_GOVERNOR_FREE_DISK_QUERY` | None | A Prometheus instant-query URL whose first sample is the node filesystem's free share, from 0 to 1. Unset or failing counts as a missing reading, so the pass pauses. The manifest sets the worst root filesystem of any node. |
+| `WAL_GOVERNOR_CLAIM_BYTES` | `8589934592` | Size of the main Postgres claim, against which `pg_database_size` gives the database's free share |
+| `WAL_GOVERNOR_POLL_SECONDS` | `30` | How often a paused pass reads the limits again |
 
 ## Database bootstrap
 
