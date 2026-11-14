@@ -3,11 +3,11 @@ title: Segment membership pass
 slug: segment-membership-pass
 purpose: Once a night, store which segments each customer known only from imports belongs to, so segment size counts them. After a publish that asks for it, send a segment's current members to enter the journey, at a capped rate.
 status: accepted
-implementation: planned
+implementation: partial
 area: event-processor
 tags: [segments, batch, data-import, postgres]
 created: 2026-11-08
-updated: 2026-11-08
+updated: 2026-11-14
 version: 0.1
 known_issues: ../../known-issues/components/segment-membership-pass.md
 ---

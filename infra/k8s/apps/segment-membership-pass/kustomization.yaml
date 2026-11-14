@@ -1,0 +1,6 @@
+# The nightly segment membership pass (docs/internal/architecture/components/segment-membership-pass.md).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: cdp
+resources:
+  - segment-membership-pass.yaml
