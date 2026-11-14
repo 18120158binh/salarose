@@ -10,6 +10,10 @@
 # origin/deploy/aws-free-plan): its pin in flink-parse/pin-image.yaml while one exists, or else the flink-jobs tag of
 # the environment overlay. Passes when the new JobManager logs "Restoring job ... from Savepoint" for that savepoint,
 # the job is RUNNING, and it completes a checkpoint after the restore.
+#
+# When that commit is not in this repository, as with an image built before the history was rewritten, the previous
+# commit falls back to BASE_REF itself, with a warning. The restore still runs. RESTORE_CHECK_RESOLVE_ONLY=1 prints the
+# previous commit and exits; test-restore-check.sh uses it.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -18,21 +22,11 @@ PG_IMAGE=${PG_IMAGE:-postgres:16}
 KAFKA_IMAGE=${KAFKA_IMAGE:-apache/kafka:3.9.1}
 TIMEOUT=${RESTORE_TIMEOUT:-240}
 RUN=restore-check-$$
-WORK=$(mktemp -d)
 ENTRY=com.cdp.platform.jobs.eventparser.EventParseJob
-
-cleanup() {
-  docker rm -f "$RUN-pg" "$RUN-kafka" "$RUN-old-jm" "$RUN-old-tm" "$RUN-new-jm" "$RUN-new-tm" >/dev/null 2>&1 || true
-  docker network rm "$RUN" >/dev/null 2>&1 || true
-  git -C "$ROOT" worktree remove --force "$WORK/previous" >/dev/null 2>&1 || true
-  # The Flink containers write the savepoint as their own user.
-  docker run --rm -v "$WORK:/work" "$PG_IMAGE" rm -rf /work/savepoints >/dev/null 2>&1 || true
-  rm -rf "$WORK" || true
-}
-trap cleanup EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 previous=${1:-}
+explicit=$previous
 pin="$BASE_REF:infra/k8s/apps/flink-parse/pin-image.yaml"
 if [[ -z $previous ]] && git -C "$ROOT" cat-file -e "$pin" 2>/dev/null; then
   previous=$(git -C "$ROOT" show "$pin" | sed -n 's/^ *image: .*flink-jobs:sha-\([0-9a-f]*\)$/\1/p')
@@ -42,8 +36,29 @@ if [[ -z $previous ]]; then
     | sed -n '/name: cdp\/flink-jobs$/,/newTag/s/^ *newTag: sha-\([0-9a-f]*\)$/\1/p')
 fi
 [[ -n $previous ]] || fail "no previous image found on $BASE_REF"
-previous=$(git -C "$ROOT" rev-parse --verify "$previous^{commit}")
+if resolved=$(git -C "$ROOT" rev-parse -q --verify "$previous^{commit}"); then
+  previous=$resolved
+else
+  [[ -z $explicit ]] || fail "commit $explicit is not in this repository"
+  missing=$previous
+  previous=$(git -C "$ROOT" rev-parse --verify "$BASE_REF^{commit}")
+  warning="the running image's commit $missing is not in this repository; restoring from $BASE_REF ($previous) instead"
+  echo "WARNING: $warning" >&2
+  [[ -z ${GITHUB_ACTIONS:-} ]] || echo "::warning title=flink-restore fallback::$warning"
+fi
 echo "previous commit: $previous"
+[[ -z ${RESTORE_CHECK_RESOLVE_ONLY:-} ]] || exit 0
+
+WORK=$(mktemp -d)
+cleanup() {
+  docker rm -f "$RUN-pg" "$RUN-kafka" "$RUN-old-jm" "$RUN-old-tm" "$RUN-new-jm" "$RUN-new-tm" >/dev/null 2>&1 || true
+  docker network rm "$RUN" >/dev/null 2>&1 || true
+  git -C "$ROOT" worktree remove --force "$WORK/previous" >/dev/null 2>&1 || true
+  # The Flink containers write the savepoint as their own user.
+  docker run --rm -v "$WORK:/work" "$PG_IMAGE" rm -rf /work/savepoints >/dev/null 2>&1 || true
+  rm -rf "$WORK" || true
+}
+trap cleanup EXIT
 
 # The two Docker builds of build-images.yml, from a checkout's event-processor.
 build_image() {
