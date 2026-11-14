@@ -78,6 +78,13 @@ class TableColumnsTest {
             columns(IdentityGraphTable.TABLE_NAME, IdentityGraphTable.lookupQuery("d2", "u1").getSQL()));
     }
 
+    @Test
+    void segmentMemberSinkWritesOnlyDefinedColumns() throws IOException {
+        assertDefined(SegmentMembersTable.TABLE_NAME, Set
+            .of(SegmentMembersTable.SEGMENT_ID,
+                SegmentMembersTable.CANON_ID, SegmentMembersTable.SINCE));
+    }
+
     private static void assertDefined(String table, Schema schema) throws IOException {
         assertDefined(table, physicalColumns(schema));
     }

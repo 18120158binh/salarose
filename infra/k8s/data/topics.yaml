@@ -79,6 +79,23 @@ spec:
   partitions: 3
   replicas: 1
 ---
+# Membership changes from customer decision to the profile writer. Keyed by canon_id. Keeps one day
+# (DEC-NFR-15), because Kafka shares the database host's disk (decision 0038).
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: segment-membership-changes
+  labels:
+    strimzi.io/cluster: cdp
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: 86400000
+---
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:
