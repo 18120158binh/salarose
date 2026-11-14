@@ -19,7 +19,7 @@ Every setting that the Flink jobs and `studio` read, with its default. The featu
 
 Each job reads the `DB_` variables and `CDC_CONFIRM_DELAY_CHECKPOINTS` once, where it is submitted, and carries them to its task managers. The task managers do not need them. Where the job is submitted depends on the deployment: in application mode it is the job manager, and with `flink run` it is the shell that runs the command.
 
-Each job also reads Kafka security settings with its own prefix: `<PREFIX>_KAFKA_SECURITY_PROTOCOL`, `_SASL_MECHANISM`, `_SASL_JAAS_CONFIG`, `_SSL_TRUSTSTORE_LOCATION`, and `_SSL_TRUSTSTORE_TYPE`. The prefixes are `EVENT_PARSE_SOURCE`, `EVENT_PARSE_SINK`, `CUSTOMER_DECISION`, `PROFILE_WRITER`, `STATE_MACHINE`, `CAMPAIGN_OUTBOX`, and `CAMPAIGN_TIMER`. A missing or empty prefixed variable falls back to the same name without the prefix. An empty protocol means plaintext. `SASL_*` protocols require the JAAS config. The SASL mechanism defaults to `SCRAM-SHA-512` and the truststore type to `PEM`. The jobs pass the JAAS config to the Kafka client unchanged, so it names the client's own login module, such as `org.apache.kafka.common.security.scram.ScramLoginModule`. The job JAR carries that module. The relocated `org.apache.flink.kafka.shaded...` name does not load.
+Each job also reads Kafka security settings with its own prefix: `<PREFIX>_KAFKA_SECURITY_PROTOCOL`, `_SASL_MECHANISM`, `_SASL_JAAS_CONFIG`, `_SSL_TRUSTSTORE_LOCATION`, and `_SSL_TRUSTSTORE_TYPE`. The prefixes are `EVENT_PARSE_SOURCE`, `EVENT_PARSE_SINK`, `CUSTOMER_DECISION`, `PROFILE_WRITER`, `STATE_MACHINE`, `CAMPAIGN_OUTBOX`, `CAMPAIGN_TIMER`, and `BUSINESS_FANOUT`. A missing or empty prefixed variable falls back to the same name without the prefix. An empty protocol means plaintext. `SASL_*` protocols require the JAAS config. The SASL mechanism defaults to `SCRAM-SHA-512` and the truststore type to `PEM`. The jobs pass the JAAS config to the Kafka client unchanged, so it names the client's own login module, such as `org.apache.kafka.common.security.scram.ScramLoginModule`. The job JAR carries that module. The relocated `org.apache.flink.kafka.shaded...` name does not load.
 
 ## Event ingestion
 
@@ -79,6 +79,19 @@ The job keeps its state in RocksDB and sets that itself. A `state.backend.type` 
 | `SEGMENT_MEMBERS_MAX_ROWS_PER_SECOND` | `1000` | Cap on membership changes written to `segment_members` a second, shared evenly by the job's subtasks. A value that is not a positive number stops the job at start. |
 
 The checkpoint interval is fixed at 30 seconds. Each JDBC sink batches 100 rows or 500 ms and retries 3 times.
+
+## Business event fan-out
+
+| Variable | Default | Effect |
+|---|---|---|
+| `BUSINESS_FANOUT_KAFKA_BROKERS` | `KAFKA_BROKERS` | Brokers |
+| `BUSINESS_FANOUT_GROUP_ID` | `KAFKA_GROUP_ID`, then `business-event-fanout` | Consumer group of all three inputs. A new group starts at the latest offset of the business event and parsed event topics, and the earliest offset of the membership topic. |
+| `KAFKA_BUSINESS_EVENT_TOPIC` | `business-events` | Business events, read committed only |
+| `KAFKA_EVENT_PARSED_TOPIC` | `snowplow-parsed` | Person events for the interest index |
+| `KAFKA_SEGMENT_MEMBERSHIP_TOPIC` | `segment-membership-changes` | Membership changes for the segment member index |
+| `KAFKA_BUSINESS_EVENT_MATCH_TOPIC` | `business-event-matches` | Match output |
+
+The job keeps its state in RocksDB and sets that itself.
 
 ## Journey execution
 
