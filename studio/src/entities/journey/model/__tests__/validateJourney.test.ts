@@ -159,14 +159,16 @@ describe("validateJourney with the runtime registry", () => {
       next: { type: "YesPath", yes: end },
     });
 
-    it.each([["=", 0], ["<=", 0], ["<", 1], ["<", 0]])("warns on %s %d and keeps the tree", (op, value) => {
+    it.each([
+      ["=", 0, "0 times"], ["<=", 0, "at most 0 times"], ["<", 1, "fewer than 1 times"], ["<", 0, "fewer than 0 times"],
+    ])("warns on %s %d and keeps the tree", (op, value, phrase) => {
       const { root, problems } = validateJourney(checkWith(op, value), RUNTIME_REGISTRY);
       expect(root).toBeDefined();
       expect(problems).toEqual([
         {
           severity: "warning", rule: "runtime", nodeId: "check_1", field: "conditions.groups[0].conditions[0]",
           path: "root.next.conditions.groups[0].conditions[0]",
-          message: "\"did com.acme/order_completed 0 times in the last 30 days\" never matches, because a count is only kept for events that happen. Replace or remove it",
+          message: `"did com.acme/order_completed ${phrase} in the last 30 days" never matches, because a count is only kept for events that happen. Replace or remove it`,
         },
       ]);
     });
