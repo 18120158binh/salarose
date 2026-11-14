@@ -15,6 +15,7 @@ describe("an implicit End", () => {
 
   it("saves goal_default on the first save", () => {
     const tree = graphToTree(nodes, connections);
+    if (tree.type !== "setup") throw new Error(`expected a setup root, got ${tree.type}`);
     expect(tree.next).toMatchObject({ next: { type: "end", goalId: "goal_default" } });
   });
 
