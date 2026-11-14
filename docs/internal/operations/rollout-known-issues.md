@@ -242,7 +242,7 @@ The temporary password went to an address nobody reads. Use a real email address
 | k3s never installed on the server node | Under `set -o pipefail`, `tr </dev/urandom \| head` died of SIGPIPE and stopped the user-data script | Use `od -N` or `openssl` | Fixed |
 | Traefik's HTTP-to-HTTPS redirect was silently ignored | Chart 41 reads `ports.web.http.redirections`, not `ports.web.redirections` | Check the rendered args with `kubectl get deploy -o jsonpath` after any values change | Fixed |
 | kafka-ui `/metrics` was open to anyone | kafbat serves it anonymously by default | Blocked, and an acceptance check covers it | Fixed |
-| The collector sees Traefik's IP, not the visitor's | No `externalTrafficPolicy: Local` and no forwarded-header trust | Not yet | Open |
+| The collector sees Traefik's IP, not the visitor's | ServiceLB SNATs to the pod network without `externalTrafficPolicy: Local` | Set it on the Traefik service in the k3s `HelmChartConfig`. Traefik overwrites `X-Forwarded-For`, which the collector reads (AFP-FR-36) | Fixed |
 | Pinning one Flink job's image | The `flink-common` component sets the image for every job | Add a patch to that one FlinkDeployment with the full ECR image, and check it with `kustomize build` | Works |
 
 ## CI and GitHub Actions
