@@ -1,0 +1,24 @@
+{
+  "type": "setup",
+  "id": "setup",
+  "label": "Start",
+  "description": "Define journey settings",
+  "triggerType": "user",
+  "triggerEventName": "add_to_cart",
+  "next": {
+    "type": "engagement",
+    "id": "push-1",
+    "label": "Push",
+    "action": {
+      "type": "push",
+      "title": "Your cart",
+      "body": "Still there?",
+      "subject": "",
+      "url": "",
+      "payload": null,
+      "templateId": "",
+      "method": "POST"
+    },
+    "next": { "type": "end", "goalId": "goal_default" }
+  }
+}
