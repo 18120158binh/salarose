@@ -6,6 +6,8 @@ DROP TABLE IF EXISTS journey_drafts;
 DROP TABLE IF EXISTS event_volume;
 DROP TABLE IF EXISTS campaigns CASCADE;
 DROP TABLE IF EXISTS segment_members;
+DROP TABLE IF EXISTS segment_import_members;
+DROP TABLE IF EXISTS segment_membership_passes;
 DROP TABLE IF EXISTS segments CASCADE;
 -- The input table and functions of the old Postgres journey engine, which
 -- databases created before it was removed still hold.
@@ -548,6 +550,33 @@ CREATE TABLE IF NOT EXISTS customer_attributes (
     pass_id uuid NOT NULL REFERENCES import_metric_passes(id),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     primary key (customer_key, source_id)
+);
+-- Members of each segment known only from imports, and one run record per nightly segment
+-- membership pass (decision 0038). The pass is the only writer of both and writes a member row only
+-- when membership changes. No foreign key to segments: the pass deletes a deleted segment's rows.
+-- In no publication.
+CREATE TABLE IF NOT EXISTS segment_import_members (
+    segment_id text NOT NULL CHECK (segment_id ~ '^SEG-[0-9A-Fa-f]{16}$'),
+    customer_key text NOT NULL CHECK (customer_key <> ''),
+    since TIMESTAMP WITH TIME ZONE NOT NULL,
+    primary key (segment_id, customer_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_segment_import_members_customer_key ON segment_import_members (customer_key);
+
+CREATE TABLE IF NOT EXISTS segment_membership_passes (
+    as_of TIMESTAMP WITH TIME ZONE PRIMARY KEY,
+    state text NOT NULL CHECK (state IN ('running', 'done', 'failed')),
+    fallback boolean NOT NULL,
+    metric_pass_id uuid REFERENCES import_metric_passes(id),
+    started_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    finished_at TIMESTAMP WITH TIME ZONE,
+    rows_inserted bigint NOT NULL DEFAULT 0 CHECK (rows_inserted >= 0),
+    rows_deleted bigint NOT NULL DEFAULT 0 CHECK (rows_deleted >= 0),
+    skipped_segments text[] NOT NULL DEFAULT '{}',
+    pauses integer NOT NULL DEFAULT 0 CHECK (pauses >= 0),
+    paused_seconds double precision NOT NULL DEFAULT 0 CHECK (paused_seconds >= 0),
+    CHECK ((state = 'running') = (finished_at IS NULL))
 );
 -- Each CDC source upserts its slot's row on every heartbeat. The write reaches every slot through
 -- its publication, so a slot moves its confirmed position while its captured table is quiet.

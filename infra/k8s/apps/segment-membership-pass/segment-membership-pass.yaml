@@ -1,0 +1,67 @@
+# A plain Java process from the Flink jobs image, not a Flink job. It starts at the scheduled time, waits for tonight's
+# data-import metric pass to reach done, or for the fallback time, then writes segment_import_members. Forbid keeps one
+# pod at a time, and an advisory lock in the job does the same if two pods overlap anyway. A failed pass is not
+# retried tonight: the next night's pass converges (SMP-FR-09).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: segment-membership-pass
+spec:
+  schedule: "0 3 * * *"
+  timeZone: Asia/Ho_Chi_Minh
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      # Past 23 hours, the next night's run is due.
+      activeDeadlineSeconds: 82800
+      template:
+        spec:
+          restartPolicy: Never
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: cdp.io/pool
+                        operator: In
+                        values: [compute, data]
+          containers:
+            - name: segment-membership-pass
+              image: cdp/flink-jobs:IMAGE_TAG
+              imagePullPolicy: IfNotPresent
+              command: ["java", "-Xmx384m", "-cp", "/opt/flink/usrlib/event-processor.jar:/opt/flink/lib/*",
+                "com.cdp.platform.jobs.segmentpass.SegmentMembershipPassJob"]
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 512Mi
+                limits:
+                  memory: 512Mi
+              env:
+                - name: DB_HOST
+                  value: cdp-pg-rw.cdp.svc
+                - name: DB_PORT
+                  value: "5432"
+                - name: DB_DATABASE
+                  value: auroracy
+                - name: DB_USER
+                  value: cdp
+                - name: DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: cdp-pg-app
+                      key: password
+                # Must equal the CronJob's schedule and timeZone above.
+                - name: SEGMENT_PASS_SCHEDULE
+                  value: "03:00"
+                - name: REPORTING_TIME_ZONE
+                  value: Asia/Ho_Chi_Minh
+                - name: SEGMENT_PASS_FALLBACK
+                  value: "05:00"
+                # The worst free share of any node's root filesystem, so the Postgres node is covered wherever it runs.
+                - name: WAL_GOVERNOR_FREE_DISK_QUERY
+                  value: "http://kps-kube-prometheus-stack-prometheus.monitoring.svc:9090/api/v1/query?query=min%28node_filesystem_avail_bytes%7Bmountpoint%3D%22%2F%22%7D%20%2F%20node_filesystem_size_bytes%7Bmountpoint%3D%22%2F%22%7D%29"
