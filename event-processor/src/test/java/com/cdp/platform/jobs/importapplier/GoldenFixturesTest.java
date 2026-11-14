@@ -17,6 +17,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
 
+import com.cdp.platform.shared.batch.LockGuard;
+import com.cdp.platform.shared.batch.Tombstones;
 import com.cdp.platform.shared.models.imports.DatasetVersion;
 import com.cdp.platform.shared.utils.PlaceholderIds;
 

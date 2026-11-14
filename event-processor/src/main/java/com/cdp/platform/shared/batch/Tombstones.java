@@ -1,4 +1,4 @@
-package com.cdp.platform.jobs.importapplier;
+package com.cdp.platform.shared.batch;
 
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
@@ -15,12 +15,12 @@ import javax.crypto.spec.SecretKeySpec;
  * the HMAC-SHA-256 of its UTF-8 bytes under the tombstone key, in lowercase
  * hex, is in {@code person_tombstones}, as studio computes it.
  */
-final class Tombstones implements Predicate<String> {
+public final class Tombstones implements Predicate<String> {
 
     private final Mac mac;
     private final Set<String> hashes;
 
-    Tombstones(String key, Set<String> hashes) {
+    public Tombstones(String key, Set<String> hashes) {
         try {
             mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
@@ -30,11 +30,11 @@ final class Tombstones implements Predicate<String> {
         this.hashes = Set.copyOf(hashes);
     }
 
-    static String of(String key, String customerKey) {
+    public static String of(String key, String customerKey) {
         return new Tombstones(key, Set.of()).hash(customerKey);
     }
 
-    String hash(String customerKey) {
+    public String hash(String customerKey) {
         return HexFormat.of().formatHex(mac.doFinal(customerKey.getBytes(StandardCharsets.UTF_8)));
     }
 

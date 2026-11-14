@@ -5,6 +5,8 @@ import java.sql.DriverManager;
 import java.time.Clock;
 import java.time.Instant;
 
+import com.cdp.platform.shared.batch.PostgresReadings;
+import com.cdp.platform.shared.batch.WalGovernor;
 import com.cdp.platform.shared.config.DatabaseConfig;
 
 import org.slf4j.Logger;
@@ -35,8 +37,8 @@ public final class SegmentMembershipPassJob {
                     .getConnection(database.jdbcUrl(), database.user(), database.password());
                 JdbcPassStore store = new JdbcPassStore(connection)) {
                 WalGovernor governor = new WalGovernor(
-                    new PostgresReadings(readings, settings.freeDiskQuery(), settings.claimBytes()),
-                    settings.thresholds(), duration -> Thread.sleep(duration), System::nanoTime);
+                    new PostgresReadings(readings, settings.freeDiskQuery(), settings.claimBytes(), clock),
+                    settings.thresholds(), duration -> Thread.sleep(duration), clock);
                 new SegmentMembershipPass(store, governor, settings, clock, duration -> Thread.sleep(duration))
                     .run(scheduledTime);
             }

@@ -10,6 +10,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import com.cdp.platform.shared.batch.LockGuard;
+import com.cdp.platform.shared.batch.Tombstones;
 import com.cdp.platform.shared.models.imports.DatasetVersion;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -35,7 +37,7 @@ public final class ImportApplierMain {
         try (Connection main = DriverManager
             .getConnection(config.main().jdbcUrl(), config.main().user(),
                 config.main().password())) {
-            LockGuard lock = LockGuard.tryAcquire(main);
+            LockGuard lock = LockGuard.tryAcquire(main, LockGuard.IMPORT_APPLIER);
             if (lock == null) {
                 LOG.info("another applier holds the lock; exiting");
                 return;

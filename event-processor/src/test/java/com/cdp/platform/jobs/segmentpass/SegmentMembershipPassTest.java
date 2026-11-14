@@ -14,6 +14,7 @@ import java.util.UUID;
 
 import com.cdp.platform.jobs.segmentpass.MetricPassWait.MetricPass;
 import com.cdp.platform.jobs.segmentpass.PassStore.Member;
+import com.cdp.platform.shared.batch.WalGovernor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -226,7 +227,7 @@ class SegmentMembershipPassTest {
             defaults.claimBytes());
         WalGovernor governor = new WalGovernor(
             () -> readings.isEmpty() ? reading(0.9, 0.9) : readings.removeFirst(), settings.thresholds(),
-            duration -> governorSleeps++, System::nanoTime);
+            duration -> governorSleeps++, Instant::now);
         return new SegmentMembershipPass(store, governor, settings, Clock.fixed(now, ZoneOffset.UTC), duration -> {
             throw new AssertionError("The pass must not wait here");
         });

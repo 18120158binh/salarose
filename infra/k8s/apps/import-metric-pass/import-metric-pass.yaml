@@ -1,0 +1,103 @@
+# Starts the import metric pass every 10 minutes. The first start at or after 03:00 in REPORTING_TIME_ZONE runs the
+# night's pass (IMP-FR-01), and a later start picks up an admin's retry within 10 minutes (IMP-FR-19). Every other
+# start finds nothing to do and exits. The pass lock on the main Postgres keeps a second instance from running
+# (IMP-FR-02); Forbid only saves the pod a second instance would cost.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: import-metric-pass
+  labels:
+    app.kubernetes.io/name: import-metric-pass
+spec:
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # A failed start retries at the next schedule, not at once: the pass resumes from the database.
+      backoffLimit: 0
+      # A pass may pause until its own deadline, 15 minutes before the next night's start (IMP-FR-20).
+      activeDeadlineSeconds: 86400
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: import-metric-pass
+        spec:
+          restartPolicy: Never
+          nodeSelector:
+            cdp.io/pool: compute
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+          containers:
+            - name: import-metric-pass
+              image: cdp/batch-jobs
+              args: ["com.cdp.platform.jobs.importmetricpass.ImportMetricPassMain"]
+              env:
+                - name: DB_HOST
+                  value: cdp-pg-rw.cdp.svc
+                - name: DB_PORT
+                  value: "5432"
+                - name: DB_DATABASE
+                  value: auroracy
+                - name: DB_USER
+                  value: cdp
+                - name: DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: cdp-pg-app
+                      key: password
+                # The pass reads the import store as import_reader, which may only read (IMP-FR-16).
+                - name: IMPORT_DB_HOST
+                  value: cdp-import-pg-rw.cdp.svc
+                - name: IMPORT_DB_DATABASE
+                  valueFrom:
+                    secretKeyRef:
+                      name: cdp-import-pg-app
+                      key: dbname
+                - name: IMPORT_DB_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: cdp-import-pg-reader
+                      key: username
+                - name: IMPORT_DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: cdp-import-pg-reader
+                      key: password
+                - name: IMPORT_TOMBSTONE_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: cdp-import-tombstone
+                      key: key
+                - name: METRIC_PASS_SCHEDULE
+                  value: "03:00"
+                - name: REPORTING_TIME_ZONE
+                  value: Asia/Ho_Chi_Minh
+                # The worst free share of any node's root filesystem, so the Postgres node is covered wherever it runs.
+                - name: WAL_GOVERNOR_FREE_DISK_QUERY
+                  value: "http://kps-kube-prometheus-stack-prometheus.monitoring.svc:9090/api/v1/query?query=min%28node_filesystem_avail_bytes%7Bmountpoint%3D%22%2F%22%7D%20%2F%20node_filesystem_size_bytes%7Bmountpoint%3D%22%2F%22%7D%29"
+              resources:
+                requests:
+                  cpu: "1"
+                  memory: 2Gi
+                limits:
+                  cpu: "1"
+                  memory: 2Gi
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            # The JVM's scratch files. The pass stages its rows in memory.
+            - name: tmp
+              emptyDir:
+                sizeLimit: 64Mi

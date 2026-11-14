@@ -1,6 +1,6 @@
 # Batch jobs
 
-A batch job is a Java main in the `event-processor` build that runs without Flink, starts on a schedule, does a bounded amount of work, and exits. The import applier follows this page, and the import metric pass will too. This page is the convention, and the steps that put a job into a deployment.
+A batch job is a Java main in the `event-processor` build that runs without Flink, starts on a schedule, does a bounded amount of work, and exits. The import applier and the import metric pass follow this page. This page is the convention, and the steps that put a job into a deployment.
 
 The segment membership pass predates this page. It runs from the Flink jobs image with its own `java` command, so its pod pulls the Flink image and rolls with the Flink jobs' tag. Move it to the batch jobs image when the image is in a deployment.
 
@@ -8,7 +8,7 @@ The segment membership pass predates this page. It runs from the Flink jobs imag
 
 - Put the main class in its own package under `event-processor/src/main/java/com/cdp/platform/jobs/<job>/`. It may use `shared/`, but no Flink API: the batch image has no Flink on its class path.
 - Read every setting from the environment once, at start, and stop with an error before doing any work when one is missing or malformed. List each variable in [configuration](configuration.md).
-- Assume two instances can start at once, and a crash at any line. Take a session-level advisory lock on the main Postgres when only one instance may work, and stop when its connection drops. Make every write converge when it runs twice.
+- Assume two instances can start at once, and a crash at any line. Take a session-level advisory lock on the main Postgres when only one instance may work, and stop when its connection drops. `shared/batch/` holds the lock, the tombstone check, and the WAL governor that every batch job shares. Make every write converge when it runs twice.
 - Exit `0` when there is nothing to do, and when another instance holds the lock. Exit non-zero only on a failure an operator should see.
 - Log ids, counts, and reasons. Never log a row value or a customer key.
 
@@ -51,3 +51,13 @@ The CronJob `import-applier` starts `com.cdp.platform.jobs.importapplier.ImportA
 It needs `s3:GetObject` on `imports/incoming/*`, and `s3:PutObject` on `imports/reports/*` and `imports/rejects/*`.
 
 The applier also writes `import_records`, `import_profiles`, `import_identifiers`, and `import_run_commits` on the import store, as `cdp_import`, the user of `cdp-import-pg-app`, which owns those tables. It does not yet delete a tombstoned person's rows ([known issues](../known-issues/components/import-applier.md)).
+
+## The import metric pass
+
+The CronJob `import-metric-pass` starts `com.cdp.platform.jobs.importmetricpass.ImportMetricPassMain` every 10 minutes with 1 vCPU and 2 GiB (IMP-NFR-01). The first start at or after 03:00 in `REPORTING_TIME_ZONE` runs the night's pass, and later starts pick up an admin's retry. A pass may pause under the WAL governor until its deadline, so the Job's `activeDeadlineSeconds` is a day. Besides `cdp-pg-app`, `cdp-import-pg-app` for the import store's database name, and `cdp-import-tombstone`, it reads:
+
+| Object | Key | Value |
+|---|---|---|
+| Secret `cdp-import-pg-reader` | `username`, `password` | The read-only role `import_reader` of the import store (IMP-FR-16) |
+
+It needs no S3 access. It reads `pg_replication_slots`, `pg_settings`, `pg_current_wal_lsn()`, and `pg_database_size` on the main Postgres as `cdp`, and the free share of the nodes' root filesystems from Prometheus in the namespace `monitoring`. It exits `1` when a pass ends at `failed`, so the CronJob shows the failure.

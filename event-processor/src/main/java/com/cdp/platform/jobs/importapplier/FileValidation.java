@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipException;
 
+import com.cdp.platform.shared.batch.LockGuard;
 import com.cdp.platform.shared.models.imports.DatasetVersion;
 import com.cdp.platform.shared.models.imports.DatasetVersion.Kind;
 

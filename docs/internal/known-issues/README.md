@@ -18,7 +18,7 @@ Every issue has an id, a severity, and the requirement it breaks. Fix an issue a
 | [Business event fan-out](components/business-event-fan-out.md), not built | 0 | 0 | 0 | 0 |
 | [Segment membership pass](components/segment-membership-pass.md), not built | 1 | 0 | 0 | 0 |
 | [Import applier](components/import-applier.md), not built | 0 | 0 | 0 | 0 |
-| [Import metric pass](components/import-metric-pass.md), not built | 0 | 0 | 0 | 0 |
+| [Import metric pass](components/import-metric-pass.md) | 0 | 0 | 3 | 2 |
 | [Schema migrations](components/schema-migrations.md) | 0 | 0 | 0 | 0 |
 | [Journey builder](features/journey-builder.md) | 0 | 1 | 0 | 0 |
 | [Campaign management](features/campaign-management.md) | 0 | 0 | 0 | 0 |

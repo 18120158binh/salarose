@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 
+import com.cdp.platform.shared.batch.PostgresReadings;
 import com.cdp.platform.shared.utils.JacksonMapper;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
