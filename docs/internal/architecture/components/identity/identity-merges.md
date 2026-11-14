@@ -93,13 +93,13 @@ The [profile writer](../profile-writer.md) writes the winner's mutation as any o
 
 ### Fold journey instances
 
-Journey execution folds each campaign separately:
+Journey execution folds each campaign separately, entry by entry. An instance is one entry ([decision 0033](../../decisions/0033-a-journey-instance-is-one-entry.md)), named by its entry id:
 
-- If only the retired `canon_id` has an instance, the instance becomes the winner's instance, unchanged. Its completed nodes, buffered triggers, and watch deadlines move with it.
-- If only the winner has an instance, nothing changes.
-- If both have an instance, the one with the earlier entry time survives, and on a tie the one whose `canon_id` sorts first. The other is dropped: its watch timers emit nothing, and its buffered triggers are discarded. The dropped instance's completed node ids join the survivor as completed-elsewhere guards. A guarded node never completes again (IMG-FR-09), and the guards do not move the survivor along.
+- If only the retired `canon_id` has an entry with an id, the entry becomes the winner's, unchanged. Its completed nodes, buffered triggers, and watch deadlines move with it.
+- If only the winner has an entry with an id, nothing changes.
+- If both have an entry with the same id, such as `first` for an event trigger or one business event that reached both, the one with the earlier entry time survives, and on a tie the one whose `canon_id` sorts first. The other is dropped: its watch timers emit nothing, and its buffered triggers are discarded. The dropped instance's completed node ids join the survivor as completed-elsewhere guards. A guarded node never completes again (IMG-FR-09), and the guards do not move the survivor along.
 
-Entries fold by entry id ([decision 0033](../../decisions/0033-a-journey-instance-is-one-entry.md)). Entries with different ids both move to the winner. Two entries with the same id, such as one business event that reached both `canon_id` values, are one entry, and the same rule decides which survives.
+Entries with different ids all move to the winner, with one exception: when the campaign's segment re-entry setting would have refused the later entry for one person, because it is `never`, or `after` and the later entry started within the period of the earlier one, as [Open an entry](../journey-execution.md#open-an-entry) says (JEX-FR-18). Then the earlier entry survives and the later one is dropped by the rule above, guards included.
 
 ### Fold segment flags
 
@@ -139,7 +139,7 @@ A fold makes no rule a candidate. A rule whose metric condition the fold made tr
 | IMG-FR-12 | After a job applies a merge, it must redirect every record that arrives under the retired `canon_id`, for as long as the job keeps state for a person. |
 | IMG-FR-13 | `campaign_node_stats` must count a merged person once per node and branch. |
 | IMG-FR-14 | Events already published must keep the `canon_id` they were published with. |
-| IMG-FR-15 | When both `canon_id` values have an instance of one campaign, the instance with the earlier entry time must survive, the one whose `canon_id` sorts first on a tie. The dropped instance's completed nodes must guard the survivor against completing them again. |
+| IMG-FR-15 | When both `canon_id` values have an entry with the same entry id, or entries that the segment re-entry setting would not allow for one person, the entry with the earlier entry time must survive, the one whose `canon_id` sorts first on a tie. The dropped entry's completed nodes must guard the survivor against completing them again, without advancing it. Entries with different ids that re-entry allows must all move to the winner. |
 | IMG-FR-16 | A fold must not make a rule a candidate. |
 | IMG-FR-17 | A fold must not rewrite `user_campaign_state_transitions` rows. `campaign_node_stats` must map retired ids through the merge records. |
 | IMG-FR-18 | A node that completes a second time between a merge and its fold must be counted by campaign and node. |
@@ -208,7 +208,9 @@ The merge record:
 - Given an applied merge of `C1` into `C2`, when a late event under `C1` arrives, then customer decision counts it in `C2`'s series. (IMG-FR-12)
 - Given `n1_view` completed on `next` under `C1` before the merge, then after the merge `campaign_node_stats` counts the person once for `n1_view` on `next`. (IMG-FR-13)
 - Given an event published under `C1` before the merge, then it still carries `C1` in `snowplow-parsed`. (IMG-FR-14)
-- Given instances of `CAMP-0001` under `C1`, entered at 09:00 with `n1_view` and `n2_sms` completed, and under `C2`, entered at 09:30 with `n1_view` completed, when `C1` is retired into `C2`, then `C2` holds the 09:00 instance, the 09:30 instance's timers emit nothing, and a trigger for `n1_view` completes nothing. (IMG-FR-15, IMG-FR-09)
+- Given entries `first` of `CAMP-0001` under `C1`, entered at 09:00 with `n1_view` completed, and under `C2`, entered at 09:30 with `n1_view` and `n3_email` completed, when `C1` is retired into `C2`, then `C2` holds the 09:00 entry and the 09:30 entry's timers emit nothing. When a trigger for `n3_email` arrives, then it completes nothing and the outbox sends nothing, and the 09:00 entry's completed nodes are still only `n1_view`. (IMG-FR-15, IMG-FR-09)
+- Given a price drop campaign with entry `be-1` under `C1` and `be-2` under `C2`, when `C1` is retired into `C2`, then `C2` holds both entries. (IMG-FR-15)
+- Given a segment campaign with re-entry `never`, and an entry under each `canon_id`, when they merge, then only the earlier entry survives. (IMG-FR-15)
 - Given a rule `m_view_count COUNT >= 5` and 3 views under `C1` and 2 under `C2`, when the fold makes the count 5, then the rule does not fire until the next `view_product`. (IMG-FR-16)
 - Given transition rows under `C1`, when `C1` is retired into `C2`, then the rows still carry `C1`, and `campaign_node_stats` counts the person once. (IMG-FR-17, IMG-FR-13)
 - Given `n1_view` completing under `C2` on another device 3 seconds after the merge and before the fold, then the second-completion count for `CAMP-0001` and `n1_view` rises by 1. (IMG-FR-18)
