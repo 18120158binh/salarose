@@ -31,5 +31,5 @@ verified_at: 6c15fc1d
 ## DIA-KI-05. An app id can hold only one key
 
 - **Symptom.** Creating a second key for an app id fails while the first is not revoked, so rotating a key leaves the sender with `401` until it has the new key.
-- **Cause.** The partial unique index `ingestion_source_keys_active_app_id_key` on `ingestion_source_keys (app_id) WHERE revoked_at IS NULL` in `infra/db/schema.sql`, allow one key that is not revoked. The create in `shared/lib/db.ts` turns the index's unique violation into a refusal. [Decision 0048](../../architecture/decisions/0048-ingestion-keeps-tracker-parity-a-per-replica-limit-and-two-keys-for-rotation.md) allows two.
-- **Evidence.** Read from the schema and the code. The fix drops the index in a migration and counts keys in the create action.
+- **Cause.** The partial unique index `ingestion_source_keys_active_app_id_key` on `ingestion_source_keys (app_id) WHERE revoked_at IS NULL` in `infra/db/schema.sql` allows one key that is not revoked. The create in `shared/lib/db.ts` turns the index's unique violation into a refusal. [Decision 0048](../../architecture/decisions/0048-ingestion-keeps-tracker-parity-a-per-replica-limit-and-two-keys-for-rotation.md) allows two.
+- **Evidence.** Read from the schema and the code. The fix drops the index in a migration, and the create action counts the app id's keys that are not revoked and inserts in one transaction that holds `pg_advisory_xact_lock` on the app id. The lock serializes concurrent creates for one app id, so two of them cannot both see one key and leave three.
