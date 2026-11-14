@@ -31,6 +31,7 @@ import {
   type ConditionDraft,
   type SegmentDraft,
 } from "../model/segmentDraft";
+import { EventFilters } from "./EventFilters";
 
 function Choice<T extends string>({
   label,
@@ -99,7 +100,7 @@ function ConditionRow({
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-sm text-muted-foreground">Did</span>
       <Choice label="Event" value={condition.event} options={eventOptions} className="w-44"
-        onChange={(name) => onChange({ ...condition, event: name, attribute: "" })} />
+        onChange={(name) => onChange({ ...condition, event: name, attribute: "", filters: [], keptFilters: undefined })} />
       <Choice label="Measure" value={condition.measure} options={plain(METRIC_DEFINITION_FUNCTIONS)}
         onChange={(measure) => onChange({ ...condition, measure, attribute: measureReadsAttribute(measure) ? condition.attribute : "" })} />
       {measureReadsAttribute(condition.measure) && (
@@ -117,8 +118,11 @@ function ConditionRow({
       <Choice label="Window unit" value={condition.windowUnit} options={plain(WINDOW_UNITS)} className="w-28"
         onChange={(windowUnit) => onChange({ ...condition, windowUnit })} />
       {remove}
-      {condition.filters && (
+      {condition.keptFilters ? (
         <span className="w-full text-xs text-muted-foreground">Keeps its saved event filters.</span>
+      ) : (
+        <EventFilters event={event} filters={condition.filters} mark={null}
+          onChange={(filters) => onChange({ ...condition, filters })} />
       )}
     </div>
   );

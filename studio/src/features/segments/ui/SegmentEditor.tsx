@@ -52,6 +52,7 @@ import {
   type SegmentDraft,
 } from "../model/segmentDraft";
 import type { JourneyUse, SegmentDetails } from "../model/segmentList";
+import { EventFilters } from "./EventFilters";
 import { WhereUsed } from "./SegmentList";
 
 const PROFILE_LABELS = { gender: "Gender", age: "Age", city: "City", user_time: "User time" } as const satisfies Record<SegmentProfileField, string>;
@@ -93,11 +94,11 @@ export interface SegmentEditorProps {
   details: SegmentDetails | null;
 }
 
-type Mark = { group: number; condition: number; field: DraftField } | null;
+type Mark = { group: number; condition: number; field: DraftField; filter?: number } | null;
 
 function markOf(problem: DraftProblem | null): Mark {
   return problem && problem.group !== null && problem.condition !== null
-    ? { group: problem.group, condition: problem.condition, field: problem.field }
+    ? { group: problem.group, condition: problem.condition, field: problem.field, filter: problem.filter }
     : null;
 }
 
@@ -193,11 +194,13 @@ function BehaviorRow({
   condition,
   events,
   mark,
+  filterMark,
   onChange,
 }: {
   condition: BehaviorConditionDraft;
   events: readonly UserEventDef[];
   mark: DraftField | null;
+  filterMark: { field: DraftField; filter?: number } | null;
   onChange: (next: ConditionDraft) => void;
 }) {
   const event = events.find((item) => item.name === condition.event);
@@ -215,7 +218,7 @@ function BehaviorRow({
         className="w-44"
         invalid={mark === "event"}
         label="Event"
-        onChange={(name) => onChange({ ...condition, event: name, attribute: "" })}
+        onChange={(name) => onChange({ ...condition, event: name, attribute: "", filters: [], keptFilters: undefined })}
         options={eventOptions}
         value={condition.event}
       />
@@ -295,8 +298,17 @@ function BehaviorRow({
         </span>
         .
       </p>
-      {condition.filters && (
-        <p className="w-full text-muted-foreground text-xs">Keeps its saved event filters. Segments can&apos;t change them yet.</p>
+      {condition.keptFilters ? (
+        <p className="w-full text-muted-foreground text-xs">
+          Keeps its saved event filters, which use an OR this editor can&apos;t show.
+        </p>
+      ) : (
+        <EventFilters
+          event={event}
+          filters={condition.filters}
+          mark={filterMark}
+          onChange={(filters) => onChange({ ...condition, filters })}
+        />
       )}
     </>
   );
@@ -437,7 +449,8 @@ export function SegmentEditor({ initial, usedBy, events, details }: SegmentEdito
                             <BehaviorRow
                               condition={condition}
                               events={events}
-                              mark={rowMark}
+                              filterMark={rowMark && mark?.filter !== undefined ? { field: rowMark, filter: mark.filter } : null}
+                              mark={rowMark && mark?.filter === undefined ? rowMark : null}
                               onChange={(next) => setCondition(g, c, next)}
                             />
                           )}
@@ -468,8 +481,8 @@ export function SegmentEditor({ initial, usedBy, events, details }: SegmentEdito
                 <PlusIcon aria-hidden /> And another group
               </Button>
               <p className="text-muted-foreground text-xs">
-                A segment can&apos;t check another segment. Filters on an event&apos;s fields, like price over 500,000 ₫,
-                come later for segments; a condition saved with filters keeps them.
+                A segment can&apos;t check another segment. Use + filter under a behavior condition to count only some
+                events, like a price over 500,000 ₫. Every filter must pass.
               </p>
             </div>
           </SectionCard>
