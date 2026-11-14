@@ -11,8 +11,9 @@ import {
   parseAnalyticsRange,
   type AnalyticsRange,
 } from "@/features/journey-analytics/model/range";
-import { loadJourneyAnalytics, loadJourneySummary } from "@/features/journey-analytics/model/server";
+import { loadJourneyAnalytics, loadJourneyCanvas, loadJourneySummary } from "@/features/journey-analytics/model/server";
 import { JourneyAnalytics } from "@/features/journey-analytics/ui/JourneyAnalytics";
+import { JourneyCanvasTab } from "@/features/journey-analytics/ui/JourneyCanvasTab";
 import { managesJourney } from "@/features/journey-analytics/model/journeyList";
 import { JourneyActions } from "@/features/journeys/ui/JourneyActions";
 import { formatTimestamp } from "@/shared/lib/format";
@@ -21,7 +22,7 @@ import { DataRegion } from "@/shared/ui/v2/DataRegion";
 import { PageHeader } from "@/shared/ui/v2/PageHeader";
 import { RangePicker } from "@/shared/ui/v2/RangePicker";
 import { StatusBadge, type StatusTone } from "@/shared/ui/v2/StatusBadge";
-import { RegionEmpty, TableSkeleton } from "@/shared/ui/v2/states";
+import { RegionEmpty, RegionSkeleton, TableSkeleton } from "@/shared/ui/v2/states";
 import { JOURNEY_NEW, stageLets } from "@/widgets/v2-shell/model/routes";
 import { requireViewer, viewerReach } from "@/widgets/v2-shell/model/viewer";
 
@@ -42,6 +43,18 @@ function analyticsHref(id: string): (range: AnalyticsRange) => string {
   return (range) => `/v2/journeys/${encodeURIComponent(id)}?range=${range}`;
 }
 
+// JBD-FR-09: the tab lives in the URL, so a reload or a shared link opens the same tab. Analytics
+// is the default, and any other value reads as Analytics.
+type JourneyTab = "analytics" | "journey";
+
+function parseTab(value: string | string[] | undefined): JourneyTab {
+  return value === "journey" ? "journey" : "analytics";
+}
+
+function journeyTabHref(id: string): string {
+  return `/v2/journeys/${encodeURIComponent(id)}?tab=journey`;
+}
+
 // JBD-FR-19 to JBD-FR-24: the numbers of one published journey for any staff user, with Pause or
 // Resume and Delete for its owner or an admin, and Duplicate to edit for anyone the v2 builder lets
 // through. No control links to the classic builder (JBD-FR-23).
@@ -54,8 +67,9 @@ export default async function V2JourneyAnalyticsPage({
 }) {
   const [viewer, cookieStore, { id }, query] = await Promise.all([requireViewer(), cookies(), params, searchParams]);
   const href = analyticsHref(id);
+  const tab = parseTab(query.tab);
   const { range, rewrite } = parseAnalyticsRange(query.range);
-  if (rewrite) redirect(href(range));
+  if (tab === "analytics" && rewrite) redirect(href(range));
 
   const journey = await loadJourneySummary(id);
   if (journey === null) return <JourneyNotFound />;
@@ -78,6 +92,7 @@ export default async function V2JourneyAnalyticsPage({
           />
         }
         controls={
+          tab === "analytics" && (
           <div className="flex w-full flex-col gap-1.5">
             <div className="flex flex-wrap items-center gap-3">
               <RangePicker href={href} label={analyticsRangeLabel} options={ANALYTICS_RANGES} value={range} zone={zone} />
@@ -87,6 +102,7 @@ export default async function V2JourneyAnalyticsPage({
               Entered: people who reached a step in this range. Waiting: still there now. Completed: moved past it.
             </p>
           </div>
+          )
         }
         description={<JourneyFacts journey={journey} now={now} zone={zone} />}
         title={journey.name}
@@ -99,9 +115,16 @@ export default async function V2JourneyAnalyticsPage({
           </span>
         </div>
       )}
-      <DataRegion errorMessage="Journey analytics could not load." loading={<TableSkeleton rows={6} />}>
-        <Analytics id={id} rangeLabel={analyticsRangeLabel(range)} span={span} />
-      </DataRegion>
+      <JourneyTabs analytics={href(range)} journey={journeyTabHref(id)} tab={tab} />
+      {tab === "analytics" ? (
+        <DataRegion errorMessage="Journey analytics could not load." loading={<TableSkeleton rows={6} />}>
+          <Analytics id={id} rangeLabel={analyticsRangeLabel(range)} span={span} />
+        </DataRegion>
+      ) : (
+        <DataRegion errorMessage="The journey canvas could not load." loading={<RegionSkeleton className="h-96" />}>
+          <Canvas id={id} zone={zone} />
+        </DataRegion>
+      )}
     </>
   );
 }
@@ -109,6 +132,39 @@ export default async function V2JourneyAnalyticsPage({
 async function Analytics({ id, span, rangeLabel }: { id: string; span: Span | null; rangeLabel: string }) {
   const { nodes, removed } = await loadJourneyAnalytics(id, span);
   return <JourneyAnalytics rangeLabel={rangeLabel} removed={removed} steps={nodes} />;
+}
+
+async function Canvas({ id, zone }: { id: string; zone: TimeZone }) {
+  const canvas = await loadJourneyCanvas(id);
+  if (canvas === null) return <RegionEmpty icon={RouteIcon} message="This journey can't be drawn. Its saved journey is not readable." />;
+  return <JourneyCanvasTab completed={canvas.completed} events={canvas.events} id={id} readAt={canvas.readAt} root={canvas.root} zone={zone} />;
+}
+
+const TAB = "-mb-px rounded-t-sm border-b-2 px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+function JourneyTabs({ tab, analytics, journey }: { tab: JourneyTab; analytics: string; journey: string }) {
+  const tabs = [
+    { id: "analytics", label: "Analytics", href: analytics },
+    { id: "journey", label: "Journey", href: journey },
+  ] as const;
+  return (
+    <nav aria-label="Journey views" className="flex gap-1 border-border border-b">
+      {tabs.map((entry) => (
+        <Link
+          aria-current={entry.id === tab ? "page" : undefined}
+          className={
+            entry.id === tab
+              ? `${TAB} border-primary font-medium text-foreground`
+              : `${TAB} border-transparent text-muted-foreground hover:text-foreground`
+          }
+          href={entry.href}
+          key={entry.id}
+        >
+          {entry.label}
+        </Link>
+      ))}
+    </nav>
+  );
 }
 
 function JourneyFacts({ journey, now, zone }: { journey: JourneySummary; now: number; zone: TimeZone }) {

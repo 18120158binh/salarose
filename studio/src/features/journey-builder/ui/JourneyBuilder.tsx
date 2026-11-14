@@ -31,7 +31,6 @@ import { isBranchingType, stepsBelow, updateNodeConfig } from "@/entities/journe
 import { validateJourney } from "@/entities/journey/model/parseCampaign";
 import { RUNTIME_REGISTRY } from "@/entities/journey/model/registry";
 import type { CampaignNode } from "@/entities/journey/model/types";
-import { getBranchOptions } from "@/entities/journey/model/utils";
 import { publishDraftAction, saveDraftAction } from "@/features/journeys/model/actions";
 import type { PublishResult } from "@/features/journeys/model/drafts";
 import { cn } from "@/lib/utils";
@@ -44,6 +43,7 @@ import { paletteEntries, PALETTE_GROUPS, type PaletteEntry } from "../model/pale
 import { useAutosave, type SaveDraft } from "../model/useAutosave";
 import { ChecklistDrawer } from "./Checklist";
 import { ReviewDialog, type PublishFlow } from "./ReviewDialog";
+import { branchTag, StepCardFace } from "./StepCard";
 import { StepIcon, StepPanel, type Confirm } from "./StepPanel";
 
 export interface CatalogEvent {
@@ -507,14 +507,6 @@ function Palette({ onAdd, target, onClearTarget }: { onAdd: (entry: PaletteEntry
   );
 }
 
-function branchTag(parent: CampaignNode | undefined, type: string): string | null {
-  if (!parent) return null;
-  const label = getBranchOptions(parent).find((option) => option.value === type)?.label ?? null;
-  if (label === "Success") return "On success";
-  if (label === "Timeout") return "On timeout";
-  return label === "Next" ? null : label;
-}
-
 interface CanvasProps {
   state: BuilderState;
   eventName: EventName;
@@ -629,26 +621,28 @@ function Canvas({ state, eventName, problems, target, onSelect, onAddAt, onDrop,
                 style={{ left: place.x, top: place.y, width: CARD.width, height: node.type === "end" ? CARD.endHeight : CARD.height }}
                 type="button"
               >
-                <span className="flex items-center gap-2">
-                  <StepIcon node={node} />
-                  <span className="font-semibold text-[10.5px] text-muted-foreground tracking-wider">{text.kind}</span>
-                  <span className="ms-auto flex gap-1">
-                    {blocks > 0 && (
-                      <span className="inline-flex items-center gap-0.5 font-heading font-semibold text-destructive text-xs tabular-nums" title="Blocks publishing">
-                        <CircleAlertIcon aria-hidden className="size-3" />
-                        {blocks}
-                      </span>
-                    )}
-                    {warns > 0 && (
-                      <span className="inline-flex items-center gap-0.5 font-heading font-semibold text-warning text-xs tabular-nums" title="Warning">
-                        <TriangleAlertIcon aria-hidden className="size-3" />
-                        {warns}
-                      </span>
-                    )}
-                  </span>
-                </span>
-                <span className="mt-1 truncate font-semibold text-[13px]">{text.label}</span>
-                {text.sub && <span className="truncate text-muted-foreground text-xs">{text.sub}</span>}
+                <StepCardFace
+                  aside={
+                    (blocks > 0 || warns > 0) && (
+                      <>
+                        {blocks > 0 && (
+                          <span className="inline-flex items-center gap-0.5 font-heading font-semibold text-destructive text-xs tabular-nums" title="Blocks publishing">
+                            <CircleAlertIcon aria-hidden className="size-3" />
+                            {blocks}
+                          </span>
+                        )}
+                        {warns > 0 && (
+                          <span className="inline-flex items-center gap-0.5 font-heading font-semibold text-warning text-xs tabular-nums" title="Warning">
+                            <TriangleAlertIcon aria-hidden className="size-3" />
+                            {warns}
+                          </span>
+                        )}
+                      </>
+                    )
+                  }
+                  eventName={eventName}
+                  node={node}
+                />
               </button>
             );
           })}

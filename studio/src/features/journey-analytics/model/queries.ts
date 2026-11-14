@@ -303,3 +303,18 @@ export function assembleWaitingSteps(
     return [{ campaignId: row.campaignId, entryId: row.entryId, node, label: nodeLabel(node.setting, names), deadline }]
   })
 }
+
+/** JBD-FR-09: the all-time Completed count of each node, as stream processing keeps it. */
+export function nodeCompletedQuery(campaignId: string): SqlQuery {
+  return { text: 'SELECT node_id, user_count FROM campaign_node_stats WHERE campaign_id = $1', values: [campaignId] }
+}
+
+/** A node with no row has completed nobody, so the caller reads a missing key as 0. */
+export function parseNodeCompleted(rows: readonly Row[]): Record<string, number> {
+  return Object.fromEntries(rows.map((row) => [text(row, 'node_id'), integer(row, 'user_count')]))
+}
+
+/** The journey a published campaign runs, as the builder saved it. */
+export function publishedRootQuery(campaignId: string): SqlQuery {
+  return { text: "SELECT root FROM campaigns WHERE id = $1 AND status IN ('active', 'paused')", values: [campaignId] }
+}

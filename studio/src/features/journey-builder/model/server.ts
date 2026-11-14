@@ -25,7 +25,7 @@ export async function openDraft(id: string): Promise<BuilderDraft | null> {
 }
 
 // Without the catalog the builder still opens, and the event pickers are empty.
-async function catalogEvents(): Promise<CatalogEvent[]> {
+export async function catalogEvents(): Promise<CatalogEvent[]> {
   try {
     return (await db.getUserEvents()).map((event) => ({ name: event.name, label: event.label }));
   } catch (error) {
