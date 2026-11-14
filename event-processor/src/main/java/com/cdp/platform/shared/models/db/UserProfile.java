@@ -1,12 +1,18 @@
 package com.cdp.platform.shared.models.db;
 
+import java.time.Instant;
+import java.util.Map;
+
 import com.cdp.platform.shared.models.node.FieldPredicates;
 import com.cdp.platform.shared.models.node.Predicate;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * Domain record representing a row in the user_profiles table.
+ * The fields of a person's profile that a lookup read: the built-in fields of
+ * {@code customer_profiles}, and the imported fields of
+ * {@code customer_attributes}, keyed {@code <source>.<name>} such as
+ * {@code orders.spend_90d} (DEC-FR-40).
  */
 public record UserProfile(
     @JsonProperty("fid") Long fid,
@@ -23,10 +29,28 @@ public record UserProfile(
     @JsonProperty("env") String env,
     @JsonProperty("cdpUuid") String cdpUuid,
     @JsonProperty("networkUserId") String networkUserId,
-    @JsonProperty("userTime") String userTime) {
+    @JsonProperty("userTime") String userTime,
+    @JsonProperty("imported") Map<String, String> imported) {
+
+    private static final String PROFILE_PREFIX = "profile.";
+
+    /** A profile without imported fields. */
+    public UserProfile(Long fid, String cardcode, String customerId, String phone, String email, String name,
+        String firstName, String pronoun, String gender, Double age, String city, String env, String cdpUuid,
+        String networkUserId, String userTime) {
+        this(fid, cardcode, customerId, phone, email, name, firstName, pronoun, gender, age, city, env, cdpUuid,
+            networkUserId, userTime, Map.of());
+    }
+
     public static UserProfile empty() {
         return new UserProfile(null, null, null, null, null, null, null, null, null, null, null, null, null, null,
             null);
+    }
+
+    /** This profile with the given imported fields in place of its own. */
+    public UserProfile withImported(Map<String, String> fields) {
+        return new UserProfile(fid, cardcode, customerId, phone, email, name, firstName, pronoun, gender, age, city,
+            env, cdpUuid, networkUserId, userTime, Map.copyOf(fields));
     }
 
     public String getField(String key) {
@@ -46,8 +70,15 @@ public record UserProfile(
             case "profile.cdp_uuid", "user.cdp_uuid" -> cdpUuid;
             case "profile.network_user_id", "user.network_user_id" -> networkUserId;
             case "profile.user_time", "user.user_time" -> userTime;
-            default -> null;
+            default -> importedField(key);
         };
+    }
+
+    // An imported field is the dotted name after the profile prefix. A built-in
+    // name has no dot, so the two never meet.
+    private String importedField(String key) {
+        if (imported == null || key == null || !key.startsWith(PROFILE_PREFIX)) return null;
+        return imported.get(key.substring(PROFILE_PREFIX.length()));
     }
 
     /**
@@ -57,5 +88,14 @@ public record UserProfile(
      */
     public boolean evalPredicate(Predicate pred) {
         return FieldPredicates.evaluate(pred, this::getField);
+    }
+
+    /**
+     * Evaluates the tree as {@link #evalPredicate(Predicate)} does, measuring a
+     * relative-date comparison from {@code checkTime}: the event's time, or the
+     * segment check's {@code event_time} (DEC-FR-42).
+     */
+    public boolean evalPredicate(Predicate pred, Instant checkTime) {
+        return FieldPredicates.evaluate(pred, this::getField, checkTime);
     }
 }

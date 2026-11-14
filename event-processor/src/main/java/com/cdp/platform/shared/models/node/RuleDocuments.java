@@ -169,6 +169,7 @@ public final class RuleDocuments {
             .orElseThrow(() -> new IllegalArgumentException("Comparison on %s has unknown operator %s"
                 .formatted(field, op)));
         JsonNode value = condition.get("value");
+        if (operator.isRelativeDate()) return List.of(relativeDate(field, op, prefix, value));
         if (operator != FieldOperator.IN) return List.of(new Comparison(field, op, scalar(field, value)));
         if (value == null || !value.isArray()) {
             throw new IllegalArgumentException("IN on %s needs an array of values".formatted(field));
@@ -176,6 +177,21 @@ public final class RuleDocuments {
         List<Comparison> equalities = new ArrayList<>();
         value.forEach(item -> equalities.add(new Comparison(field, "=", scalar(field, item))));
         return List.copyOf(equalities);
+    }
+
+    // A relative-date operator compares a datetime profile field with the check
+    // time, so it takes a whole number of days of at least 1, and no event field
+    // (DEC-FR-43).
+    private static Comparison relativeDate(String field, String op, String prefix, JsonNode value) {
+        if (prefix.isEmpty()) {
+            throw new IllegalArgumentException("%s on the event field %s is not allowed".formatted(op, field));
+        }
+        boolean whole = value != null && (value.isIntegralNumber() || value.isTextual())
+            && FieldPredicates.days(value.asText()).isPresent();
+        if (!whole)
+            throw new IllegalArgumentException("%s on %s needs a whole number of days of at least 1"
+                .formatted(op, field));
+        return new Comparison(field, op, value.asText());
     }
 
     private static Comparison behavior(JsonNode condition) {

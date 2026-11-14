@@ -1,5 +1,6 @@
 package com.cdp.platform.jobs.customerdecision.transforms;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 
@@ -37,8 +38,12 @@ record RuleDecision(String campaignId, String nodeId, long graphVersion, List<St
         return profileCondition != null;
     }
 
-    boolean fires(UserProfile profile) {
-        return profileCondition == null || profile.evalPredicate(profileCondition);
+    /**
+     * Whether the rule fires on the profile, measuring relative dates from the
+     * check time.
+     */
+    boolean fires(UserProfile profile, Instant checkTime) {
+        return profileCondition == null || profile.evalPredicate(profileCondition, checkTime);
     }
 
     VersionedTrigger trigger(Event event, String branch, String contextJson) {

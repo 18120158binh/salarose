@@ -291,7 +291,8 @@ class SegmentArrivalTest {
     private static final class NoProfiles implements ProfileLookupFunction.ProfileStore {
 
         @Override
-        public CompletableFuture<UserProfile> find(String userId, String canonId, Set<String> columns) {
+        public CompletableFuture<UserProfile> find(String userId, String canonId, Set<String> columns,
+            Set<String> sources) {
             return CompletableFuture.completedFuture(UserProfile.empty());
         }
 
