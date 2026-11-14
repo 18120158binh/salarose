@@ -54,5 +54,6 @@ Each record explains one choice that shapes the architecture: the context, the d
 | [0048](0048-ingestion-keeps-tracker-parity-a-per-replica-limit-and-two-keys-for-rotation.md) | The ingestion API ignores catalog status, counts its rate limit per replica, and allows two keys per app id | Accepted | 2026-11-14 |
 | [0049](0049-the-ingestion-api-writes-plain-json-to-its-own-topic-and-leaves-history-to-import.md) | The ingestion API writes plain JSON to its own topic, and leaves history to the import | Accepted | 2026-11-05 |
 | [0050](0050-one-account-per-person-no-unmerge-and-a-5-second-merge-bound.md) | One account per person, no unmerge, and a 5 second merge bound | Accepted | 2026-11-14 |
+| [0051](0051-fold-to-the-earliest-instance-and-count-nodes-through-merge-history.md) | Fold to the earliest instance, accept the fold window, and count nodes through merge history | Accepted | 2026-11-14 |
 
 To add a decision, copy [the template](../../_templates/decision.md) to the next free number. Never edit an accepted record to reverse it. Write a new record and set `superseded_by` on the old one.

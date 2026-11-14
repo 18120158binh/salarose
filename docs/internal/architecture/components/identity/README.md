@@ -36,9 +36,9 @@ The accepted stitching contract describes the platform as it runs now. Each devi
 - Merges are inferred, not recorded. Nothing says which `canon_id` retired into which, so a reader cannot map an old `canon_id` to the current one, and no rule can refuse a merge.
 - Nothing announces a merge to later stages. After a login, the person's metrics restart from empty, and the person can pass a journey and get its messages a second time.
 
-The identity graph and identity merges contracts address those. When they are accepted, the stitching contract changes in the same change. Its algorithm reads and writes the graph, and its section "Merges reach the user's devices, not later stages" changes to say that merges reach later stages too.
+The identity graph and identity merges contracts address those. Both were accepted on 2026-11-14 ([decision 0050](../../decisions/0050-one-account-per-person-no-unmerge-and-a-5-second-merge-bound.md), [decision 0051](../../decisions/0051-fold-to-the-earliest-instance-and-count-nodes-through-merge-history.md)), and neither is built. When they are built, the stitching contract changes in the same change. Its algorithm reads and writes the graph, and its section "Merges reach the user's devices, not later stages" changes to say that merges reach later stages too.
 
-How the graph is stored and keyed is an architecture choice, not a contract. It needs a decision record that amends [decision 0005](../../decisions/0005-keep-live-state-in-flink.md) for identity state. Write that record after the open questions in these contracts have answers.
+How the graph is stored and keyed is an architecture choice, not a contract. It needs a decision record that amends [decision 0005](../../decisions/0005-keep-live-state-in-flink.md) for identity state. Their open questions now have answers, so that record can be written.
 
 ## What is not specified yet
 
