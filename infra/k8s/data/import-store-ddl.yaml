@@ -1,0 +1,69 @@
+# Applies infra/db/import-store/schema.sql to the import store on every sync, as its owner cdp_import (decision 0040
+# amends 0019 to one DDL file per cluster). Every statement in the file is idempotent, so a rerun changes nothing. The
+# wave runs after the cluster (wave 0) and before every app (20 and up), and a failed Job fails the sync.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: import-store-ddl
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        cdp.io/pool: compute
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
+      containers:
+        - name: psql
+          image: ghcr.io/cloudnative-pg/postgresql:16.15-standard-trixie
+          command:
+            - psql
+            - --no-psqlrc
+            - --single-transaction
+            - --set=ON_ERROR_STOP=1
+            - --file=/ddl/schema.sql
+          env:
+            - name: PGHOST
+              value: cdp-import-pg-rw.cdp.svc
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: cdp-import-pg-app
+                  key: dbname
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: cdp-import-pg-app
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cdp-import-pg-app
+                  key: password
+          volumeMounts:
+            - name: ddl
+              mountPath: /ddl
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: ddl
+          configMap:
+            name: import-store-ddl
