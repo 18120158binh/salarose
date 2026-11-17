@@ -60,6 +60,7 @@ A feature is something a person uses: a marketer or an admin in `studio`, or a c
 | [Customer lookup](features/customer-lookup.md) | `studio` | Accepted | Planned | [List](known-issues/features/customer-lookup.md) |
 | [Data health](features/data-health.md) | `studio` | Accepted | Partial | [List](known-issues/features/data-health.md) |
 | [Data import](features/data-import.md) | `studio`, `event-processor` | Accepted | Planned | [List](known-issues/features/data-import.md) |
+| [CDP agent](features/cdp-agent.md) | `studio` | Draft | Planned | [List](known-issues/features/cdp-agent.md) |
 
 ### Known issues
 

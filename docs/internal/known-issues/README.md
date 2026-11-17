@@ -37,6 +37,7 @@ Every issue has an id, a severity, and the requirement it breaks. Fix an issue a
 | [Customer lookup](features/customer-lookup.md), not built | 0 | 0 | 1 | 1 |
 | [Data health](features/data-health.md), not built | 0 | 0 | 1 | 0 |
 | [Data import](features/data-import.md), not built | 0 | 0 | 0 | 0 |
+| [CDP agent](features/cdp-agent.md), not built | 0 | 0 | 0 | 0 |
 | Total | 4 | 3 | 28 | 8 |
 
 To recount one page, run `grep -cE '^\| [A-Z]+-KI-[0-9]+ \| Blocking \|' <page>.md`, with each severity in turn.

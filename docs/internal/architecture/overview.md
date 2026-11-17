@@ -15,7 +15,10 @@ flowchart LR
 	sender -->|push, SMS, email| shopper
 	idp[OIDC provider] -->|staff sign-in| cdp
 	crm[Profile source, not in this repo] -->|customer_profiles| cdp
+	cdp -.->|questions and tool results, no contact data| llm[Model with tool use, not in this repo]
 ```
+
+The model is optional. [AI journey generation](../features/ai-journey-generation.md) and the planned [CDP agent](../features/cdp-agent.md) call one. The agent sends it no contact data. `canon_id` reaches it as it is, an accepted risk ([decision 0056](decisions/0056-a-read-only-agent-with-no-pii-and-a-provider-agnostic-tool-use-model.md)).
 
 ## Layers
 
@@ -218,7 +221,7 @@ One event goes through these stages:
 | Import metric pass | Kubernetes CronJob, planned. No Flink. | None yet | [Import metric pass](components/import-metric-pass.md) |
 | Import store | Iceberg tables in the lakehouse, planned ([decision 0053](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)). Deployed today as a second Postgres cluster, `cdp-import-pg`. | None yet | [Import applier](components/import-applier.md) |
 | Segment membership pass | Kubernetes CronJob, nightly, planned | None yet | [Segment membership pass](components/segment-membership-pass.md) |
-| Admin app | Next.js | `studio` | [Journey builder](../features/journey-builder.md), [campaign management](../features/campaign-management.md), [AI journey generation](../features/ai-journey-generation.md), [event catalog](../features/event-catalog.md), [segments](../features/segments.md), [admin authentication](../features/admin-authentication.md) |
+| Admin app | Next.js | `studio` | [Journey builder](../features/journey-builder.md), [campaign management](../features/campaign-management.md), [AI journey generation](../features/ai-journey-generation.md), [event catalog](../features/event-catalog.md), [segments](../features/segments.md), [admin authentication](../features/admin-authentication.md), [CDP agent](../features/cdp-agent.md), planned. The agent reads as the asking staff user, writes only its conversation store, and calls a model with tool use. |
 
 ## Admin app layers
 
@@ -228,7 +231,7 @@ studio is one Next.js app. Its code is split into layers, and a layer imports on
 flowchart TB
 	routes[Routes and pages: /v2 screens, /v1 ingestion API, /api/auth]
 	widgets[Widgets: app shell, admin header]
-	features[Features: journey builder, journeys, segments, customers, data, platform, access]
+	features[Features: journey builder, journeys, segments, customers, data, platform, access, agent planned]
 	entities[Entities: journey, its saved format]
 	sharedui[Shared: UI kit, auth, lib]
 	pkg[Workspace package: coss components, DB client, campaign types]
@@ -320,6 +323,7 @@ The component contracts define each message. [Configuration](../operations/confi
 | [0053. Store raw events, transition history, and imports in an Iceberg lakehouse](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) | Unbounded data goes to Iceberg on S3. Analytics leave the hot table. Supersedes 0040's import store. |
 | [0054. Recover Flink state in four layers](decisions/0054-recover-flink-state-in-four-layers.md) | Checkpoints, savepoints, the projection, and a rebuild from raw events. Trust goes raw events first, then Flink state, then the projection. |
 | [0055. Run the dev environment on one stoppable Spot node and pay-per-use services](decisions/0055-run-the-dev-environment-on-one-stoppable-spot-node.md) | One k3s node that stops when nobody uses it. Kafka, Postgres, and Flink stay self-hosted, because the managed versions bill by the hour. |
+| [0056. A read-only agent with no PII and a provider-agnostic tool-use model](decisions/0056-a-read-only-agent-with-no-pii-and-a-provider-agnostic-tool-use-model.md) | The agent explains and proposes drafts, never applies them. The model sees `canon_id` (an accepted risk), profile attributes, counts, flags, and keyed hashes, never contact data. Any model with tool use. |
 | [0007. Staff sign in through OpenID Connect](decisions/0007-staff-sign-in-through-oidc.md) | No stored passwords. [0024](decisions/0024-create-staff-at-first-sign-in-with-the-providers-role.md) leaves who gets in, and with which role, to the identity provider. |
 
 ## Scaling limits
