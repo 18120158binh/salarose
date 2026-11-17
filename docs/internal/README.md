@@ -76,7 +76,8 @@ A feature is something a person uses: a marketer or an admin in `studio`, or a c
 - [Batch jobs](operations/batch-jobs.md): how a Java job without Flink is written, built, scheduled as a CronJob, and deployed
 - [How to run the stack locally](operations/local-environment.md)
 - [Deployment](operations/deployment.md)
-- [AWS Free Plan environment](operations/aws-free-plan.md): the contract for a short-lived three-node k3s deploy on an AWS Free Plan account
+- [Dev environment](operations/dev-environment.md): the contract for the dev environment, one stoppable k3s Spot node on a paid AWS account that stops when nobody uses it
+- [AWS Free Plan environment](operations/aws-free-plan.md): retired. The contract for the six-node k3s cluster on the AWS Free Plan account that closed on 2026-11-14
 - [Monitoring](operations/monitoring.md): the journey engine's drop counters, the Prometheus reporter, and the alerts
 - [Keep CI cheap](operations/ci-cost.md): how to cut GitHub Actions cost, and the lesson from hitting the minutes limit
 

@@ -2,16 +2,18 @@
 title: AWS Free Plan environment
 slug: aws-free-plan
 purpose: Run the whole journey engine on a six-node Kubernetes cluster on an AWS Free Plan account, for the rest of its credit, without spending past it.
-status: draft
+status: deprecated
 implementation: planned
 area: infra
 tags: [deployment, aws, kubernetes, environment]
 created: 2026-11-07
-updated: 2026-11-14
-version: 0.13
+updated: 2026-11-17
+version: 0.14
 ---
 
 # AWS Free Plan environment
+
+> Retired. The Free Plan account closed on 2026-11-14, and this target no longer exists. The [dev environment](dev-environment.md) replaces it, and [decision 0055](../architecture/decisions/0055-run-the-dev-environment-on-one-stoppable-spot-node.md) explains why. This page stays as a record of what was built and measured, and the dev environment contract cites its requirement ids.
 
 This page is the contract for one deploy target: a short-lived environment on an AWS account that is on the Free Plan. It runs the platform the way a production data platform does. Kubernetes runs on six nodes. Operators run Kafka, Postgres, and Flink. Argo CD syncs everything from git, and Prometheus watches it. It sits in `operations/` and not in `features/` or `architecture/components/`, because an environment is neither a feature nor a component, and its rules have to name hosts, namespaces, and instance types. The `deploy` skill builds it from [references/aws-free-plan.md](../../../.agents/skills/deploy/references/aws-free-plan.md).
 

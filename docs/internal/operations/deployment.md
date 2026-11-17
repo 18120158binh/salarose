@@ -1,10 +1,10 @@
 # Deployment
 
-GitHub Actions builds the Flink jobs image and the studio image, and Argo CD rolls them out. Agents deploy with the `deploy` skill in [.agents/skills/deploy](../../../.agents/skills/deploy/SKILL.md), which covers GitHub, AWS, a k3s cluster on an [AWS Free Plan account](aws-free-plan.md), and the local k3d cluster.
+GitHub Actions builds the Flink jobs image and the studio image, and Argo CD rolls them out. Agents deploy with the `deploy` skill in [.agents/skills/deploy](../../../.agents/skills/deploy/SKILL.md), which covers GitHub, AWS, a k3s cluster on an [AWS Free Plan account](aws-free-plan.md), and the local k3d cluster. The current deploy target is the [dev environment](dev-environment.md), one stoppable k3s node on a paid AWS account. The Free Plan account closed on 2026-11-14, and its page is kept as a record. The `deploy` skill has no reference for the dev environment yet.
 
 ## Pipeline
 
-[The CI/CD section of the AWS Free Plan page](aws-free-plan.md#cicd) lists every workflow, what it checks, and how a merged change reaches the cluster.
+[The CI/CD section of the AWS Free Plan page](aws-free-plan.md#cicd) lists every workflow, what it checks, and how a merged change reaches the cluster. The [dev environment](dev-environment.md) keeps the same flow (DEV-FR-21).
 
 ## Images
 

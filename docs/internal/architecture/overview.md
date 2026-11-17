@@ -319,6 +319,7 @@ The component contracts define each message. [Configuration](../operations/confi
 | [0052. Keep hot state in Flink and a redesigned projection in Postgres](decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) | Two hot tiers, no new database. Postgres writes less: metrics coalesced, transitions partitioned, a profile read model. |
 | [0053. Store raw events, transition history, and imports in an Iceberg lakehouse](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) | Unbounded data goes to Iceberg on S3. Analytics leave the hot table. Supersedes 0040's import store. |
 | [0054. Recover Flink state in four layers](decisions/0054-recover-flink-state-in-four-layers.md) | Checkpoints, savepoints, the projection, and a rebuild from raw events. Trust goes raw events first, then Flink state, then the projection. |
+| [0055. Run the dev environment on one stoppable Spot node and pay-per-use services](decisions/0055-run-the-dev-environment-on-one-stoppable-spot-node.md) | One k3s node that stops when nobody uses it. Kafka, Postgres, and Flink stay self-hosted, because the managed versions bill by the hour. |
 | [0007. Staff sign in through OpenID Connect](decisions/0007-staff-sign-in-through-oidc.md) | No stored passwords. [0024](decisions/0024-create-staff-at-first-sign-in-with-the-providers-role.md) leaves who gets in, and with which role, to the identity provider. |
 
 ## Scaling limits
