@@ -199,9 +199,9 @@ Every tool is read-only and reads as the asking user. The tools are those in the
 | Person identities | `identity_graph` | One person's identities, each `domain_userid` and `user_id` as a keyed hash, with first and last seen. For a set of people, how many have a `user_id`. | `agent.person_trace` for one person, `agent.use` for counts |
 | Profile flags | `customer_profiles`, `customer_attributes`, `import_record_type_versions` | For one person, or as counts over a set: has an email, the email is in a valid format, has a phone, the phone is in a valid format, and the same for each PII column a dataset flags. Never a value. | `agent.person_trace` for one person, `agent.use` for counts |
 | Notification requests | The person's engagement transitions in `user_campaign_state_transitions` | Each request's journey, node, channel, title, and time, and its execution id as [the notification outbox](../architecture/components/notification-outbox.md#terms) defines it. Not the `profile` the outbox adds to the request on `journey-engine-outbound-noti`, which holds contact data. | `agent.person_trace` |
-| Event catalog | `user_events`, `user_event_fields` | Events, their kind, status, schema gate, and attributes with each attribute's PII flag. The example and default value of a PII-flagged attribute are withheld (AGT-FR-14). | `agent.use` |
+| Event catalog | `user_events`, `user_event_fields` | Events, their kind, status, schema gate, and attributes with each attribute's PII flag. The example and default value of a PII-flagged attribute reach the model only as their keyed hashes (AGT-FR-14). | `agent.use` |
 | Lakehouse | `raw_events` and `transition_history`, once the [lakehouse](../architecture/components/lakehouse.md) exists | Counts of events by name, time, and person, and one person's events by name and time | As the tool it extends |
-| Delivery outcomes, planned | The [delivery outcomes topic](#delivery-outcomes), once the sender produces it | Counts of outcomes by journey, node, channel, and time bucket, and for one person, the outcome of each of their requests by execution id | `agent.use`. One person's outcomes: `agent.person_trace`. |
+| Delivery outcomes, planned | The outcomes the platform consumes from the [delivery outcomes topic](#delivery-outcomes), once the sender produces it. Where the platform stores them is [open](#open-questions). | Counts of outcomes by journey, node, channel, and time bucket, and for one person, the outcome of each of their requests by execution id | `agent.use`. One person's outcomes: `agent.person_trace`. |
 
 A tool that a question kind's permission does not cover is not offered to the model for that question. The server checks the permission again on every call, so a model that asks for a tool it was not offered gets a refusal and no data.
 
@@ -255,7 +255,7 @@ Both places show the hypothesis graph as it grows, each node's state, and its ev
 The owner decided these on 2026-11-17 (#162, #169).
 
 - Conversations live in Postgres, in `agent_conversations`, one row per conversation owned by one staff user, and `agent_messages`, one row per question or answer. A user sees only their own.
-- A conversation is deleted 90 days after its last message, with its messages.
+- A conversation is deleted 90 days after its last message, with its messages. The owner said "kept 90 days". Counting from the last message is the lead's reading, pending owner review.
 - A user can delete any of their own conversations from the agent page. The delete removes its messages at once.
 
 ### Draft proposals
@@ -278,7 +278,7 @@ Two limits bound the model cost. Both are configurable per deployment. The owner
 
 The owner decided on 2026-11-17 (#164) to measure answer quality in two ways.
 
-- **Scenario suite.** A fixed set of scenarios, each a question over prepared data with one known cause, runs in CI. A scenario passes when the agent confirms its known cause, with evidence, and confirms no other cause.
+- **Scenario suite.** A fixed set of scenarios, each a question over prepared data with one known cause, runs in CI. A scenario passes when the agent confirms its known cause, with evidence. That it must also confirm no other cause is the lead's default, pending owner review.
 - **User rating.** The asking user can rate each answer. The rating is stored with the answer.
 
 ### Delivery outcomes
@@ -289,7 +289,7 @@ The sender reports what happened to each notification request on a Kafka topic, 
 |---|---|
 | `execution_id` | The request's execution id, as the [notification outbox](../architecture/components/notification-outbox.md#terms) defines it. Also the message key. |
 | `outcome` | `delivered`, `opened`, `bounced`, or `clicked` |
-| `at` | When the outcome happened, as the sender saw it |
+| `at` | When the outcome happened, as the sender saw it. The lead's default, pending owner review. |
 
 One request may have several outcome messages, such as `delivered`, then `opened`, then `clicked`. A message holds no contact data. The topic's name, the other fields, and how the platform stores the outcomes for the agent's reads are [open](#open-questions).
 
@@ -321,17 +321,17 @@ One request may have several outcome messages, such as `delivered`, then `opened
 | AGT-FR-22 | A tool result must reach the model as data. Text inside it, such as a dead letter's detail or a journey's name, must not widen the tools offered or the permissions checked. |
 | AGT-FR-23 | Every `canon_id` the agent shows must link to its customer profile, and every journey to its journey page. |
 | AGT-FR-24 | Profile attributes and condition and filter values may reach the model. A value on an identifier field or on a column a dataset flags as PII must be withheld or replaced by its keyed hash, in a person's condition results and in the condition and segment filter values of journey configuration and segments. |
-| AGT-FR-25 | A conversation and its messages must be deleted 90 days after the conversation's last message. Decided by the owner on 2026-11-17 (#162). |
+| AGT-FR-25 | A conversation and its messages must be deleted 90 days after the conversation's last message. The 90 days were decided by the owner on 2026-11-17 (#162). Counting them from the last message is the lead's reading, pending owner review. |
 | AGT-FR-26 | A staff user must be able to delete any of their own conversations, and the delete must remove its messages. No user may delete another user's conversation. Decided by the owner on 2026-11-17 (#162). |
 | AGT-FR-27 | The server must refuse a question, and call no model, once the asking user has asked the configured number of questions that day. It must count questions in Postgres, so that every studio replica sees the same count. The default limit is 50 a day (the lead's default). Decided by the owner on 2026-11-17 (#163). |
 | AGT-FR-28 | The agent must make at most the configured number of tool calls for one question, then answer with what it has. The default limit is 20 (the lead's default). Decided by the owner on 2026-11-17 (#163). |
 | AGT-FR-29 | The conversation store must keep each question as the model saw it. A typed email or phone must be stored only as its replacement under AGT-FR-13. Decided by the owner on 2026-11-17 (#167). |
 | AGT-FR-30 | When the server finds a person's name in a question, it must send nothing to the model, and the agent must warn that it does not take names and ask for an id, an email, or a phone. Decided by the owner on 2026-11-17 (#167). |
 | AGT-FR-31 | Each stored keyed hash must carry the key id of the agent key that made it. The agent must not compare two hashes with different key ids. The agent key rotates only on a suspected leak, by the rotation runbook. Decided by the owner on 2026-11-17 (#168). |
-| AGT-FR-32 | A fixed suite of scenarios, each with one known cause, must run in CI. A scenario passes only when the agent confirms its known cause with evidence and confirms no other cause. Decided by the owner on 2026-11-17 (#164). |
+| AGT-FR-32 | A fixed suite of scenarios, each with one known cause, must run in CI. A scenario passes only when the agent confirms its known cause with evidence, and confirms no other cause (the lead's default). Decided by the owner on 2026-11-17 (#164). |
 | AGT-FR-33 | The asking user must be able to rate each answer, and the rating must be stored with the answer. Decided by the owner on 2026-11-17 (#164). |
 | AGT-FR-34 | The agent page must be at `/agent` with the sidebar entry **Ask the agent**, a draft made from a proposal must have `origin` `agent`, and the agent's routes must be under `/api/agent/`. Decided by the owner on 2026-11-17 (#169). |
-| AGT-FR-35 | The agent must read delivery outcomes, once they exist, only from the delivery outcomes topic of [Delivery outcomes](#delivery-outcomes), matched to requests by `execution_id`. Decided by the owner on 2026-11-17 (#161). |
+| AGT-FR-35 | The agent must read delivery outcomes, once they exist, from the outcomes the platform consumes from the delivery outcomes topic of [Delivery outcomes](#delivery-outcomes), matched to requests by `execution_id`. Where the platform stores them is open. Decided by the owner on 2026-11-17 (#161). |
 
 ## Non-functional requirements
 
@@ -408,7 +408,7 @@ One request may have several outcome messages, such as `delivered`, then `opened
 - Given a limit of 20 and a model that keeps asking for tools, then the agent makes 20 tool calls and answers, listing the hypotheses still `testing`. (AGT-FR-28)
 - Given a question that holds `an@example.com`, which matches `P1`, then the stored question holds `P1` and no part of the email. (AGT-FR-29)
 - Given the question "Why did Nguyễn Văn An not get the SMS?", then no request goes to the model, and the answer asks for an id, an email, or a phone. (AGT-FR-30)
-- Given stored hashes made under key id `k1`, after a rotation to `k2`, then the agent does not report a `k1` hash and a `k2` hash of the same value as different people or as one person. (AGT-FR-31)
+- Given a conversation that holds a person's `user_id` hash under key id `k1`, after a rotation to `k2`, when the agent reads the same person's identities again, then it does not say the two hashes match or differ, and its answer says they were made under different agent keys and cannot be compared. (AGT-FR-31)
 - Given the scenario suite in CI and an agent change that stops it from confirming one scenario's known cause, then the CI run fails. (AGT-FR-32)
 - Given an answer the user rates, then the rating is stored with that answer in `agent_messages`. (AGT-FR-33)
 - Given a proposal accepted with **Open as draft**, then the new `journey_drafts` row has `origin` `agent`. (AGT-FR-34)
@@ -420,6 +420,7 @@ The owner answered the earlier open questions on 2026-11-17, in #161 to #171. Th
 
 - **Finding a name.** AGT-FR-30 stops a question that holds a person's name, but a name in free text cannot be found reliably. How does the server recognize one: by matching imported name columns, by a pattern, or by another check? And what does it do with a word that may be a name or a journey's name?
 - **The delivery outcomes topic.** Its name, its fields beyond those in [Delivery outcomes](#delivery-outcomes), its retention, and how the platform stores outcomes so that the agent and [customer lookup](customer-lookup.md#open-questions) can read them by journey and by person.
+- **A question stopped for a name.** The model never sees it (AGT-FR-30), so AGT-FR-29 does not say what the conversation store keeps for it: nothing, the agent's warning only, or the question with the name removed.
 - **The rotation runbook.** AGT-FR-31 rotates the agent key by a runbook, which is not written. It belongs in `operations/` with the key's configuration.
 - **The conversation tables' columns.** The owner named `agent_conversations` and `agent_messages`. Their columns, the rating's scale, and how the question count of AGT-FR-27 reads them are the builder's, recorded in [the data model](../architecture/data-model.md) when they land.
 
