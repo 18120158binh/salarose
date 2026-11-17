@@ -47,7 +47,7 @@ MSK Serverless or Managed Flink alone costs more than the whole six-node cluster
 
 **Spot is safe because state lives off the node.** A reclaim loses only what the node held in memory. Kafka and Postgres data are on the persistent volume, and Flink resumes from its last checkpoint in S3, as after a node failure. The owner accepts a few minutes without service.
 
-**The cost estimate.** About 176 node hours a month on Spot, the volume and its snapshots, the Elastic IP, and S3 come to about $15 to $30 a month in the design, and $20 to $37 in the [contract's estimate](../../operations/dev-environment.md#cost-estimate). Both are estimates from list prices, to be checked against the first bill.
+**The cost estimate.** About 176 node hours a month on Spot, the volume and its snapshots, the Elastic IP, and S3 come to about $15 to $30 a month in the design, and $21 to $38 in the [contract's estimate](../../operations/dev-environment.md#cost-estimate). Both are estimates from list prices, to be checked against the first bill.
 
 ## Alternatives considered
 

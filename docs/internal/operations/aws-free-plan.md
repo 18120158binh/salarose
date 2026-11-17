@@ -2,14 +2,13 @@
 title: AWS Free Plan environment
 slug: aws-free-plan
 purpose: Run the whole journey engine on a six-node Kubernetes cluster on an AWS Free Plan account, for the rest of its credit, without spending past it.
-status: superseded
+status: deprecated
 implementation: planned
 area: infra
 tags: [deployment, aws, kubernetes, environment]
 created: 2026-11-07
 updated: 2026-11-17
 version: 0.14
-superseded_by: dev-environment
 ---
 
 # AWS Free Plan environment

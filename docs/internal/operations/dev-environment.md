@@ -72,9 +72,9 @@ Example. The owner starts the environment at 09:00, works until 12:10, and leave
 
 | Id | Requirement |
 |---|---|
-| DEV-FR-01 | Every AWS resource the environment creates, including volumes, snapshots, and network interfaces, must carry one project tag, so that one tag query lists all of them. |
-| DEV-FR-02 | Terraform must own every AWS resource in [AWS resources](#aws-resources), with its state in S3. A plan against an unchanged environment must show no changes, whether the node is running or stopped. |
-| DEV-FR-03 | The environment must not create a NAT gateway, a load balancer, MSK, Managed Flink, Kinesis, RDS, Aurora, or EKS. |
+| DEV-FR-01 | Every AWS resource the environment creates, including volumes, snapshots, and network interfaces, must carry one project tag, so that one tag query lists all of them, as AFP-FR-02 says (the lead's default, pending owner review). |
+| DEV-FR-02 | Terraform must own every AWS resource in [AWS resources](#aws-resources) except the node instance, with its state in S3, as AFP-FR-19 says (the lead's default, pending owner review). For the node, Terraform owns a launch template, and the start command creates or starts the node from it, so a stop may stop or terminate the instance. A plan against an unchanged environment must show no changes, whether the node is running, stopped, or terminated. |
+| DEV-FR-03 | The environment must not create a NAT gateway or a load balancer (the lead's default, pending owner review). It must not create MSK, Managed Flink, Kinesis, RDS, Aurora, or EKS either. That part follows from the owner's choice to self-host Kafka, Flink, and Postgres on k3s, and its list of services is the lead's default, pending owner review. |
 | DEV-FR-04 | The node must be one EC2 Spot instance running k3s as a single-node cluster, with every workload in [Kubernetes layout](#kubernetes-layout) on it. |
 | DEV-FR-05 | The Kafka data, the Postgres data, and the k3s cluster data must live on the persistent volume, so that a new node attached to it comes up with the same cluster, topics, offsets, and rows. The node's root volume must hold nothing that a start cannot recreate. |
 | DEV-FR-06 | One Elastic IP must stay allocated while the environment is stopped, and every start must associate it with the node. The public hostnames, the certificates, and the Cognito callback and logout URLs must never change across starts (owner, 2026-11-17). |
@@ -85,16 +85,16 @@ Example. The owner starts the environment at 09:00, works until 12:10, and leave
 | DEV-FR-11 | The idle stop must stop the node 12 hours after the start, whatever the activity, through the same savepoint and stop as DEV-FR-10. |
 | DEV-FR-12 | If a stop savepoint fails or does not finish in time, the idle stop must log which job failed and stop the node anyway. The job then resumes from its last checkpoint at the next start (the lead's default, pending owner review). |
 | DEV-FR-13 | At every start, each Flink job must resume from its newest savepoint or retained checkpoint, whichever is newer, and never with `allowNonRestoredState`. A job with neither starts clean only on the first start of a new account. |
-| DEV-FR-14 | The idle stop must run on the node and keep working when Argo CD, Prometheus, or any Flink job is down. A failure of the idle stop itself must not leave the node running past the 12-hour cap. |
+| DEV-FR-14 | The idle stop must run on the node and keep working when Argo CD, Prometheus, or any Flink job is down. A failure of the idle stop itself must not leave the node running past the 12-hour cap: a second mechanism, independent of the idle stop and chosen by the builder, must stop the node at the cap (the lead's default, pending owner review). |
 | DEV-FR-15 | Data Lifecycle Manager must snapshot the persistent volume once a week and keep the last 4 snapshots (the lead's default, pending owner review). |
 | DEV-FR-16 | An AWS Budgets budget must alert when the month's actual or forecast spend passes the threshold the owner sets. |
-| DEV-FR-17 | Studio, the collector, Argo CD, Grafana, and the Flink UI must be reachable only over HTTPS on port 443, through the k3s Traefik ingress, with certificates from Let's Encrypt for the public hostnames. Port 80 is open only for the ACME challenge and the redirect to HTTPS. No other port may be open to the internet. Operators reach the node and the Kubernetes API through AWS Systems Manager Session Manager. |
-| DEV-FR-18 | Every tool must sign people in through one Cognito user pool, as AFP-FR-17 and AFP-FR-23 to AFP-FR-32 of the [Free Plan contract](aws-free-plan.md#functional-requirements) say, with this environment's names, and with each app client's callback and logout URLs on the public hostnames. |
-| DEV-FR-19 | The Kafka browser must be off by default, to save memory. When an operator enables it, AFP-FR-30 applies. |
-| DEV-FR-20 | No secret may appear in git, user data, a tag, an image, an SSM command, or a command line. The node generates the secrets it can, and reads the rest with its own role. |
-| DEV-FR-21 | The CI build-and-pin flow and the GitHub OIDC trust of the Free Plan contract apply, with this environment's deploy branch, registry, and overlay: AFP-FR-04, AFP-FR-05, AFP-FR-20, AFP-FR-21, and AFP-FR-33. |
-| DEV-FR-22 | The node must pull images from ECR with its instance role, as AFP-FR-06 says. |
-| DEV-FR-23 | Argo CD, Postgres, Kafka, the Flink jobs, the customer profiles table, the collector's client address, the metrics, the Flink jobs dashboard, and the pipeline alerts must meet AFP-FR-07 to AFP-FR-14, AFP-FR-22, AFP-FR-26, AFP-FR-34 to AFP-FR-36, with this environment's names. |
+| DEV-FR-17 | Studio, the collector, Argo CD, Grafana, and the Flink UI must be reachable only over HTTPS on port 443, through the k3s Traefik ingress, with certificates from Let's Encrypt for the public hostnames. Port 80 is open only for the ACME challenge and the redirect to HTTPS. No other port may be open to the internet. Operators reach the node and the Kubernetes API through AWS Systems Manager Session Manager. This carries over AFP-FR-15 and AFP-FR-16 (the lead's default, pending owner review). |
+| DEV-FR-18 | Every tool must sign people in through one Cognito user pool, as AFP-FR-17 and AFP-FR-23 to AFP-FR-32 of the [Free Plan contract](aws-free-plan.md#functional-requirements) say, with this environment's names, and with each app client's callback and logout URLs on the public hostnames (the lead's default, pending owner review). |
+| DEV-FR-19 | The Kafka browser must be off by default, to save memory. When an operator enables it, AFP-FR-30 applies (the lead's default, pending owner review). |
+| DEV-FR-20 | No secret may appear in git, user data, a tag, an image, an SSM command, or a command line. The node generates the secrets it can, and reads the rest with its own role. This carries over AFP-FR-18 (the lead's default, pending owner review). |
+| DEV-FR-21 | The CI build-and-pin flow and the GitHub OIDC trust of the Free Plan contract apply, with this environment's deploy branch, registry, and overlay: AFP-FR-04, AFP-FR-05, AFP-FR-20, AFP-FR-21, and AFP-FR-33 (the lead's default, pending owner review). |
+| DEV-FR-22 | The node must pull images from ECR with its instance role, as AFP-FR-06 says (the lead's default, pending owner review). |
+| DEV-FR-23 | Argo CD, Postgres, Kafka, the Flink jobs, the customer profiles table, the collector's client address, the metrics, the Flink jobs dashboard, and the pipeline alerts must meet AFP-FR-07 to AFP-FR-14, AFP-FR-22, AFP-FR-26, AFP-FR-34 to AFP-FR-36, with this environment's names (the lead's default, pending owner review). |
 | DEV-FR-24 | The checkpoint and savepoint bucket must have versioning on, as [state recovery](../architecture/components/state-recovery.md) requires for savepoints. |
 
 ## Non-functional requirements
@@ -105,8 +105,8 @@ Example. The owner starts the environment at 09:00, works until 12:10, and leave
 | DEV-NFR-02 | The node must stop no later than 40 minutes after the last use, and no later than 12 hours and 15 minutes after the start, unless AWS refuses the stop. The 10 minutes past the rule cover one 5-minute check and the stop savepoints. This bound is derived on this page, not set by the owner, and depends on the [savepoint time limit](#open-questions). |
 | DEV-NFR-03 | A stop, a Spot reclaim, or the loss of the node must lose no Kafka message, no Postgres row, and no Flink state older than the last completed checkpoint. |
 | DEV-NFR-04 | The loss of the persistent volume may lose at most the Kafka and Postgres data written since the last weekly snapshot. Flink state survives it, because it lives in S3. |
-| DEV-NFR-05 | The sum of memory requests on the node must stay at or below 80% of its allocatable memory. |
-| DEV-NFR-06 | While the environment is stopped, the AWS bill must grow only by storage and the Elastic IP: the persistent volume, its snapshots, S3, ECR, Secrets Manager or Parameter Store, and the address. |
+| DEV-NFR-05 | The sum of memory requests on the node must stay at or below 80% of its allocatable memory, as AFP-NFR-03 says (the lead's default, pending owner review). |
+| DEV-NFR-06 | While the environment is stopped, the AWS bill must grow only by storage and the Elastic IP: the persistent volume, its snapshots, S3, ECR, Secrets Manager or Parameter Store, the lakehouse KMS key, and the address. |
 
 ## Interfaces
 
@@ -116,14 +116,15 @@ All resources are in one region and one availability zone, because an EBS volume
 
 | Resource | Size or setting |
 |---|---|
-| EC2 Spot instance | One node, about 4 vCPUs and 16 to 32 GiB of memory, IMDSv2 required with a hop limit of 2 so that pods can reach the instance role. The builder picks the type from measured memory requests (DEV-NFR-05). |
+| EC2 Spot instance | One node, about 4 vCPUs and 16 to 32 GiB of memory, IMDSv2 required with a hop limit of 2 so that pods can reach the instance role (the lead's default, pending owner review). Terraform owns its launch template, not the instance (DEV-FR-02). The builder picks the type from measured memory requests (DEV-NFR-05). |
 | EBS gp3 persistent volume | One, in the node's zone, holding the Kafka, Postgres, and k3s data. Its size is the builder's choice. |
 | Elastic IP | One, kept while the environment is stopped, about $3.60 a month. |
 | Security group | Inbound 80 and 443 from anywhere. Nothing else. |
 | IAM role for the node | Session Manager, ECR read, read and write on the bucket's Flink and lakehouse prefixes, the catalog it needs, read of the Cognito app clients, its secrets, and the permission to stop itself. |
 | IAM role for CI | Trusted by GitHub's OIDC provider for this repo's deploy branch only. Push to the ECR repositories. |
 | Permissions for the start command | Start or create the node, attach the persistent volume, and associate the Elastic IP. |
-| S3 bucket | Private and versioned. Flink checkpoints, savepoints, and HA metadata under `flink/`, the lakehouse, and the Terraform state. |
+| S3 bucket | Private and versioned. Flink checkpoints, savepoints, and HA metadata under `flink/`, the lakehouse, and the Terraform state. Every lakehouse object is encrypted with SSE-KMS under the lakehouse key (LKH-NFR-06). |
+| KMS key | One customer-managed key for the lakehouse objects, as [LKH-NFR-06](../architecture/components/lakehouse.md#non-functional-requirements) and [decision 0053](../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) require. The node role and the catalog may encrypt and decrypt with it. |
 | Iceberg catalog and query | Glue Data Catalog or S3 Tables, and Athena, as the lakehouse sink contract chooses (#115). |
 | ECR repositories | The Flink jobs image and the studio image, scan on push. |
 | Secrets Manager or SSM Parameter Store | The logins and the secrets the node cannot generate. |
@@ -173,6 +174,14 @@ The lead carried these over from the [AWS Free Plan contract](aws-free-plan.md) 
 | No NAT gateway and no load balancer | DEV-FR-03 |
 | The Flink jobs dashboard and the pipeline alerts | DEV-FR-23 |
 | The Kafka browser, now off by default | DEV-FR-19 |
+| One project tag on every resource (AFP-FR-02) | DEV-FR-01 |
+| Terraform owns the AWS resources, state in S3 (AFP-FR-19) | DEV-FR-02 |
+| The node pulls from ECR with its instance role (AFP-FR-06) | DEV-FR-22 |
+| Argo CD sync and waves, Postgres, Kafka, the Flink jobs and their metrics, `customer_profiles`, the client address (AFP-FR-07 to 14, 22, 26, 34 to 36) | DEV-FR-23 |
+| Memory requests at or below 80% of allocatable (AFP-NFR-03) | DEV-NFR-05 |
+| IMDSv2 with a hop limit of 2 | [AWS resources](#aws-resources) |
+
+The lead also extended the services DEV-FR-03 rules out with Managed Flink, Kinesis, and Aurora, from the owner's choice to self-host the streaming core, and added the independent cap of DEV-FR-14. Both are the lead's defaults, pending owner review.
 
 What does not carry over: the spend check against the Free Plan credit (AFP-FR-01, AFP-NFR-01), the six nodes and their pools (AFP-NFR-02), and the account's closure at expiry. The Budgets alert and the 12-hour cap take the spend check's place.
 
@@ -188,7 +197,8 @@ This is an estimate from list prices in `us-east-1`, not a measurement. Check it
 | Snapshots | 4 weekly, incremental, at $0.05 a GB-month | $1 to $3 |
 | Elastic IP | $0.005 an hour, all month | $3.60 |
 | S3, ECR, Secrets Manager, Athena, Glue | A few GB stored, few queries | $1 to $3 |
-| Total | | about $20 to $37 |
+| KMS key for the lakehouse | $1 a key-month plus requests | about $1 |
+| Total | | about $21 to $38 |
 
 The design estimated $15 to $30. Either way it is far below the six-node cluster's $450. Most of the range comes from the instance type and the Spot price, which the builder fixes.
 
@@ -197,10 +207,10 @@ The design estimated $15 to $30. Either way it is far below the six-node cluster
 | Risk | Effect | Mitigation |
 |---|---|---|
 | ARM images | ARM instances such as `t4g` and `m7g` cost about 20% less, but every image must build for ARM, and the OpenSnowcat collector image may not support it. | The builder checks every image and chooses ARM or x86 ([left to the builder](#left-to-the-builder)). |
-| Spot reclaim | Service stops for minutes. The Flink jobs resume from their last checkpoint, not a stop savepoint. | Checkpoints in S3 and retained on cancel ([state recovery](../architecture/components/state-recovery.md)). |
+| Spot reclaim | Service stops for minutes. The Flink jobs resume from their last checkpoint, not a stop savepoint. | Checkpoints in S3 and retained on cancel ([state recovery](../architecture/components/state-recovery.md)). Nothing retains them on cancel yet: REC-KI-01, #106. |
 | Spot capacity shortage | The start command cannot get a node in the volume's zone. | The builder decides how the start command handles it. |
 | CDC slots while stopped | Postgres keeps WAL for each slot while Flink is down. | Postgres stops with the node, and nothing writes while it is stopped, so little WAL builds up. |
-| A failure of the idle stop | The node runs and bills until someone notices. | DEV-FR-14 and the Budgets alert. |
+| A failure of the idle stop | The node runs and bills until someone notices. | The independent cap of DEV-FR-14, and the Budgets alert. |
 
 ## Acceptance criteria
 
@@ -220,7 +230,18 @@ The design estimated $15 to $30. Either way it is far below the six-node cluster
 - [ ] A `studio-admin` member signs in to studio, then opens Argo CD, Grafana, and the Flink UI without a password prompt (DEV-FR-18).
 - [ ] With the Kafka browser not enabled, `https://kafka.<ip>.sslip.io` serves nothing from the cluster (DEV-FR-19).
 - [ ] The S3 bucket reports versioning `Enabled` (DEV-FR-24).
-- [ ] The day after a full working day, Cost Explorer shows no compute charge for the hours the node was stopped (DEV-NFR-06).
+- [ ] For one month, the EC2 instance hours in the Cost and Usage Report match the hours between the node's start and stop events in CloudTrail, and the other line items are only those DEV-NFR-06 names (DEV-NFR-06).
+- [ ] With the idle stop killed after a start, the node still stops by 12 hours 15 minutes after the start (DEV-FR-14).
+- [ ] On the node, `df` and the mount table show the Kafka, Postgres, and k3s data directories on the persistent volume, and a node replaced from the launch template comes up with the same topics and rows (DEV-FR-05).
+- [ ] For each signal of DEV-FR-09 alone (a studio request, a Grafana request, an Argo CD request, a Flink UI request, a collector event, a Session Manager session, a Kubernetes API connection), the node is still running 35 minutes after the last other use (DEV-FR-09).
+- [ ] A search of the repo, the launch template's user data, the resource tags, and the images finds no secret value (DEV-FR-20).
+- [ ] A push to the deploy branch that changes only `studio/` moves only the studio tag in the overlay, and CI holds no AWS access key (DEV-FR-21).
+- [ ] Pods pull from ECR with no image pull secret (DEV-FR-22).
+- [ ] Argo CD shows every application `Synced` and `Healthy`, five Flink jobs run with checkpoints in S3, and Prometheus lists the pipeline alerts (DEV-FR-23).
+- [ ] `curl -sI` on studio, Argo CD, Grafana, and the Flink UI returns a certificate that a default trust store accepts, and `http://` redirects to `https://` (DEV-FR-17).
+- [ ] A volume restored from the newest snapshot boots the cluster with its topics and rows as of that snapshot (DEV-NFR-04).
+- [ ] The sum of memory requests in `kubectl describe node` is at or below 80% of allocatable memory (DEV-NFR-05).
+- [ ] Every object under the lakehouse prefix reads `aws:kms` encryption with the lakehouse key (LKH-NFR-06).
 
 ## Left to the builder
 
@@ -235,7 +256,7 @@ The design leaves these to whoever builds the environment. The build issues carr
 
 ## Open questions
 
-- **The Budgets threshold and recipient.** The design gives "such as $30" for the alert. What amount, and which address gets the alert?
+- **The Budgets threshold and recipient.** The design gives "such as $30" for the alert. This page estimates $21 to $38 a month, so a threshold below the estimate fires in a normal month. What amount, and which address gets the alert?
 - **Restart after a Spot reclaim.** Does a new node start on its own after a reclaim during use, or does the environment stay stopped until the operator runs the start command? Starting on its own keeps a working session alive. Staying stopped can never bill for a node nobody asked for.
 - **The region.** The Free Plan environment ran in `us-east-1`, and the cost estimate assumes it. A region nearer the owner costs more per hour but answers faster.
 - **The Free Plan code and branch.** What happens to `infra/aws-free-plan/`, the `deploy/aws-free-plan` branch, the deploy skill's Free Plan reference, and the open issues labeled `aws-free-plan`, now that the account is closed? Delete them, keep them as history, or reuse them for this environment?
