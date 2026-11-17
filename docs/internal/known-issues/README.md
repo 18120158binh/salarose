@@ -12,15 +12,17 @@ Every issue has an id, a severity, and the requirement it breaks. Fix an issue a
 | [Identity graph](components/identity/identity-graph.md), not built | 0 | 0 | 0 | 0 |
 | [Identity merges](components/identity/identity-merges.md), not built | 0 | 0 | 0 | 0 |
 | [Customer decision](components/customer-decision.md) | 0 | 2 | 0 | 0 |
-| [Profile writer](components/profile-writer.md) | 1 | 0 | 0 | 1 |
-| [Journey execution](components/journey-execution.md) | 0 | 0 | 0 | 1 |
+| [Profile writer](components/profile-writer.md) | 0 | 0 | 1 | 1 |
+| [Journey execution](components/journey-execution.md) | 0 | 0 | 1 | 1 |
 | [Notification outbox](components/notification-outbox.md) | 0 | 0 | 0 | 0 |
 | [Business event fan-out](components/business-event-fan-out.md) | 1 | 0 | 0 | 0 |
+| [Lakehouse sink](components/lakehouse.md), not built | 0 | 0 | 0 | 0 |
+| [State recovery](components/state-recovery.md) | 0 | 0 | 5 | 0 |
 | [Segment membership pass](components/segment-membership-pass.md), not built | 1 | 0 | 0 | 0 |
-| [Import applier](components/import-applier.md), not built | 0 | 0 | 0 | 0 |
-| [Import metric pass](components/import-metric-pass.md) | 0 | 0 | 3 | 2 |
+| [Import applier](components/import-applier.md) | 1 | 0 | 2 | 1 |
+| [Import metric pass](components/import-metric-pass.md) | 0 | 0 | 4 | 2 |
 | [Schema migrations](components/schema-migrations.md) | 0 | 0 | 0 | 0 |
-| [Journey builder](features/journey-builder.md) | 0 | 1 | 0 | 0 |
+| [Journey builder](features/journey-builder.md) | 0 | 1 | 1 | 0 |
 | [Campaign management](features/campaign-management.md) | 0 | 0 | 0 | 0 |
 | [Event catalog](features/event-catalog.md) | 0 | 0 | 0 | 0 |
 | [Segments](features/segments.md) | 0 | 0 | 0 | 1 |
@@ -31,11 +33,11 @@ Every issue has an id, a severity, and the requirement it breaks. Fix an issue a
 | [Platform console](features/platform-console.md) | 0 | 0 | 2 | 1 |
 | [Traffic simulator](features/traffic-simulator.md) | 0 | 0 | 0 | 0 |
 | [Studio shell](features/studio-shell.md), not built | 0 | 0 | 0 | 0 |
-| [Home overview](features/home-overview.md), not built | 0 | 0 | 0 | 0 |
+| [Home overview](features/home-overview.md) | 0 | 0 | 1 | 0 |
 | [Customer lookup](features/customer-lookup.md), not built | 0 | 0 | 1 | 1 |
 | [Data health](features/data-health.md), not built | 0 | 0 | 1 | 0 |
 | [Data import](features/data-import.md), not built | 0 | 0 | 0 | 0 |
-| Total | 3 | 3 | 13 | 5 |
+| Total | 4 | 3 | 28 | 8 |
 
 To recount one page, run `grep -cE '^\| [A-Z]+-KI-[0-9]+ \| Blocking \|' <page>.md`, with each severity in turn.
 

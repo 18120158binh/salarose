@@ -33,6 +33,8 @@ A component is a part of the pipeline that no person uses directly: a Flink job 
 | [Journey execution](architecture/components/journey-execution.md) | `event-processor` | Accepted | Partial | [List](known-issues/components/journey-execution.md) |
 | [Notification outbox](architecture/components/notification-outbox.md) | `event-processor` | Accepted | Partial | [List](known-issues/components/notification-outbox.md) |
 | [Business event fan-out](architecture/components/business-event-fan-out.md) | `event-processor` | Draft | Planned | [List](known-issues/components/business-event-fan-out.md) |
+| [Lakehouse sink](architecture/components/lakehouse.md) | `event-processor` | Draft | Planned | [List](known-issues/components/lakehouse.md) |
+| [State recovery](architecture/components/state-recovery.md) | `event-processor` | Draft | Partial | [List](known-issues/components/state-recovery.md) |
 | [Import applier](architecture/components/import-applier.md) | `event-processor` | Accepted | Planned | [List](known-issues/components/import-applier.md) |
 | [Import metric pass](architecture/components/import-metric-pass.md) | `event-processor` | Accepted | Planned | [List](known-issues/components/import-metric-pass.md) |
 | [Segment membership pass](architecture/components/segment-membership-pass.md) | `event-processor` | Accepted | Planned | [List](known-issues/components/segment-membership-pass.md) |

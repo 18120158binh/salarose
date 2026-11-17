@@ -10,6 +10,8 @@ superseded_by: []
 
 # 0039. Shorten the CDC restore window to keep slots under the WAL cap
 
+> Amended by [decision 0052](0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md). The second step, moving the busy tables to a second Postgres cluster, is replaced: the busy tables stay and write less WAL.
+
 ## Context
 
 Each CDC source confirms to its replication slot the log position of a checkpoint some number of completed checkpoints back, not the latest one. The slot keeps every change after the oldest of those checkpoints, so a job restored from any of them, such as a rollback to the savepoint taken before a deploy, reads every change it missed. This is the CDC restore window, JEX-NFR-10. The count was 120: about one hour at the 30 second checkpoint interval, and about two hours for the outbox job at 60 seconds.

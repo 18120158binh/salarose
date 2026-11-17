@@ -1,7 +1,7 @@
 ---
 title: Journey execution known issues
 contract: ../../architecture/components/journey-execution.md
-updated: 2026-10-27
+updated: 2026-11-17
 verified_at: 0db371f8
 ---
 
@@ -12,6 +12,7 @@ Java paths are relative to `event-processor/src/main/java/com/cdp/platform/`.
 | Id | Severity | Issue | Breaks |
 |---|---|---|---|
 | JEX-KI-37 | Minor | A setup trigger opens an entry for every new entry id, with no re-entry check and no refusal count | JEX-FR-18 |
+| JEX-KI-38 | Risk | `user_campaign_state_transitions` is one unpartitioned table that keeps every row, with the analytics indexes | JEX-FR-20, JEX-FR-21, JEX-FR-23, JEX-NFR-12, JEX-NFR-13 |
 
 ## JEX-KI-37. A setup trigger opens an entry for every new entry id, with no re-entry check and no refusal count
 
@@ -21,3 +22,10 @@ Java paths are relative to `event-processor/src/main/java/com/cdp/platform/`.
 - **Fix direction.** Read the entry trigger kind and re-entry setting from the campaign graph when segment entry triggers land, refuse a setup trigger that [Open an entry](../../architecture/components/journey-execution.md#open-an-entry) does not allow, and count it.
 
 Tracked in #223 and #220.
+
+## JEX-KI-38. `user_campaign_state_transitions` is one unpartitioned table that keeps every row, with the analytics indexes
+
+- **Symptom.** The table grows with every completed node and never shrinks. Each insert maintains the three analytics indexes of decision 0035 as well as the primary key and the `campaign_node_stats` index. No transition reaches the lakehouse.
+- **Cause.** `infra/db/schema.sql` creates the table with `CREATE TABLE IF NOT EXISTS user_campaign_state_transitions (...)` and no `PARTITION BY`, and creates `idx_ucst_node_reach`, `idx_ucst_type_event_time`, and `idx_ucst_type_written` on it. No lakehouse sink exists.
+- **Evidence.** Read from `infra/db/schema.sql` at `a29730c`.
+- **Fix direction.** A migration to a table partitioned by `event_timestamp`, with `event_timestamp` in the primary key and `publish_via_partition_root` on `outbox_transitions_pub`, then the lakehouse sink's move. Drop the analytics indexes only after HOM-KI-01 and JBD-KI-37 are fixed. Follows the `db-migration` skill.

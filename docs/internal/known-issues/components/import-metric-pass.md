@@ -1,7 +1,7 @@
 ---
 title: Import metric pass known issues
 contract: ../../architecture/components/import-metric-pass.md
-updated: 2026-11-14
+updated: 2026-11-17
 verified_at: 8e9b5a0
 ---
 
@@ -16,6 +16,7 @@ The pass is built: the CronJob `import-metric-pass` in `infra/k8s/apps/import-me
 | IMP-KI-03 | Risk | A backfill holds every changed row in memory | IMP-NFR-01 |
 | IMP-KI-04 | Minor | `wal_bytes` leaves out the foreign-key trigger's and the commit's WAL | IMP-FR-14, IMP-NFR-02 |
 | IMP-KI-05 | Minor | Pauses reach the pass's row only when the pass ends | IMP-FR-14 |
+| IMP-KI-06 | Risk | The pass reads the import store from a Postgres cluster, not the lakehouse | IMP-FR-03, IMP-FR-22 |
 
 ## IMP-KI-01. The metric SQL and the pass's speed have never run against a Postgres
 
@@ -50,3 +51,10 @@ The pass is built: the CronJob `import-metric-pass` in `infra/k8s/apps/import-me
 - **Cause.** `MetricPass` passes the governor's pauses to `PassLedger.finish` or `fail` and writes them nowhere else.
 - **Evidence.** Read from the code at `8e9b5a0`.
 - **Fix direction.** Write `pauses` on the pass's row when each pause ends.
+
+## IMP-KI-06. The pass reads the import store from a Postgres cluster, not the lakehouse
+
+- **Symptom.** The pass reads the imported records from `cdp-import-pg` in a repeatable-read transaction.
+- **Cause.** `PostgresImportSnapshot` in `jobs/importmetricpass/` opens the transaction and runs `EventMetricQuery`'s grouped SQL there. The contract moved the store to the lakehouse on 2026-11-17 ([decision 0053](../../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)).
+- **Evidence.** Read from the code at `a29730c`.
+- **Fix direction.** A snapshot reader over the Iceberg tables, through the query engine the owner picks. Land it with IAP-KI-06.

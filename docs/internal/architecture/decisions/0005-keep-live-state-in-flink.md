@@ -10,6 +10,8 @@ superseded_by: []
 
 # 0005. Keep live state in Flink and a durable copy in Postgres
 
+> Amended by [decision 0052](0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md). Flink state is the source of truth while the jobs run, and the Postgres copy is a projection that may lag by one coalescing window. [Decision 0054](0054-recover-flink-state-in-four-layers.md) says how state is recovered.
+
 ## Context
 
 Three kinds of per-person state drive decisions: the identity graph, the metric history, and journey progress. Each must be read on every event, fast. Each must also survive state expiry, and people want to query it with SQL.

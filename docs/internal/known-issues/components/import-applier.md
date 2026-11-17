@@ -1,7 +1,7 @@
 ---
 title: Import applier known issues
 contract: ../../architecture/components/import-applier.md
-updated: 2026-11-14
+updated: 2026-11-17
 verified_at: f26a93a
 ---
 
@@ -14,6 +14,7 @@ Java paths are relative to `event-processor/src/main/java/com/cdp/platform/`. Th
 | IAP-KI-02 | Blocking | Tombstones and the 365-day `pii_access_log` deletion are not run | IAP-FR-19, IAP-FR-22 |
 | IAP-KI-04 | Risk | An error while validating retries at every start instead of failing the run | IAP-FR-02 |
 | IAP-KI-05 | Minor | The applier's SQL has no test against Postgres | IAP-FR-03, IAP-FR-04, IAP-FR-23, IAP-FR-24 |
+| IAP-KI-06 | Risk | The import store is a Postgres cluster, not the lakehouse | IAP-FR-15, IAP-FR-26, IAP-FR-27, IAP-NFR-06 |
 
 ## IAP-KI-02. Tombstones and the 365-day `pii_access_log` deletion are not run
 
@@ -33,3 +34,10 @@ Java paths are relative to `event-processor/src/main/java/com/cdp/platform/`. Th
 - **Symptom.** The conditional updates, recovery, expiry, the last-snapshot query, and the applier lock in `jobs/importapplier/PostgresRunStore.java`, `PostgresLookups.java`, and `LockGuard.java`, and the upserts, removals, snapshot keep table, and commit marker in `PostgresImportStore.java`, run only against a real database. The Maven tests cover the queue order, validation, the decision, the report, and the apply rules, recovery, and re-derive over in-memory stores (`ApplyTest`), not these statements.
 - **Cause.** The `event-processor` CI job has no Postgres.
 - **Evidence.** Read from the tests.
+
+## IAP-KI-06. The import store is a Postgres cluster, not the lakehouse
+
+- **Symptom.** Accepted records go to the second Postgres cluster `cdp-import-pg`, whose 10 GiB volume and record cap bound the history a shop can import. A tombstone deletes rows with SQL, and nothing expires older copies, because Postgres keeps none.
+- **Cause.** `PostgresImportStore` in `jobs/importapplier/` writes `import_records`, `import_profiles`, `import_identifiers`, and `import_run_commits` in one Postgres transaction. The tables come from `infra/db/import-store/schema.sql`. The contract moved the store to the lakehouse on 2026-11-17 ([decision 0053](../../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)).
+- **Evidence.** Read from the code and `infra/db/import-store/` at `a29730c`.
+- **Fix direction.** An import store that commits to Iceberg tables, once the catalog is chosen, behind the applier's existing store interface. Delete the cluster, its DDL Job, and its secrets in the same change as IMP-KI-06.

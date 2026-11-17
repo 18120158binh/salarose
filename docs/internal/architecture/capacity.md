@@ -7,8 +7,8 @@ implementation: partial
 area: infra
 tags: [capacity, load-test, wal, cdc, kafka, disk]
 created: 2026-11-09
-updated: 2026-11-09
-version: 0.1
+updated: 2026-11-17
+version: 0.2
 known_issues: ../known-issues/platform.md
 ---
 
@@ -31,7 +31,7 @@ Out of scope:
 
 - Each component's own throughput and latency rules. Each [component contract](../README.md#components) owns them.
 - How the load generator sends traffic, its phases, and its stop conditions other than the slot stop of CAP-FR-16. [The traffic simulator](../features/traffic-simulator.md) owns them.
-- The import store. It holds no replication slot, so its WAL does not reach a slot ([decision 0040](decisions/0040-import-through-a-batch-path-and-a-separate-store.md)).
+- The lakehouse. It writes object storage, not Postgres, so its writes reach no slot ([decision 0053](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)). Its consumer lag on the event-path topics is in scope, as every consumer's is.
 - Alert rules and their thresholds. [Monitoring](../operations/monitoring.md) lists them.
 - A second customer on the same deployment ([decision 0027](decisions/0027-multi-tenancy.md)).
 
@@ -43,6 +43,10 @@ Out of scope:
 | Sustained load | 500 events per second, held for as long as the platform runs. |
 | Burst | 2,000 events per second for 10 minutes. The rate at the collector is 2,000 during the burst, not 500 plus 2,000. |
 | Workload profile | The mix of the test traffic: people, devices, event names, and the share that stitches a new device, updates a metric, or completes a journey node. [The traffic simulator's funnel](../features/traffic-simulator.md#funnel) and scenarios set it. Rows per event depend on it. |
+| Monthly volume | The events the platform must take in a month: 100 million to 500 million. |
+| Coalesced table | A table on the event path whose writer writes each row at most once per coalescing window, not once per event: `user_metrics` ([PRW-FR-13](components/profile-writer.md#functional-requirements)) and, once built, `person_profiles`. |
+| Coalescing window | `T`, in seconds. The window of [PRW-NFR-07](components/profile-writer.md#non-functional-requirements). |
+| Coalescing gain | `g`, for a coalesced table: the row writes it would take per window uncoalesced, divided by the row writes it takes coalesced. 1 means no gain. |
 | Event path | Every table write and topic message that one event causes as it flows from the collector to the last journey transition, except the writes of a paced writer. |
 | Paced writer | A writer whose own contract caps its rate: the membership sink, which writes `segment_members` ([PRW-NFR-06](components/profile-writer.md#non-functional-requirements)), and the passes under the WAL governor, the import metric pass ([IMP-NFR-02](components/import-metric-pass.md#non-functional-requirements)) and the segment membership pass ([SMP-NFR-02](components/segment-membership-pass.md#non-functional-requirements)). The sizing counts each one by its budget, not by rows per event. |
 | WAL rate | The bytes of write-ahead log the whole database writes per second, read as the change of its current WAL position over time. |
@@ -99,6 +103,45 @@ Only one WAL rate has been recorded: about 6 MB/s at 3,000 events per second, in
 
 Without the membership sink the cap would need only 5.3 GB. A paced writer can decide whether a cap fits, so the sizing counts every one.
 
+### Monthly volume
+
+The design must hold 100 million to 500 million events a month. [Decision 0052](decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) records the framing. The target load already covers it, so the target stays.
+
+| Monthly volume | Average rate | Peak at 5 times | Peak at 10 times |
+|---|---|---|---|
+| 100 million | 100,000,000 ÷ 2,629,800 s ≈ 38 events/s | 190 events/s | 380 events/s |
+| 500 million | 500,000,000 ÷ 2,629,800 s ≈ 190 events/s | 950 events/s | 1,900 events/s |
+
+A month here is 30.44 days, 2,629,800 seconds. A 30-day month gives 39 and 193 events per second.
+
+- The sustained load of 500 events per second is above both averages and above every peak at 100 million.
+- At 500 million, a peak of 950 or 1,900 events per second is above the sustained load and under the burst of 2,000. The target covers such a peak for 10 minutes. A longer peak is an [open question](#open-questions).
+
+### Coalesced writes
+
+A coalesced table writes one row per distinct key changed in a window, not one row per event. Its rows per second come from the count of distinct keys, not from rows per event.
+
+For a coalesced table at rate `r`:
+
+- `m`: rows per event uncoalesced, measured as today, such as the metric series one event changes.
+- `D(r, T)`: the distinct rows changed in a window of `T` seconds, measured.
+- Uncoalesced row writes per second: `r × m`.
+- Coalesced row writes per second: `U(r) = D(r, T) ÷ T`.
+- Coalescing gain: `g = (r × m × T) ÷ D(r, T)`, which is at least 1.
+- `w`: WAL per row write of the table, measured. It includes the old row when the table has full replica identity ([CAP-FR-14](#functional-requirements)) and full-page images after a database checkpoint.
+- The table's WAL per second: `U(r) × w`, which equals `(r × m × w) ÷ g`.
+- The event path's WAL per event, coalesced: the uncoalesced WAL per event minus `m × w × (1 − 1 ÷ g)`.
+
+Bounds that need no measurement:
+
+- `g` is 1 when no row changes twice in one window, such as when every person sends at most one event per window. Coalescing then saves nothing.
+- `D(r, T)` is at most `r × m × T`, and at most the people active in the window times the metrics each has.
+- At 190 events per second and `T` = 30 s, a window holds at most 5,700 events, so at most 5,700 × `m` rows.
+
+A flush writes `D(r, T)` rows at once, every `T` seconds. The held WAL of step 3 uses the average over the confirm window, which is unchanged while `T` is no longer than the shortest confirm window, 330 s at the defaults. A window longer than that makes the hold depend on when the flush falls, and the sizing then uses the WAL of one flush plus the average.
+
+The transitions table is not coalesced. Each completed node is still one row. With analytics moved to the lakehouse ([JEX-NFR-13](components/journey-execution.md#non-functional-requirements)), its `w` drops by the WAL of the indexes it no longer carries, measured before and after. Its data on disk stops growing with time: it holds at most its rows per second × bytes per row × the Postgres retention of transitions ([JEX-NFR-12](components/journey-execution.md#non-functional-requirements)), plus one partition.
+
 ## Algorithm
 
 Inputs:
@@ -106,6 +149,8 @@ Inputs:
 - The target load: the sustained rate and the burst rate, in events per second.
 - For each table on the event path, the rows per event. For each topic on the event path, the messages per event, the bytes per event, and its partitions. All from a measured run of the workload profile.
 - The WAL per event, from a measured run.
+- For each coalesced table, its coalescing window `T`, `m`, `w`, and `D(r, T)` at both rates, from a measured run.
+- The Postgres retention of transitions.
 - The budget of each paced writer: its rate cap, and for a governed pass its pause threshold.
 - For each CDC job, its confirm count and checkpoint interval.
 - The margin.
@@ -114,13 +159,13 @@ Inputs:
 
 Steps:
 
-1. **Rows.** For each table `t` and each rate `r`, rows per second = `r` × rows per event(`t`). Do the same for each topic's messages and bytes.
+1. **Rows.** For each table `t` and each rate `r`, rows per second = `r` × rows per event(`t`). For a coalesced table, rows per second = `D(r, T)` ÷ `T` instead, as [Coalesced writes](#coalesced-writes) says. Do the same for each topic's messages and bytes.
 2. **WAL rate.** `E(r)` = `r` × WAL per event. `W(r)` = `E(r)` + the membership sink's rate cap + each governed pass's rate cap, except that a governed pass counts 0 when `E(r)` plus the membership sink is above its pause threshold. The governor reads the cluster WAL rate, which includes the paced writers, and it resumes only under a lower threshold. A rate inside that band can find a pass writing, so the sizing counts it there.
 3. **Held WAL.** For each slot `s` and rate `r`, `H(s, r)` = `W(r)` × (confirm count + 1) × the checkpoint interval of its job. For the cap, use `H(s, burst)`, with the burst rate for the whole confirm window, even where the window is longer than the burst. This holds while checkpoints complete on schedule and the CDC source keeps up with the WAL. A long checkpoint or a source behind the WAL adds to the hold, so the load test measures the hold itself (CAP-FR-09).
 4. **Cap.** The cap on slot WAL must be at least the margin × the largest `H(s, burst)`.
 5. **Stopped slot.** A stopped job confirms nothing, and its slot already holds `H(s, r)` when the job stops. Time to the cap = (cap − `H(s, r)`) ÷ `W(r)`, for each slot, at both rates.
 6. **Kafka.** For each topic, retained bytes = the topic's sustained bytes per second × its time retention + bursts per retention period × (burst rate − sustained rate) × 600 s × the topic's bytes per event. Multiply by the topic's replicas for the bytes on disk. A byte limit applies to each partition, so a topic's byte limit must be at least its retained bytes divided by its partitions, assuming its messages spread evenly over them.
-7. **Disk.** For each disk, used space at the target = the Postgres data on it, grown at the sustained rate over the period the sizing sheet states + the cap on slot WAL + every topic's retained bytes on it + everything else it holds. Postgres and Kafka sum when they share a disk.
+7. **Disk.** For each disk, used space at the target = the Postgres data on it, grown at the sustained rate over the period the sizing sheet states, with `user_campaign_state_transitions` capped by its retention as [Coalesced writes](#coalesced-writes) says + the cap on slot WAL + every topic's retained bytes on it + everything else it holds. Postgres and Kafka sum when they share a disk.
 
 Output: the sizing sheet. Each result sits next to the setting it sets, and each input says where it was measured.
 
@@ -150,6 +195,8 @@ Ties and edge cases:
 | CAP-FR-14 | A table that no CDC publication covers must not have full replica identity. With logical WAL, the database logs the whole old row of such a table on every update and delete, and no reader uses it. This is the lead's default, pending owner review. Whether the readers of the tables a publication covers need the old row is an [open question](#open-questions). |
 | CAP-FR-15 | The capacity report must state the deployed version, the settings in force, the workload profile, every measurement of CAP-FR-09 and CAP-FR-10, and pass or fail for each requirement in [Non-functional requirements](#non-functional-requirements). |
 | CAP-FR-16 | The load generator's load mode must stop the run on its own, and report why, when any replication slot's status becomes `unreserved` or `lost`. `extended` must never stop a run. |
+| CAP-FR-17 | For each coalesced table, the sizing sheet must give `T`, `m`, `w`, `D(r, T)`, and `g` at both rates, with where each was measured, and must derive the table's rows and WAL per second by [Coalesced writes](#coalesced-writes). |
+| CAP-FR-18 | The load test must measure, for each coalesced table, the distinct rows written per window and the row writes per second, so that the capacity report can compare `g` with the sizing sheet. |
 
 ## Non-functional requirements
 
@@ -165,6 +212,7 @@ Ties and edge cases:
 | CAP-NFR-08 | At the target load, each volume that holds Postgres or Kafka, and the disk under it, must keep at least 30% of its space free. This is the lead's default, pending owner review. A load run aborts above 70% full (SIM-FR-12 of [the traffic simulator](../features/traffic-simulator.md#functional-requirements)), so a finished run has shown it, and it keeps the disk clear of the WAL governor's pause under 20% free ([IMP-NFR-03](components/import-metric-pass.md#non-functional-requirements)). |
 | CAP-NFR-09 | The sizing must not meet the cap by lowering the confirm count of [JEX-NFR-10](components/journey-execution.md#non-functional-requirements). A shorter CDC restore window needs its own decision record. |
 | CAP-NFR-10 | `snowplow-good` must keep at least 72 hours of messages at the target load, and the volume that holds Kafka must be sized by CAP-FR-06 to hold that. A recovery that keeps Flink state relies on the raw events waiting there ([rollout known issues](../operations/rollout-known-issues.md#a-new-job-image-cannot-restore-its-savepoint)). From step 6 of the [algorithm](#algorithm), with one burst, the topic alone retains (500 × 259,200 s + 1,500 × 600 s) × its bytes per event, about 130.5 million events: about 13 GB for every 100 bytes per event, and about 65 GB at 500 bytes. The bytes per event come from measurement, so the bound is that product, not a fixed number. |
+| CAP-NFR-11 | The platform must take a monthly volume of 100 million to 500 million events. Its average, 38 to 190 events per second, must stay under the sustained load of CAP-NFR-01, and its peaks, 5 to 10 times the average, under the burst. CAP-NFR-01 is not changed by this. |
 
 ## Interfaces
 
@@ -173,12 +221,13 @@ The sizing and the load test read these. None of them is new.
 | Interface | What capacity work reads |
 |---|---|
 | The collector | The accepted event rate. |
-| Tables on the event path: `identity_graph`, `event_volume`, `user_metrics`, and `user_campaign_state_transitions` | Rows written per second, and WAL per row from the database's per-statement WAL statistics. [The data model](data-model.md) says which job writes each. |
+| Tables on the event path: `identity_graph`, `event_volume`, `user_metrics`, `user_campaign_state_transitions`, and, once built, `person_profiles` | Rows written per second, and WAL per row from the database's per-statement WAL statistics. For a coalesced table, also the distinct rows per window. [The data model](data-model.md) says which job writes each. |
 | `segment_members`, once built, and the tables of the governed passes | Nothing per event. The paced writers' budgets stand for them. |
 | The CDC publications and their replication slots | Which tables each publication covers, each slot's held WAL and status. [The data model](data-model.md#publications-for-cdc) lists them. |
 | The database | Its current WAL position, its cap on slot WAL, its maximum WAL size, and each table's replica identity. |
 | Kafka topics on the event path: `snowplow-good`, `snowplow-parsed`, `customer-profile-mutations`, `journey-engine-matched-events`, `journey-engine-segment-checks`, `journey-engine-outbound-noti`, and, once built, `segment-membership-changes` | Messages and bytes per second, partitions, each consumer's lag, and each topic's retention. [The architecture overview](overview.md#kafka-topics) lists them. |
 | Each Flink job | Checkpoint duration, failed and expired checkpoints, and restarts. |
+| The lakehouse sink | Its consumer lag on the ingestion topics, like every other consumer's. |
 | Each node | Free space on each volume that holds Postgres or Kafka, and on the disk under it. |
 
 ## Failure handling
@@ -228,12 +277,17 @@ The sizing and the load test read these. None of them is new.
 - **The segment membership pass's budget.** SMP-NFR-02 gives the pass the governor's thresholds but no rate cap of its own. The sizing counts it at the import metric pass's 0.25 MB/s. That is the lead's default, pending owner review.
 - **Checkpoint duration bound.** The load test measures checkpoint duration, and CAP-NFR-04 forbids failures. Whether a duration under the timeout but close to it fails the run is undecided.
 - **Background writers during the test.** Whether the load test runs with the paced writers at their caps, or counts them only on paper, is undecided. The sizing counts them either way (CAP-FR-02).
+- **Peaks longer than the burst.** At 500 million events a month, a peak of 5 to 10 times the average is 950 to 1,900 events per second. The burst covers that for 10 minutes (CAP-NFR-11). How long a real peak lasts, and whether the target needs a longer burst, is undecided.
+- **The coalescing window.** `T` is open in [the profile writer](components/profile-writer.md#open-questions). The sizing cannot give the WAL of `user_metrics` until it is set and `D(r, T)` is measured.
+- **Postgres retention of transitions.** It caps the transitions table's data on disk and is open in [journey execution](components/journey-execution.md#open-questions).
 - **Rerunning the test.** CAP-FR-07 requires the sizing sheet to be checked again on a change. Which changes also require a new load test is undecided.
 
 ## Related
 
 - [Decision 0039. Shorten the CDC restore window to keep slots under the WAL cap](decisions/0039-shorten-the-cdc-restore-window.md): the incident and the cap.
-- [Decision 0040. Import through a batch path and a separate store](decisions/0040-import-through-a-batch-path-and-a-separate-store.md): why imports write no WAL to a slot.
+- [Decision 0040. Import through a batch path and a separate store](decisions/0040-import-through-a-batch-path-and-a-separate-store.md): the WAL governor of the import metric pass.
+- [Decision 0052. Keep hot state in Flink and a redesigned projection in Postgres](decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md): coalesced writes and the monthly volume.
+- [Decision 0053. Store raw events, transition history, and imports in an Iceberg lakehouse](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md): why imports and history write no WAL to a slot.
 - [Journey execution](components/journey-execution.md#non-functional-requirements), JEX-NFR-10: the CDC restore window.
 - [Profile writer](components/profile-writer.md#non-functional-requirements), PRW-NFR-06; [import metric pass](components/import-metric-pass.md#non-functional-requirements), IMP-NFR-02 and IMP-NFR-03; [segment membership pass](components/segment-membership-pass.md#non-functional-requirements), SMP-NFR-02: the paced writers.
 - [Traffic simulator](../features/traffic-simulator.md): the load generator.

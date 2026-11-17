@@ -7,8 +7,8 @@ implementation: partial
 area: event-processor
 tags: [data-import, batch, metrics, wal, idempotency]
 created: 2026-11-08
-updated: 2026-11-14
-version: 1.0
+updated: 2026-11-17
+version: 2.0
 known_issues: ../../known-issues/components/import-metric-pass.md
 ---
 
@@ -16,7 +16,7 @@ known_issues: ../../known-issues/components/import-metric-pass.md
 
 ## Purpose
 
-Marketers target on values such as "spend in the last 90 days" and "loyalty tier", which come from a shop's imported records ([data import](../../features/data-import.md)). The import metric pass computes those values once a night from the import store, and writes them to `customer_attributes` in the main Postgres, where [customer decision](customer-decision.md) and the segment runtime's nightly pass read them. It writes only rows whose values changed, at a pace the main Postgres's replication slots and disk can absorb, so a backfill cannot repeat #320.
+Marketers target on values such as "spend in the last 90 days" and "loyalty tier", which come from a shop's imported records ([data import](../../features/data-import.md)). The import metric pass computes those values once a night from the import store, the import tables in the lakehouse ([decision 0053](../decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)), and writes only the summarized results to `customer_attributes` in the main Postgres, where [customer decision](customer-decision.md) and the segment runtime's nightly pass read them. It writes only rows whose values changed, at a pace the main Postgres's replication slots and disk can absorb, so a backfill cannot repeat #320.
 
 ## Scope
 
@@ -57,7 +57,7 @@ Out of scope:
 
 ## Behavior
 
-At 03:00 on 2026-11-08 the pass starts with `as_of` `2026-11-08T03:00:00+07:00`. Every run that committed to the import store before its snapshot is in the pass. A run that commits at 03:01 lands in the 2026-11-09 pass.
+At 03:00 on 2026-11-08 the pass starts with `as_of` `2026-11-08T03:00:00+07:00`. Every run that committed to the import store before the pass's snapshot is in the pass. A run that commits at 03:01 lands in the 2026-11-09 pass.
 
 The pass computes three `orders` metrics that are not archived, `spend_90d` (`SUM` of `total` over 90 days, `status = 'completed'`), `orders_90d` (`COUNT` over 90 days), and `last_order_at` (`LAST_TIME`, no window), and the attribute columns of the `customers` profile type. Customer `0912345678` has the row:
 
@@ -99,7 +99,7 @@ The pass job starts every 10 minutes and does this:
 3. If the latest scheduled time at or before now has no pass, insert one at `running` with that time as `as_of`. `as_of` is unique, so a second start for the same night inserts nothing. A missed 03:00 start runs at the next start.
 4. Otherwise, if a `failed` pass has `retry_requested_at`, check IMP-FR-18 again. Clear the stamp and refuse when it fails. Otherwise move the pass to `running`, keeping its row and its `as_of`.
 5. Otherwise exit.
-6. Open one repeatable-read transaction on the import store. Every read in [Compute values](#2-compute-values) and [Build each row](#3-build-each-row) uses it.
+6. Pin one snapshot of each import store table. Every read in [Compute values](#2-compute-values) and [Build each row](#3-build-each-row) reads those snapshots.
 7. Read the commit markers in `import_run_commits`. The pass includes exactly the runs whose markers it sees, and keeps their ids. Record the latest `committed_at` as `last_run_finished_at`.
 
 ### 2. Compute values
@@ -125,7 +125,7 @@ Count the holders of each email and phone value across all profile datasets. A v
 For each customer and source, build the attribute object:
 
 - Keys are the metric names, or the profile type's column names plus `emails` and `phones`.
-- For an event source, each metric whose `archived_at` is set keeps the key and value of the customer's stored `customer_attributes` row for that source, unchanged. The pass reads them in the repeatable-read transaction. A key the stored row lacks stays absent. Unarchiving ends the carry: the next pass computes the metric again.
+- For an event source, each metric whose `archived_at` is set keeps the key and value of the customer's stored `customer_attributes` row for that source, unchanged. The pass reads them from the main Postgres before it publishes. A key the stored row lacks stays absent. Unarchiving ends the carry: the next pass computes the metric again.
 - A value with no value is left out of the object.
 - A `datetime` is written as ISO 8601 with the reporting time zone's offset, to the second.
 - A `number` is converted to an IEEE 754 double, whatever type the query returned it as.
@@ -135,7 +135,7 @@ The canonical form is the JSON Canonicalization Scheme of RFC 8785. It sorts obj
 
 A customer and an event source get a row when the customer has at least one record of the type, in any window or none, or when their stored row holds a value of an archived metric. A customer whose only values are archived metrics keeps the row with those values. A customer and a profile source get a row when the customer has a row in `import_profiles` for the type.
 
-The pass stages every built row and its hash in memory or in a local file of its own container, never in a main Postgres table, whose writes would count against the governor. It then ends the repeatable-read transaction before it publishes. A governor pause then holds no snapshot open on the import store, and vacuum there is not blocked.
+The pass stages every built row and its hash in memory or in a local file of its own container, never in a main Postgres table, whose writes would count against the governor. It then finishes every read of the import store before it publishes. A governor pause then holds no read open on the import store, and the import store's snapshot expiry, which a person's deletion needs ([IAP-FR-27](import-applier.md#functional-requirements)), is not held back by a paused pass.
 
 ### 4. Publish under the WAL governor
 
@@ -186,7 +186,7 @@ A failed pass leaves some rows from itself and the rest from the pass before. Ea
 |---|---|
 | IMP-FR-01 | A pass must start once a night, at the pass job's first start at or after 03:00 in the reporting time zone, whether or not a run arrived, with `as_of` set to that scheduled time. |
 | IMP-FR-02 | Only the instance that holds the pass lock may run, and it must stop when the lock's connection drops. Before it starts its own pass, it must move every pass at `running` to `failed`. (the lead's default) |
-| IMP-FR-03 | A pass must read the import store in one repeatable-read snapshot, must include exactly the runs whose commit markers that snapshot holds, and must end that transaction before it publishes. |
+| IMP-FR-03 | A pass must read each import store table at one pinned snapshot, must include exactly the runs whose commit markers those snapshots hold, and must finish every read of the import store before it publishes. |
 | IMP-FR-04 | A pass must set `first_pass_id` to itself on each run it includes that has none, in the transaction that moves it to `done`. A pass that fails sets none. |
 | IMP-FR-05 | Each imported metric definition whose `archived_at` is null must compute, for every customer with a record of its type, the function in [Compute values](#2-compute-values) over the records in (`as_of` minus N days, `as_of`] that pass its filters, exactly. |
 | IMP-FR-06 | A customer with records of the type but none in the window must get 0 for `COUNT`, `SUM`, and `DISTINCT_COUNT`, and no value for every other function. |
@@ -205,6 +205,7 @@ A failed pass leaves some rows from itself and the rest from the pass before. Ea
 | IMP-FR-15 | The pass must be the only writer of `customer_attributes`. |
 | IMP-FR-16 | The pass must write nothing to the import store. |
 | IMP-FR-17 | The pass must publish no row for a customer key whose tombstone is in `person_tombstones` when publishing starts, and must delete that key's stored rows. |
+| IMP-FR-22 | The pass must read imported records only from the import store in the lakehouse. It must write to the main Postgres only `customer_attributes`, its own row in `import_metric_passes`, and `first_pass_id` on `import_runs`. |
 
 ## Non-functional requirements
 
@@ -220,7 +221,7 @@ A failed pass leaves some rows from itself and the rest from the pass before. Ea
 
 | Direction | Interface | Contract |
 |---|---|---|
-| Read | Import store `import_records`, `import_profiles`, `import_identifiers`, `import_run_commits` | See [import applier](import-applier.md#interfaces) |
+| Read | Lakehouse `import_records`, `import_profiles`, `import_identifiers`, `import_run_commits` | The import store. See [import applier](import-applier.md#interfaces). |
 | Read | `import_metric_definitions` | `id`, `record_type_id`, `name`, `display_name`, `function`, `column`, `filters`, `window_days`, `archived_at` |
 | Read | `import_record_types`, `import_record_type_versions` | Names, kinds, and current columns |
 | Read | `person_tombstones` | Tombstones, checked with the tombstone key |
@@ -271,22 +272,25 @@ Customer decision reads `customer_attributes` by `customer_key` ([customer decis
 - Given a pass whose snapshot was taken before a tombstone for `c-4` was requested, then the pass publishes no row for `c-4` and deletes its stored rows. (IMP-FR-17)
 - Given two attribute objects with the same values, keys in different orders, `emails` `["b@x.vn", "a@x.vn"]` and `["a@x.vn", "b@x.vn"]`, and `spend_90d` returned as `300` and as `300.00`, then their hashes are equal. (IMP-FR-11)
 - Given a pass that failed after publishing 600 of 1,000 changed rows, and no run committed since, when it is retried, then it writes the remaining 400, and `customer_attributes` equals that of a single clean pass with the same runs, definitions, and `as_of`. (IMP-FR-12)
-- Given a pass that has staged its rows and is paused by the governor, then it holds no open transaction on the import store. (IMP-FR-03)
+- Given a pass that has staged its rows and is paused by the governor, then it holds no read open on the import store, and a snapshot expiry of the import store runs to completion. (IMP-FR-03)
 - Given a test that lowers a slot's `safe_wal_size` under half the cap, then the pass pauses, and resumes when it rises above two thirds. Given no cap set, or a missing filesystem reading, then the pass pauses with that reason. (IMP-FR-13)
 - Given 30% free on the node's filesystem and database bytes at 85% of the claim, then the pass pauses for disk. (IMP-FR-13)
 - Given a fake cluster WAL rate of 3 MB/s, then the pass writes nothing until the rate is under 1.5 MB/s. (IMP-FR-13, IMP-NFR-02)
 - Given a test database where the applier, studio, and customer decision each run their writes, then no row of `customer_attributes` was written by any role but the pass's. (IMP-FR-15)
-- Given a pass with the applier stopped, then every import store table holds the same rows before and after it, and the pass connects to the import store as a user that may only read. (IMP-FR-16)
+- Given a pass with the applier stopped, then every import store table has the same current snapshot before and after it, and the pass reaches the import store with credentials that may only read. (IMP-FR-16)
 - Given a finished pass while the live pipeline also wrote WAL, then its `wal_bytes` equals the sum of its own statements' WAL usage, not the LSN difference, and its row holds `changed_rows` and each pause. (IMP-FR-14)
 - Given a backfill on a staging copy, then the pass reports its own measured WAL bytes, and its own rate stays under 0.25 MB/s. (IMP-NFR-02)
 - Given 5 million records on a staging copy and no change since the last pass, then a pass with 1 vCPU and 2 GiB writes zero rows and is `done` within 1 hour. (IMP-NFR-01)
 - Given the batch size set to 100 and the schedule to 04:00, then the pass starts at 04:00 and checks the governor every 100 rows. Given no settings, then the defaults in IMP-NFR-03 hold. (IMP-NFR-03)
 - Given the main Postgres, then `customer_attributes` has replica identity `default` and is in no row of `pg_publication_tables`. (IMP-NFR-04)
 - Given a pass that pauses and publishes, then its log lines hold its pass id, counts, and pauses, and no customer key or attribute value. (IMP-NFR-05)
+- Given a pass over 1 million imported records, then the main Postgres's tables written during it are `customer_attributes`, `import_metric_passes`, and `import_runs` only. (IMP-FR-22)
 
 ## Open questions
 
-None. The figures for WAL per changed row and pass duration are estimates in [decision 0040](../decisions/0040-import-through-a-batch-path-and-a-separate-store.md#why). The first backfill and the first week of passes correct them from `wal_bytes` and the pass durations.
+- **The query engine.** The engine that runs the grouped queries over the import store follows from the lakehouse's open questions on the catalog and the query engine ([lakehouse sink](lakehouse.md#open-questions)). IMP-NFR-01's 1 hour on 1 vCPU and 2 GiB was set for a Postgres import store, and holds until the engine is chosen.
+
+The figures for WAL per changed row and pass duration are estimates in [decision 0040](../decisions/0040-import-through-a-batch-path-and-a-separate-store.md#why). The first backfill and the first week of passes correct them from `wal_bytes` and the pass durations.
 
 ## Related
 
@@ -294,6 +298,7 @@ None. The figures for WAL per changed row and pass duration are estimates in [de
 - [Customer decision](customer-decision.md)
 - [Data import](../../features/data-import.md)
 - [0040. Import through a batch path and a separate store](../decisions/0040-import-through-a-batch-path-and-a-separate-store.md)
+- [0053. Store raw events, transition history, and imports in an Iceberg lakehouse](../decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)
 - [0041. Imported data reaches conditions as profile attributes](../decisions/0041-imported-data-reaches-conditions-as-profile-attributes.md)
 - [0038. Store segment membership and evaluate every segment](../decisions/0038-store-segment-membership-and-evaluate-every-segment.md)
 - [Known issues](../../known-issues/components/import-metric-pass.md)

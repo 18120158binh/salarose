@@ -10,6 +10,8 @@ superseded_by: []
 
 # 0035. Compute journey analytics from the transitions on read
 
+> Amended by [decision 0053](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md). The definitions and the compute-on-read approach stay. Analytics read the transition history in the lakehouse, not the hot table.
+
 ## Context
 
 Studio v2's phase 1 shows numbers that no table holds yet: entries, messages requested, and watch outcomes per time range on the [home overview](../../features/home-overview.md), and per-node Entered, Waiting, and Completed with a branch split and a time range in [journey analytics](../../features/journey-builder.md#node-analytics). Phase 1 may add read views and indexes, but no pipeline data.

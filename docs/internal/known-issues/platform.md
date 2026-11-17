@@ -1,7 +1,7 @@
 ---
 title: Platform known issues
 contract: ../architecture/capacity.md
-updated: 2026-11-09
+updated: 2026-11-17
 verified_at: b52e8830
 ---
 
@@ -22,7 +22,7 @@ This page holds the gaps against [platform capacity](../architecture/capacity.md
 - **Symptom.** A burst on `identity_graph`, `user_metrics`, or `user_campaign_state_transitions` makes every replication slot hold its WAL, including the slots of the configuration tables, which change a few times a day. On 2026-11-07 one load run took all seven slots past the cap together (#320).
 - **Cause.** Every table lives in the one database `auroracy`, and a slot keeps all the WAL the database writes after its confirmed position, not only the WAL of its publication's tables. The publications in `infra/db/schema.sql` (`CREATE publication ... FOR TABLE`) are per table, but that does not split the WAL. Part 1 of the fix (#337, [decision 0039](../architecture/decisions/0039-shorten-the-cdc-restore-window.md)) shortened the confirm window and raised `max_slot_wal_keep_size` to 8 GB. Part 2, moving the busy tables out, is open.
 - **Evidence.** The incident and Part 2's status are in [rollout known issues](../operations/rollout-known-issues.md#cdc-slots-were-invalidated-by-a-write-burst). That the shared WAL still applies is read from `schema.sql` and `infra/k8s/data/postgres.yaml`. No load test at the target load of CAP-NFR-01 has run, so whether the slots now pass CAP-NFR-02 and CAP-NFR-03 at the target is not known.
-- **Fix direction.** Move the busy tables to a second Postgres cluster, as decision 0039 plans, in its own decision record.
+- **Fix direction.** [Decision 0052](../architecture/decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) replaces decision 0039's second cluster: the busy tables stay and write less. Coalesce `user_metrics` writes (PRW-KI-10), partition the transitions table and move its history out (JEX-KI-38), and fix PLT-KI-18. Then measure the WAL per event against the sizing ([CAP-FR-17](../architecture/capacity.md#functional-requirements)).
 
 ## PLT-KI-17. Kafka's retention has no byte limit, and Kafka shares a disk with Postgres
 
