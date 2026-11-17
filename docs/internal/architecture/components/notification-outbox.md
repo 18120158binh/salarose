@@ -7,8 +7,8 @@ implementation: partial
 area: event-processor
 tags: [notifications, outbox, cdc, kafka]
 created: 2026-10-14
-updated: 2026-11-08
-version: 1.3
+updated: 2026-11-17
+version: 1.4
 known_issues: ../../known-issues/components/notification-outbox.md
 ---
 
@@ -22,7 +22,7 @@ The marketer puts a message on an engagement node, for example a push titled "St
 
 In scope:
 
-- Reading completed engagement nodes from `user_campaign_state_transitions`.
+- Reading completed engagement nodes from `user_campaign_state_transitions`, through the outbox's own publication.
 - Adding the person's profile.
 - Publishing the notification request.
 
@@ -97,12 +97,14 @@ Example. `n5_sms` completes for `canon_id` `7e9d...` in `CAMP-0001`. The outbox 
 | OUT-FR-06 | `generated_at` must be the transition's event time, in ISO 8601 UTC. |
 | OUT-FR-07 | Null fields must be left out of the request. |
 | OUT-FR-08 | A failed profile lookup must not stop the outbox. The request is published without contact fields. Its `profile` keeps the transition's `user_id` and `domain_user_id`, so that a `web_push` sender can still reach the browser. This was chosen while fixing the code, and is pending owner review. |
+| OUT-FR-09 | The outbox must read transitions through its own publication, `outbox_transitions_pub`, which covers `user_campaign_state_transitions` and the heartbeat table, as it does today. Once the table is partitioned, the outbox must still receive every partition's inserts. How the publication delivers them is an [open question](#open-questions). |
+| OUT-FR-10 | A partition that leaves Postgres ([LKH-FR-07](lakehouse.md#functional-requirements)) must publish no change on `outbox_transitions_pub`, and must make the outbox publish nothing. |
 
 ## Non-functional requirements
 
 | Id | Requirement |
 |---|---|
-| OUT-NFR-01 | Delivery is at least once. A replay publishes the requests since the last checkpoint again. A start without the CDC source's saved log position reads a snapshot of `user_campaign_state_transitions` and publishes a request again for every engagement transition in it, however old. The sender must deduplicate on `execution_id` across all the requests it has ever received, not within a time window. This holds only while a node completes at most once per person. If a journey may ever run again for the same person (see the open question in [journey execution](journey-execution.md#open-questions)), the key must change. |
+| OUT-NFR-01 | Delivery is at least once. A replay publishes the requests since the last checkpoint again. A start without the CDC source's saved log position reads a snapshot of `user_campaign_state_transitions` and publishes a request again for every engagement transition in it, however old. Once the table is partitioned, the snapshot holds only the hot partitions, so it publishes again only the engagement transitions still in Postgres. The sender must deduplicate on `execution_id` across all the requests it has ever received, not within a time window. This holds only while a node completes at most once per person. If a journey may ever run again for the same person (see the open question in [journey execution](journey-execution.md#open-questions)), the key must change. |
 | OUT-NFR-02 | The outbox and the timer flow can be switched on and off separately. |
 | OUT-NFR-03 | Profile lookups may read a replica. |
 
@@ -110,7 +112,7 @@ Example. `n5_sms` completes for `canon_id` `7e9d...` in `CAMP-0001`. The outbox 
 
 | Direction | Interface | Contract |
 |---|---|---|
-| In | CDC `user_campaign_state_transitions` | New transition rows, through publication `outbox_transitions_pub` |
+| In | CDC `user_campaign_state_transitions` | New transition rows, through publication `outbox_transitions_pub`, the outbox's own (OUT-FR-09). Covers every hot partition. |
 | In | `customer_profiles` | Profile, by `cdp_uuid`. Owned by another system. |
 | In | `identity_graph` | The `user_id` of the person's `canon_id`, for a transition without one |
 | Out | Kafka `journey-engine-outbound-noti` | Notification request, no key |
@@ -147,7 +149,8 @@ The request's `context` is the transition's context, as a JSON object.
 | Request cannot be built after the profile lookup | Log it and publish nothing. Failing would restart the job on the same transition after every replay. |
 | Transition context is not a JSON object | Log it and publish without `context`. |
 | Restart from a checkpoint or savepoint | The CDC source resumes from its saved log position. Requests since that checkpoint may publish again. The sender deduplicates. This holds within the CDC restore window of [journey execution](journey-execution.md#non-functional-requirements) (JEX-NFR-10): 10 completed checkpoints of any one run after the restored one, about 10 minutes at the default interval. Past it, the transitions written between the checkpoint and the position the slot still holds are skipped. The run that read them published their requests, but the restored timer flow starts no watch for them. |
-| Start without the CDC source's saved log position | The source reads a snapshot of the whole table. Every engagement transition in it publishes again. The sender deduplicates on `execution_id` across all history. A change to the job graph keeps the source's saved position. |
+| Start without the CDC source's saved log position | The source reads a snapshot of the whole table, which holds only the hot partitions once it is partitioned. Every engagement transition in it publishes again. The sender deduplicates on `execution_id` across all history. A change to the job graph keeps the source's saved position. |
+| A partition of `user_campaign_state_transitions` leaves Postgres | Nothing reaches the outbox (OUT-FR-10). |
 
 ## Acceptance criteria
 
@@ -164,9 +167,12 @@ The request's `context` is the transition's context, as a JSON object.
 - Given the job starts without its saved log position, then a request is published again for every past engagement transition, each with the `execution_id` it had before. (OUT-NFR-01)
 - Given the profile database is down, then a request is published without contact fields: its `profile` holds only `user_id` and `domain_user_id`. (OUT-FR-08)
 - Given a transition with context `{"product.price": "12990000"}`, then the request's `context` holds it. (OUT-FR-04)
+- Given the publication `outbox_transitions_pub`, when its tables are listed, then it covers `user_campaign_state_transitions` and the heartbeat table only. Given a new time partition, when an engagement transition is written to it, then the outbox publishes its request. (OUT-FR-09)
+- Given a partition that leaves Postgres, then the outbox reads no change for it and publishes nothing. (OUT-FR-10)
 
 ## Open questions
 
+- Does the outbox need more than today's publication? `outbox_transitions_pub` already covers only the transitions table and the heartbeat table, and [decision 0052](../decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) records it as the current state. Once the table is partitioned, how the publication delivers each partition's inserts, for example under the parent table's name, is undecided too.
 - Should a request whose profile lookup failed keep the transition's `user_id` and `domain_user_id`? OUT-FR-08 says yes, so that `web_push` stays deliverable. The alternative is to leave out `profile`. This was chosen while fixing the code, and is pending owner review.
 - Should `generated_at` be the event time of the transition or the time the request is published?
 - Which content fields does each channel require, and should the outbox reject an action that lacks them?
@@ -174,6 +180,8 @@ The request's `context` is the transition's context, as a JSON object.
 ## Related
 
 - [Journey execution](journey-execution.md)
+- [Lakehouse sink](lakehouse.md)
+- [0052. Keep hot state in Flink and a redesigned projection in Postgres](../decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md)
 - [Journey builder](../../features/journey-builder.md)
 - [0006. At-least-once delivery with idempotent writes](../decisions/0006-at-least-once-delivery-with-idempotent-writes.md)
 - [Known issues](../../known-issues/components/notification-outbox.md)

@@ -8,7 +8,7 @@ Each record explains one choice that shapes the architecture: the context, the d
 | [0002](0002-key-every-write-by-its-owner.md) | Key every stateful write by its owner | Accepted | 2026-06-23 |
 | [0003](0003-load-rules-through-cdc-and-broadcast-state.md) | Load rules through CDC and broadcast state | Accepted | 2026-06-03 |
 | [0004](0004-compute-metrics-and-decisions-in-one-keyed-job.md) | Compute metrics and decisions in one keyed job | Accepted | 2026-08-07 |
-| [0005](0005-keep-live-state-in-flink.md) | Keep live state in Flink and a durable copy in Postgres | Accepted | 2026-08-07 |
+| [0005](0005-keep-live-state-in-flink.md) | Keep live state in Flink and a durable copy in Postgres | Accepted. Amended by [0052](0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) | 2026-08-07 |
 | [0006](0006-at-least-once-delivery-with-idempotent-writes.md) | At-least-once delivery with idempotent writes | Accepted | 2026-08-21 |
 | [0007](0007-staff-sign-in-through-oidc.md) | Staff sign in through OpenID Connect | Accepted. Superseded in part by [0024](0024-create-staff-at-first-sign-in-with-the-providers-role.md) | 2026-10-14 |
 | [0008](0008-one-trigger-watermark-for-both-producers.md) | One trigger watermark for both producers | Proposed | 2026-10-18 |
@@ -38,12 +38,12 @@ Each record explains one choice that shapes the architecture: the context, the d
 | [0032](0032-fan-out-business-events-to-interested-people.md) | Fan out business events to interested people | Accepted | 2026-10-21 |
 | [0033](0033-a-journey-instance-is-one-entry.md) | A journey instance is one entry | Accepted | 2026-10-21 |
 | [0034](0034-build-studio-v2-side-by-side-under-v2.md) | Build studio v2 side by side under `/v2` in the same app | Accepted. Superseded in part by [0037](0037-one-studio-retire-the-classic-studio.md) and [0045](0045-adopt-the-salarose-design-system-and-approve-a-visual-draft-before-ui-code.md) | 2026-11-07 |
-| [0035](0035-compute-journey-analytics-from-transitions-on-read.md) | Compute journey analytics from the transitions on read | Accepted | 2026-11-07 |
+| [0035](0035-compute-journey-analytics-from-transitions-on-read.md) | Compute journey analytics from the transitions on read | Accepted. Amended by [0053](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) | 2026-11-07 |
 | [0036](0036-store-journey-drafts-on-the-server-outside-cdc.md) | Store journey drafts on the server, outside CDC | Accepted | 2026-11-08 |
 | [0037](0037-one-studio-retire-the-classic-studio.md) | One studio: retire the classic studio | Accepted | 2026-11-08 |
 | [0038](0038-store-segment-membership-and-evaluate-every-segment.md) | Store segment membership and evaluate every segment | Accepted | 2026-11-08 |
-| [0039](0039-shorten-the-cdc-restore-window.md) | Shorten the CDC restore window to keep slots under the WAL cap | Accepted | 2026-11-08 |
-| [0040](0040-import-through-a-batch-path-and-a-separate-store.md) | Import through a batch path and a separate store | Accepted | 2026-11-08 |
+| [0039](0039-shorten-the-cdc-restore-window.md) | Shorten the CDC restore window to keep slots under the WAL cap | Accepted. Superseded in part by [0052](0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) | 2026-11-08 |
+| [0040](0040-import-through-a-batch-path-and-a-separate-store.md) | Import through a batch path and a separate store | Accepted. Superseded in part by [0053](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) | 2026-11-08 |
 | [0041](0041-imported-data-reaches-conditions-as-profile-attributes.md) | Imported data reaches conditions as profile attributes | Accepted | 2026-11-08 |
 | [0042](0042-keep-imported-contact-details-plain-behind-masking-and-tombstones.md) | Keep imported contact details in plain form behind masking and tombstones | Accepted | 2026-11-08 |
 | [0043](0043-apply-schema-changes-as-migrations-on-every-sync.md) | Apply schema changes as versioned migrations on every sync | Accepted | 2026-11-08 |
@@ -55,5 +55,8 @@ Each record explains one choice that shapes the architecture: the context, the d
 | [0049](0049-the-ingestion-api-writes-plain-json-to-its-own-topic-and-leaves-history-to-import.md) | The ingestion API writes plain JSON to its own topic, and leaves history to the import | Accepted | 2026-11-05 |
 | [0050](0050-one-account-per-person-no-unmerge-and-a-5-second-merge-bound.md) | One account per person, no unmerge, and a 5 second merge bound | Accepted | 2026-11-14 |
 | [0051](0051-fold-to-the-earliest-instance-and-count-nodes-through-merge-history.md) | Fold to the earliest instance, accept the fold window, and count nodes through merge history | Accepted | 2026-11-14 |
+| [0052](0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) | Keep hot state in Flink and a redesigned projection in Postgres, with no new database | Accepted | 2026-11-17 |
+| [0053](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) | Store raw events, transition history, and imports in an Iceberg lakehouse | Accepted | 2026-11-17 |
+| [0054](0054-recover-flink-state-in-four-layers.md) | Recover Flink state in four layers | Accepted | 2026-11-17 |
 
 To add a decision, copy [the template](../../_templates/decision.md) to the next free number. Never edit an accepted record to reverse it. Write a new record and set `superseded_by` on the old one.

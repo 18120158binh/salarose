@@ -1,7 +1,7 @@
 ---
 title: Journey builder known issues
 contract: ../../features/journey-builder.md
-updated: 2026-11-14
+updated: 2026-11-17
 verified_at: 49973e0
 ---
 
@@ -12,6 +12,7 @@ verified_at: 49973e0
 | JBD-KI-27 | Wrong result | No segment entry or business event triggers, no segment conditions, and the condition split is still a segment node | JBD-FR-05, JBD-FR-15, JBD-FR-16, JBD-FR-17 |
 | JBD-KI-35 | Missing | The v2 journey list offers no move for drafts kept in this browser | JBD-FR-28 |
 | JBD-KI-36 | Departure | The Analytics tab's graph draws its own node cards, not the builder's | [Journey pages](../../features/journey-builder.md#journey-pages) |
+| JBD-KI-37 | Risk | Journey analytics read the hot transitions table, not the lakehouse | JBD-NFR-03, JBD-NFR-04 |
 
 ## JBD-KI-27. No segment entry or business event triggers, no segment conditions, and the condition split is still a segment node
 
@@ -36,3 +37,10 @@ Tracked in #223.
 - **Cause.** `JourneyGraph.tsx` in `studio/src/features/journey-analytics/ui/` renders its own `StepCard` from the `campaign_nodes` rows. The builder's card face, `StepCardFace` in `studio/src/features/journey-builder/ui/StepCard.tsx`, takes a builder node parsed from `campaigns.root`.
 - **Evidence.** Read from the code.
 - **Fix direction.** Draw the analytics graph with `StepCardFace` and the builder layout, mapping each analytics row to its builder node by `node_id`, as the Journey tab does.
+
+## JBD-KI-37. Journey analytics read the hot transitions table, not the lakehouse
+
+- **Symptom.** Every analytics view runs its node query against `user_campaign_state_transitions`, the table the state machine writes and the outbox reads. For a journey of 847,118 transitions it took 6.6 s on a cold cache (#66).
+- **Cause.** `nodeAnalyticsQuery` in `studio/src/features/journey-analytics/model/queries.ts` reads `user_campaign_state_transitions` (lines 72 to 81). No transition history exists in a lakehouse to read instead.
+- **Evidence.** Read from the code at `a29730c`. The time is from #66, measured on 2026-11-08.
+- **Fix direction.** Read `transition_history` once the lakehouse sink lands and the owner sets the freshness bound. #66 tracks the latency on the current table.

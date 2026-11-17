@@ -7,8 +7,8 @@ implementation: partial
 area: studio
 tags: [ui, studio-v2, analytics, journeys]
 created: 2026-11-07
-updated: 2026-11-08
-version: 0.2
+updated: 2026-11-17
+version: 0.3
 known_issues: ../known-issues/features/home-overview.md
 ---
 
@@ -155,13 +155,15 @@ Worked example. Transitions with event times on 2026-11-09 local: 3 setup rows, 
 | HOM-NFR-01 | Each data region must load within 2 seconds at the 95th percentile for Last 30 days, measured on the deployed database. [Decision 0035](../architecture/decisions/0035-compute-journey-analytics-from-transitions-on-read.md) says what happens when it does not. |
 | HOM-NFR-02 | The page must not change any row or produce a record to any topic, except through the browser-draft move of [JBD-FR-28](journey-builder.md#functional-requirements) when the viewer chooses it. It reads `user_campaign_state_transitions`, `campaigns`, `journey_drafts`, and `system_users`, and the offsets of the dead-letter topic without a consumer group, so the broker records no group for it either. |
 | HOM-NFR-03 | Studio must read the dead-letter topic's offsets at most once every 15 seconds, however many viewers open the page. |
+| HOM-NFR-04 | The KPI row and the journeys table must read transitions from the transition history in the lakehouse, not from `user_campaign_state_transitions`, as [decision 0053](../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) says. The health strip's engine lag and newest step may read the hot table, because they need the newest rows. How fresh the lakehouse numbers must be is an [open question](#open-questions). |
 
 ## Interfaces
 
 | Direction | Interface | Use |
 |---|---|---|
 | UI | `/v2?range=today`, `7d`, or `30d` | The page |
-| Read | `user_campaign_state_transitions` | `node_type`, `branch`, `campaign_id`, `event_timestamp`, `transitioned_at` |
+| Read | `user_campaign_state_transitions` | `node_type`, `branch`, `campaign_id`, `event_timestamp`, `transitioned_at`. Until HOM-NFR-04 lands. |
+| Read, planned | Lakehouse `transition_history` | The same columns, for the KPIs and the journeys table ([lakehouse sink](../architecture/components/lakehouse.md#interfaces)) |
 | Read | `campaigns` | `id`, `name`, `status`, `created_user`, `updated_at` |
 | Read | `journey_drafts` | The viewer's drafts: `id`, `name`, `owner_id`, `updated_at` |
 | Read | `system_users` | The owner's email |
@@ -205,11 +207,14 @@ Worked example. Transitions with event times on 2026-11-09 local: 3 setup rows, 
 - Given cutover has happened, then no link on the page opens `/campaign`, `/segments`, `/admin`, or `/platform`. (HOM-FR-11)
 - Given a viewer who uses every control on the page, then no row of any table changes. (HOM-NFR-02)
 - Given 20 viewers who load `/v2` within 15 seconds, then studio reads the dead-letter topic's offsets once. (HOM-NFR-03)
+- Given the home overview loading Last 30 days, then its KPI and journeys queries read no row of `user_campaign_state_transitions`. (HOM-NFR-04)
 - Given a deployed database with 30 days of transitions, when Last 30 days loads, then each region answers within 2 seconds at the 95th percentile, or the result of decision 0035's check is recorded. (HOM-NFR-01)
 
 ## Open questions
 
-None. Two choices the design left open are the lead's defaults, marked where they apply: counting entries rather than people, and the health strip thresholds.
+- **Freshness of the lakehouse numbers.** How old the KPIs may be once they read the transition history (HOM-NFR-04), and so which query engine studio uses. The same question is open in the [lakehouse sink](../architecture/components/lakehouse.md#open-questions).
+
+Two choices the design left open are the lead's defaults, marked where they apply: counting entries rather than people, and the health strip thresholds.
 
 ## Related
 
@@ -218,4 +223,5 @@ None. Two choices the design left open are the lead's defaults, marked where the
 - [Data health](data-health.md)
 - [Journey execution](../architecture/components/journey-execution.md): how nodes complete and which transitions it writes
 - [0035. Compute journey analytics from the transitions on read](../architecture/decisions/0035-compute-journey-analytics-from-transitions-on-read.md)
+- [0053. Store raw events, transition history, and imports in an Iceberg lakehouse](../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)
 - [Known issues](../known-issues/features/home-overview.md)

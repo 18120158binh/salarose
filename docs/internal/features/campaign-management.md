@@ -7,7 +7,7 @@ implementation: partial
 area: studio
 tags: [ui, campaigns, lifecycle, metrics]
 created: 2026-10-14
-updated: 2026-11-08
+updated: 2026-11-17
 version: 3.2
 known_issues: ../known-issues/features/campaign-management.md
 ---
@@ -194,7 +194,7 @@ A definition is in use while a behavior condition of an active or paused campaig
 | Write | `campaign_nodes` | Replace on publish. Deleted with the campaign. |
 | Write | `user_metric_definitions` | Create, set `processing_mode` and the retention period, archive, and unarchive. Never delete. |
 | Write | Browser storage | Classic drafts, one list for each signed-in user, until cutover |
-| Read | `user_campaign_state_transitions` | The waiting count in the delete dialog |
+| Read | `user_campaign_state_transitions` | The waiting count in the delete dialog. Partitions it needs stay in Postgres while it reads the table ([JEX-FR-24](../architecture/components/journey-execution.md#functional-requirements)). |
 | Read | `campaign_node_stats` | Users per node in the classic builder, for the owner or an admin |
 
 See [the data model](../architecture/data-model.md).

@@ -40,12 +40,13 @@ Terms used across the code and these documents. Where the UI and the code use di
 | Identifier | A type and a normalized value that point at one person, such as `user_id` `usr_1001`. See [identifiers](../architecture/components/identity/identifiers.md). |
 | Identity merge | Joining two people's identity sets into one when an event links them. One `canon_id` wins and the other is retired. See [identity merges](../architecture/components/identity/identity-merges.md). |
 | Import run | One delivered import file and its states from upload to applied. Table `import_runs`. See [the import applier](../architecture/components/import-applier.md#run-states). |
-| Import store | The second Postgres cluster, `cdp-import-pg`, that holds accepted imported records. See [decision 0040](../architecture/decisions/0040-import-through-a-batch-path-and-a-separate-store.md). |
+| Import store | The tables that hold accepted imported records. Planned as Iceberg tables in the lakehouse ([decision 0053](../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)). Deployed today as a second Postgres cluster, `cdp-import-pg` ([decision 0040](../architecture/decisions/0040-import-through-a-batch-path-and-a-separate-store.md)). |
 | Imported field | A value a condition names as `<source>.<name>`, such as `orders.spend_90d`. Customer decision reads it from `customer_attributes`. |
 | Imported metric | A function over one imported dataset, such as `SUM` of `total` over 90 days, computed once a night. Table `import_metric_definitions`. Not a metric in `user_metric_definitions`. |
 | Imported-only customer | A customer key that data import knows, with rows in `customer_attributes`, and that maps to no tracked person. The nightly segment pass evaluates segments for it. |
 | Interest | A business trigger's audience: people who did an event on the same item at least N times in a window. |
 | Journey instance | One person in one campaign. Key: `canon_id` + U+001F + `campaign_id`. |
+| Lakehouse | Planned. Data files on S3, read and written as Apache Iceberg tables. Holds raw events, transition history, and imported records. See [the lakehouse sink](../architecture/components/lakehouse.md). |
 | Matched event, trigger | A record that a person's event satisfied one node's condition on one branch. Topic `journey-engine-matched-events`. |
 | Metric | One event, one function such as `COUNT` or `SUM`, optionally one attribute, and filters. Publish derives it from a behavior condition, with an id `m_` and 16 hexadecimal digits. |
 | Nightly segment pass | A batch job that runs once a night after the data-import metric pass, evaluates every segment for imported-only customers, and writes changed rows to `segment_import_members`. It starts no journey. See [the segment membership pass](../architecture/components/segment-membership-pass.md). |

@@ -5,10 +5,12 @@ status: accepted
 date: 2026-11-08
 tags: [data-import, postgres, wal, cdc, batch]
 supersedes: []
-superseded_by: []
+superseded_by: ["0053"]
 ---
 
 # 0040. Import through a batch path and a separate store
+
+> Superseded in part by [decision 0053](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md). Accepted import records live in Iceberg tables in the lakehouse, not in a second Postgres cluster. The batch path, the drop zone, the WAL governor, and `customer_attributes` stay.
 
 ## Context
 

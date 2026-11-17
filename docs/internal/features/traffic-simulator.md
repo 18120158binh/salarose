@@ -7,7 +7,7 @@ implementation: planned
 area: infra
 tags: [testing, simulation, smoke, load]
 created: 2026-11-07
-updated: 2026-11-08
+updated: 2026-11-17
 version: 0.7
 known_issues: ../known-issues/features/traffic-simulator.md
 ---
@@ -218,7 +218,7 @@ Bench also has three runs that do not use a backlog:
 | `snowplow-good`, `snowplow-parsed`, `snowplow-parsed-dead-letters`, `customer-profile-mutations`, `journey-engine-matched-events`, `journey-engine-outbound-noti` | Reads | Stage checks and expectations, matched by run id or shopper id |
 | `user_campaign_state_transitions`, `identity_graph` | Reads | Stage checks and expectations. See the [data model](../architecture/data-model.md). |
 | `user_events`, `user_event_fields`, `campaigns`, `user_metric_definitions` | Reads | Prepare compares the stored `sim_` fixtures with the ones it needs, in a read-only session, and writes through studio only what is missing or differs (SIM-FR-05). Clean-up lists the `sim_` campaigns and catalog events, and reads them again after it deletes them. |
-| `user_campaign_state_transitions`, `user_metrics`, `identity_graph` | Deletes | Clean-up, only when asked to apply, removes the rows of the given runs in batches of the runs' devices, each batch in its own transaction, so a load run's hundreds of thousands of devices fit its memory (SIM-FR-14). A clean-up that stops part way leaves earlier batches removed, and running it again with the same run ids finishes it. It deletes the `sim_` campaigns and catalog events through campaign management and the event catalog, never in Postgres. |
+| `user_campaign_state_transitions`, `user_metrics`, `identity_graph` | Deletes | Clean-up reaches only the transition partitions still in Postgres. Whether it must also delete rows already moved to the lakehouse's `transition_history` is open in the [lakehouse sink](../architecture/components/lakehouse.md#open-questions). Clean-up, only when asked to apply, removes the rows of the given runs in batches of the runs' devices, each batch in its own transaction, so a load run's hundreds of thousands of devices fit its memory (SIM-FR-14). A clean-up that stops part way leaves earlier batches removed, and running it again with the same run ids finishes it. It deletes the `sim_` campaigns and catalog events through campaign management and the event catalog, never in Postgres. |
 | Run report | Writes | One per run, as [SIM-FR-16](#functional-requirements) says |
 
 The simulator reads topics with a consumer group of its own per run, so it never moves the offsets of the pipeline's jobs.

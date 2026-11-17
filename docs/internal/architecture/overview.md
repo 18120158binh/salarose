@@ -1,6 +1,6 @@
 # About the architecture
 
-The platform turns shopper behavior into marketing messages within seconds. It is a chain of five Flink jobs connected by Kafka topics. Postgres is the system of record for campaigns, metric definitions, and journey progress. Marketers edit campaigns in `studio`, which writes Postgres, and the jobs pick up each change through change data capture (CDC), without a restart.
+The platform turns shopper behavior into marketing messages within seconds. It is a chain of Flink jobs connected by Kafka topics. Flink state is the source of truth for each person's metrics and profiles while the jobs run. Postgres is the system of record for campaigns and metric definitions, and holds a projection of the jobs' state. Planned, a lakehouse on S3 holds raw events, journey history, and imported records ([decision 0052](decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md), [decision 0053](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)). Marketers edit campaigns in `studio`, which writes Postgres, and the jobs pick up each change through change data capture (CDC), without a restart.
 
 This page is the map. Each component's and feature's contract holds its rules and algorithms, and each design decision holds its reasoning.
 
@@ -35,8 +35,9 @@ flowchart TB
 		batch[Nightly passes: import, segment membership]
 	end
 	subgraph store[Storage]
-		pg[(Postgres, system of record)]
-		importpg[(Import store)]
+		state[(Flink state, tier 1)]
+		pg[(Postgres: configuration, tier-2 projection)]
+		lake[(Lakehouse: Iceberg on S3)]
 	end
 	subgraph experience[Experience]
 		studio[studio admin app]
@@ -47,15 +48,18 @@ flowchart TB
 	collector --> kafka
 	api --> kafka
 	kafka <--> flink
+	flink <--> state
 	flink <-->|writes, CDC| pg
-	batch --> importpg
+	kafka -.->|raw events| lake
+	pg -.->|old transition partitions| lake
+	batch -.-> lake
 	batch --> pg
 	batch --> kafka
 	studio -->|campaigns, segments, metric definitions| pg
 	studio -.->|hosts| api
 	kafka -->|notification requests| sender
 	classDef planned stroke-dasharray: 5 5
-	class batch,importpg planned
+	class batch,lake planned
 ```
 
 | Layer | Holds | Detail |
@@ -63,7 +67,7 @@ flowchart TB
 | Ingestion | The OpenSnowcat collector for tracker hits, and the HTTP API that studio serves for server-side events | [Event ingestion](components/event-ingestion.md), [data ingestion API](../features/data-ingestion-api.md) |
 | Streaming | Kafka. Every hop between jobs is a topic | [Kafka topics](#kafka-topics) |
 | Processing | The five Flink jobs, which hold live state, and the planned nightly batch passes, which skip Flink | [Data flow](#data-flow), [components](#components) |
-| Storage | Postgres, read by the jobs through CDC, and the planned import store with no replication slot | [Data model](data-model.md), [decision 0040](decisions/0040-import-through-a-batch-path-and-a-separate-store.md) |
+| Storage | Two hot tiers and a planned lakehouse. Flink keyed state on RocksDB serves every read of per-person state on the decision path, and is the source of truth for metrics and profiles while the jobs run. Postgres holds configuration, read by the jobs through CDC, and a projection of the jobs' state, read on a state miss. The planned lakehouse holds raw events, transition history, and imported records as Iceberg tables on S3. | [Data model](data-model.md), [decision 0052](decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md), [decision 0053](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md), [decision 0054](decisions/0054-recover-flink-state-in-four-layers.md) |
 | Experience | studio, where staff build journeys and manage data | [Admin app layers](#admin-app-layers) |
 | Delivery | The sender that turns notification requests into push, SMS, and email | [Notification outbox](components/notification-outbox.md) |
 
@@ -86,6 +90,7 @@ flowchart LR
 	end
 	subgraph db[Storage]
 		pg[PostgreSQL 16, CloudNativePG, Flyway]
+		lake[Apache Iceberg on S3, planned]
 	end
 	subgraph ui[Experience]
 		next[Next.js 16, React 19, TypeScript]
@@ -94,6 +99,7 @@ flowchart LR
 		k3s[k3s on EC2, Argo CD, Prometheus and Grafana]
 	end
 	snow --> kafka --> flink <--> pg
+	flink -.-> lake
 	next --> pg
 	next --> kafka
 	run -.-> streamk & compute & db & ui
@@ -113,11 +119,12 @@ flowchart LR
 | | Flink Kafka, JDBC, and Postgres CDC connectors | | Read and write topics, write Postgres, read rule tables through CDC (Debezium) |
 | | RocksDB state backend, S3 checkpoints | | Keyed state that survives restarts and upgrades |
 | | Flink Kubernetes Operator | 1.16.1 | Runs each job as a `FlinkDeployment`, upgrades through savepoints |
-| Storage | PostgreSQL with logical replication | 16.15 | System of record, CDC source |
+| Storage | PostgreSQL with logical replication | 16.15 | System of record for configuration, CDC source, and the tier-2 projection |
 | | jOOQ | 3.20.18 | Typed SQL in the jobs |
 | | node-postgres (`pg`) | 8.11 | SQL in studio |
 | | CloudNativePG operator | chart 0.29.1 | Runs the Postgres cluster |
 | | Flyway | 13.11.1 | Applies migrations on every sync |
+| | Apache Iceberg tables on Amazon S3, planned | Open | Raw events, transition history, and imported records. The catalog and the query engine are open ([lakehouse sink](components/lakehouse.md#open-questions)). |
 | Experience | Next.js (App Router, server actions, standalone output) | 16.3 canary | studio |
 | | React, TypeScript | 19.2, 5 | UI code |
 | | Tailwind CSS, Base UI, coss components | 4, 1.5 | Styling and accessible primitives |
@@ -205,9 +212,11 @@ One event goes through these stages:
 | State machine | Flink | `StateMachineJob` | [Journey execution](components/journey-execution.md) |
 | Outbox and timers | Flink | `CampaignOutboxJob` | [Notification outbox](components/notification-outbox.md), [journey execution](components/journey-execution.md#watch-timers) |
 | Business event fan-out | Flink, planned | None yet | [Business event fan-out](components/business-event-fan-out.md) |
+| Lakehouse sink | Planned. Writes raw events and transition history to the lakehouse, and moves old transition partitions out of Postgres. | None yet | [Lakehouse sink](components/lakehouse.md) |
+| State recovery | Checkpoints, savepoints, and a planned rebuild from raw events, for every job with state | Flink configuration, CI restore check | [State recovery](components/state-recovery.md) |
 | Import applier | Kubernetes CronJob, planned. No Flink. | None yet | [Import applier](components/import-applier.md) |
 | Import metric pass | Kubernetes CronJob, planned. No Flink. | None yet | [Import metric pass](components/import-metric-pass.md) |
-| Import store | Second Postgres cluster, `cdp-import-pg`, planned. No replication slot. | None yet | [Import applier](components/import-applier.md), [decision 0040](decisions/0040-import-through-a-batch-path-and-a-separate-store.md) |
+| Import store | Iceberg tables in the lakehouse, planned ([decision 0053](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)). Deployed today as a second Postgres cluster, `cdp-import-pg`. | None yet | [Import applier](components/import-applier.md) |
 | Segment membership pass | Kubernetes CronJob, nightly, planned | None yet | [Segment membership pass](components/segment-membership-pass.md) |
 | Admin app | Next.js | `studio` | [Journey builder](../features/journey-builder.md), [campaign management](../features/campaign-management.md), [AI journey generation](../features/ai-journey-generation.md), [event catalog](../features/event-catalog.md), [segments](../features/segments.md), [admin authentication](../features/admin-authentication.md) |
 
@@ -269,14 +278,14 @@ Each step's workflow and checks are in [the AWS Free Plan environment](../operat
 
 | Topic | Producer | Consumers | Key |
 |---|---|---|---|
-| `snowplow-good`, `snowplow-bad` | Collector | Event parse | None |
+| `snowplow-good`, `snowplow-bad` | Collector | Event parse, lakehouse sink (planned) | None |
 | `snowplow-parsed` | Event parse | Customer decision | `canon_id` |
 | `snowplow-parsed-dead-letters` | Event parse | Operators, by hand | None |
 | `customer-profile-mutations` | Customer decision | Profile writer | `canon_id` |
 | `journey-engine-matched-events` | Customer decision, outbox timers | State machine | `canon_id` + U+001F + `campaign_id` |
 | `journey-engine-segment-checks` | State machine | Customer decision | `canon_id` |
 | `journey-engine-outbound-noti` | Outbox | Sender, not in this repo | None |
-| `business-events`, planned | Data ingestion API | Business event fan-out | Event name + U+001F + item key |
+| `business-events`, planned | Data ingestion API | Business event fan-out, lakehouse sink (planned) | Event name + U+001F + item key |
 | `segment-membership-changes` | Customer decision | Profile writer, business event fan-out | `canon_id` |
 | `current-member-entries`, planned | Segment membership pass | Customer decision | `canon_id` |
 | `business-event-matches`, planned | Business event fan-out | Customer decision | `canon_id` |
@@ -288,6 +297,7 @@ The component contracts define each message. [Configuration](../operations/confi
 | Attribute | How the architecture meets it |
 |---|---|
 | Latency | Every decision reads Flink state, not Postgres. Postgres is read only on a state miss. |
+| Recoverability | State survives in four layers: retained checkpoints, scheduled savepoints, the Postgres projection, and a rebuild from raw events. See [state recovery](components/state-recovery.md). |
 | Consistency per person | Each job keys by `canon_id` or by journey, so one subtask owns each person's state and each journey. |
 | Correctness under replay | Every sink is at-least-once and every write is idempotent. |
 | Rule changes without restarts | Rules arrive by CDC and broadcast state. |
@@ -305,13 +315,17 @@ The component contracts define each message. [Configuration](../operations/confi
 | [0004. Compute metrics and decisions in one keyed job](decisions/0004-compute-metrics-and-decisions-in-one-keyed-job.md) | A rule always sees the metrics after the current event. |
 | [0005. Keep live state in Flink and a durable copy in Postgres](decisions/0005-keep-live-state-in-flink.md) | Postgres is a lagging projection, off the decision path. |
 | [0006. At-least-once delivery with idempotent writes](decisions/0006-at-least-once-delivery-with-idempotent-writes.md) | Replays are safe because every write converges. |
-| [0040. Import through a batch path and a separate store](decisions/0040-import-through-a-batch-path-and-a-separate-store.md) | Imported records skip Flink and land in a second Postgres cluster with no replication slot. A nightly pass publishes only changed rows to the main Postgres, under a WAL governor. |
+| [0040. Import through a batch path and a separate store](decisions/0040-import-through-a-batch-path-and-a-separate-store.md) | Imported records skip Flink. A nightly pass publishes only changed rows to the main Postgres, under a WAL governor. Its second Postgres cluster is superseded by 0053. |
+| [0052. Keep hot state in Flink and a redesigned projection in Postgres](decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) | Two hot tiers, no new database. Postgres writes less: metrics coalesced, transitions partitioned, a profile read model. |
+| [0053. Store raw events, transition history, and imports in an Iceberg lakehouse](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) | Unbounded data goes to Iceberg on S3. Analytics leave the hot table. Supersedes 0040's import store. |
+| [0054. Recover Flink state in four layers](decisions/0054-recover-flink-state-in-four-layers.md) | Checkpoints, savepoints, the projection, and a rebuild from raw events. Trust goes raw events first, then Flink state, then the projection. |
 | [0007. Staff sign in through OpenID Connect](decisions/0007-staff-sign-in-through-oidc.md) | No stored passwords. [0024](decisions/0024-create-staff-at-first-sign-in-with-the-providers-role.md) leaves who gets in, and with which role, to the identity provider. |
 
 ## Scaling limits
 
 - Every task manager holds every rule, so memory grows with the number of journey nodes. Thousands of nodes are cheap. Hundreds of thousands could exhaust it.
-- Each transition is a Postgres write and a WAL record that CDC streams back. A loaded primary delays CDC, and a delayed CDC stream delays notifications and timers.
+- Each transition is a Postgres write and a WAL record that CDC streams back. A loaded primary delays CDC, and a delayed CDC stream delays notifications and timers. Planned partitions keep the table's size bounded, but not its write rate.
+- Each metric change is a `user_metrics` write today. Planned coalescing bounds it by the distinct rows changed per window ([platform capacity](capacity.md#coalesced-writes)).
 - One deployment serves one customer. Nothing carries a tenant, so a second customer needs a second environment. [Decision 0027](decisions/0027-multi-tenancy.md) proposes options.
 - Per-person state is bounded. A person keeps at most 128 metrics, and each series at most one bucket per minute, hour, or day of its retention period, however active the person is. See [decision 0028](decisions/0028-store-metrics-as-tiered-time-buckets.md).
 

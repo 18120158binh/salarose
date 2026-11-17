@@ -7,8 +7,8 @@ implementation: planned
 area: studio
 tags: [data-import, api, studio, privacy, metrics]
 created: 2026-11-08
-updated: 2026-11-08
-version: 1.1
+updated: 2026-11-17
+version: 1.2
 known_issues: ../known-issues/features/data-import.md
 ---
 
@@ -82,7 +82,7 @@ flowchart LR
 	api --> drop[(S3 drop zone)]
 	api --> runs[(import_runs)]
 	drop --> applier[Import applier]
-	applier --> store[(Import store)]
+	applier --> store[(Import store, lakehouse)]
 	store --> pass[Import metric pass]
 	pass --> attrs[(customer_attributes)]
 	attrs --> decision[Customer decision]
@@ -226,7 +226,7 @@ Emails and phones are stored in plain form, so a sender can use them later. [Dec
 Every row also holds `id`, `staff_id`, `at`, and `route`. There is no unmasked export in this version.
 
 - **Delete a person.** An admin enters a customer key at `/data/privacy` and confirms. Studio stores the key's tombstone in `person_tombstones` at state `requested`, and writes a `deletion_request` row. Neither row holds the key. The [applier](../architecture/components/import-applier.md#7-delete-a-person) deletes the person's imported rows, rewrites the drop-zone files that hold them, and replaces the key with its tombstone in every earlier `reveal` row. The next nightly pass removes their `customer_attributes` rows, and skips the tombstone from then on. The page shows the request's state. Deletion covers imported data only.
-- **Backups.** No backup or point-in-time recovery runs for either Postgres cluster today. If one is added, it keeps at most 30 days. A restore re-applies every tombstone and records each drop-zone file's checksum again, because a file rewritten after the backup no longer matches the restored `stored_sha256`. Both happen before the applier takes a run or the pass starts. The applier also writes each tombstone to the drop zone, so a restore of the main Postgres from before a deletion gets the tombstone back.
+- **Backups.** No backup or point-in-time recovery runs for the main Postgres or the import store's cluster today. If one is added for the main Postgres, it keeps at most 30 days. The import store moves to the lakehouse ([decision 0053](../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)), where a deletion also expires every snapshot that holds the person ([IAP-FR-27](../architecture/components/import-applier.md#functional-requirements)). A restore re-applies every tombstone and records each drop-zone file's checksum again, because a file rewritten after the backup no longer matches the restored `stored_sha256`. Both happen before the applier takes a run or the pass starts. The applier also writes each tombstone to the drop zone, so a restore of the main Postgres from before a deletion gets the tombstone back.
 
 ### Identity
 
@@ -307,8 +307,8 @@ Customer lookup shows imported attributes by source, masked, with **Reveal** for
 | DIM-NFR-05 | The import routes must keep the data ingestion API's rate limit per source key. |
 | DIM-NFR-06 | The import routes, the applier, and the metric pass must not log a row value, a customer key, or a clear PII value. |
 | DIM-NFR-07 | The import applier and the import metric pass must not run against a production main Postgres until #320 part 1 is merged and live (CDC window shortened, cap 8 GB). Until then their production schedules stay suspended, and they run only against a staging copy. |
-| DIM-NFR-08 | The disk under each Postgres cluster that holds imported data must be encrypted at rest. The drop zone's bucket must encrypt every object on the server, and must keep no noncurrent object version under `imports/`. The import must accept no production delivery until this holds. (the lead's default) |
-| DIM-NFR-09 | A backup or point-in-time recovery of either Postgres cluster, if one is added, must keep at most 30 days. A restore must re-apply every tombstone, and record each drop-zone file's SHA-256 again in its run's `stored_sha256`, before the applier takes a run or the metric pass starts. (the lead's default) |
+| DIM-NFR-08 | The disk under each Postgres cluster that holds imported data must be encrypted at rest. The drop zone's bucket must encrypt every object on the server, and must keep no noncurrent object version under `imports/`. The lakehouse's bucket must encrypt every object on the server with a customer-managed KMS key (SSE-KMS), the owner's decision of 2026-11-17. The import must accept no production delivery until this holds. (The Postgres and drop-zone parts are the lead's default.) |
+| DIM-NFR-09 | A backup or point-in-time recovery of the main Postgres, if one is added, must keep at most 30 days. Before [decision 0053](../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) this covered the import store's Postgres cluster as well. The import store in the lakehouse keeps no snapshot that holds a deleted person's rows ([IAP-FR-27](../architecture/components/import-applier.md#functional-requirements)). A restore must re-apply every tombstone, and record each drop-zone file's SHA-256 again in its run's `stored_sha256`, before the applier takes a run or the metric pass starts. (the lead's default) |
 
 ## Interfaces
 
@@ -323,7 +323,7 @@ Customer lookup shows imported attributes by source, masked, with **Reveal** for
 | Read and write | `import_source_scopes` | (`source_key_id`, `record_type_id`) |
 | Read and write | `import_runs` | `id`, `record_type_id`, `version`, `source` (`api`, `drop`, `studio`, or `rederive`), `writer`, `format`, `byte_size`, `file_key`, `sha256`, `stored_sha256`, `state`, `reason`, `counts`, `first_pass_id`, `created_at`, `confirmed_at`, `approved_by`, `approved_at`, `started_at`, `finished_at`. Creates runs and makes the transitions studio owns in the [applier's run states](../architecture/components/import-applier.md#run-states). The [applier's interfaces](../architecture/components/import-applier.md#interfaces) define each column. |
 | Read | `import_metric_passes`, `customer_attributes` | Pass history, and imported attributes for customer lookup |
-| Read | Import store | The metric preview |
+| Read | Import store, in the lakehouse | The metric preview |
 | Write | `pii_access_log` | `id`, `staff_id`, `at`, `action`, `route`, `customer_key`, `customer_key_hash`, `run_id`, `fields`. The shape of each action is in [Privacy](#privacy). |
 | Write | `person_tombstones` | `customer_key_hash` (the tombstone), `requested_by`, `requested_at`, `state` |
 | Read | `ingestion_source_keys` | Keys and their revocation |
@@ -339,7 +339,7 @@ Customer lookup shows imported attributes by source, masked, with **Reveal** for
 | `complete` called twice | The second call returns `200` with the run's state. |
 | The same file posted twice | The second call returns the first run with `duplicate: true`, whether it is still queued or already applied. |
 | A refused version change or metric change | Write nothing, and name every use. |
-| The import store is unreachable from studio | The metric preview says it is unavailable. Every other screen works. |
+| The import store in the lakehouse is unreachable from studio | The metric preview says it is unavailable. Every other screen works. |
 | A deletion request for a key with no imported data | Store the tombstone anyway, so a later delivery of that key is rejected. |
 
 ## Acceptance criteria
@@ -388,8 +388,8 @@ Customer lookup shows imported attributes by source, masked, with **Reveal** for
 - Given a source key over its rate limit, when it calls `POST /v1/imports`, then the response is `429` and no run is created. (DIM-NFR-05)
 - Given a run with an email column, a reveal, and a pass, then no log line of the import routes, the applier, or the pass holds a customer key, an email, or any column value from the file. (DIM-NFR-06)
 - Given the main Postgres with `max_slot_wal_keep_size` 3 GB and the CDC commit delay at 120 checkpoints, then the production schedules of the applier and the metric pass are suspended. (DIM-NFR-07)
-- Given the production deployment, then each node volume that holds a Postgres volume reports encryption on, the bucket reports default server-side encryption, and no noncurrent version of an `imports/` object exists one day after a rewrite. (DIM-NFR-08)
-- Given a backup policy added for either cluster, then it keeps at most 30 days. Given a restore of the import store to before a deletion, when the applier next starts, then the person's rows are gone before any run is taken. (DIM-NFR-09)
+- Given the production deployment, then each node volume that holds a Postgres volume reports encryption on, the lakehouse's bucket reports SSE-KMS with a customer-managed key, the bucket reports default server-side encryption, and no noncurrent version of an `imports/` object exists one day after a rewrite. (DIM-NFR-08)
+- Given a backup policy added for the main Postgres, then it keeps at most 30 days. Given a restore of the main Postgres from before a deletion, or a rollback of the import store to an earlier snapshot, when the applier next starts, then every tombstone is applied again before any run is taken. (DIM-NFR-09)
 
 ## Open questions
 
@@ -419,7 +419,7 @@ The lead chose these rules on 2026-11-08, while the contracts were reviewed, whe
 | A snapshot removes every row no row of the file holds except `studio` rows, and a studio upload to a snapshot type applies as incremental | Corrections survive removal, and studio cannot replace a snapshot | IAP-FR-13 |
 | The shrink guard compares with the type's last snapshot from any source key | A new key's truncated first file is still caught | IAP-FR-10 |
 | A re-derive skips the threshold and the shrink guard, keeps the cap, and rolls back and quarantines on a file-level failure | A remap that old files cannot satisfy changes nothing | IAP-FR-20 |
-| The import store runs on a compute node | The applier's ungoverned writes stay off `data-1` | IAP-NFR-07 |
+| The import store runs on a compute node. Withdrawn: the import store moved to the lakehouse ([decision 0053](../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)) | The applier's writes reach no Postgres WAL | IAP-NFR-06, IAP-NFR-07 |
 | `POST /v1/records` refuses snapshot types, and `complete` is idempotent | Shops send snapshots as files | DIM-FR-11, DIM-FR-12 |
 | A failed pass may be retried only while no later pass is `done`, through `retry_requested_at` | Old values never replace newer ones | IMP-FR-18, IMP-FR-19 |
 | A pass not `done` 15 minutes before the next scheduled start fails | A stall shows on `/data/imports` instead of freezing values | IMP-FR-20 |
