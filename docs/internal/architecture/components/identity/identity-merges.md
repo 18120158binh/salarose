@@ -7,8 +7,8 @@ implementation: planned
 area: event-processor
 tags: [identity, merge, state, journeys, metrics]
 created: 2026-10-21
-updated: 2026-11-14
-version: 1.0
+updated: 2026-11-18
+version: 1.1
 known_issues: ../../../known-issues/components/identity/identity-merges.md
 ---
 
@@ -217,7 +217,9 @@ The merge record:
 
 ## Open questions
 
-None. [Decision 0051](../../decisions/0051-fold-to-the-earliest-instance-and-count-nodes-through-merge-history.md) answered two instances of one campaign, the window before a fold, rules that a fold satisfies, node counts, and two accounts in one person on 2026-11-14. Two accounts no longer reach one person, because the [identity graph](identity-graph.md#limits) holds one `user_id` per set.
+[Decision 0051](../../decisions/0051-fold-to-the-earliest-instance-and-count-nodes-through-merge-history.md) answered two instances of one campaign, the window before a fold, rules that a fold satisfies, node counts, and two accounts in one person on 2026-11-14. Two accounts no longer reach one person, because the [identity graph](identity-graph.md#limits) holds one `user_id` per set. One question is open:
+
+- **Merges after a move.** [Journey execution](../journey-execution.md#functional-requirements) makes `campaign_node_stats` a materialized view whose hot count maps nothing through the merge records and whose moved counts are fixed when a partition leaves Postgres (JEX-FR-25). That conflicts with IMG-FR-13 and IMG-FR-17: a person merged after a move can count twice. Whether a merge changes a moved count, and whether the hot count maps through the merge records, is for the owner to decide. The question is stated in [journey execution](../journey-execution.md#open-questions) too.
 
 ## Related
 

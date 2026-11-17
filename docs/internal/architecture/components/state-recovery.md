@@ -112,7 +112,7 @@ Steps:
 | REC-FR-13 | A rebuild must record its cut and start each streaming job at it: after the newest ingestion record it read, and at the matching position of each internal topic. No record before the cut may be read twice by the streaming jobs, and none after it skipped. The owner decided this on 2026-11-17 (#120). |
 | REC-FR-14 | A rebuild must apply every watch timeout at its deadline in event time, once per watch: the state machine reads the recorded timeouts and no rebuilt timer emits another. The outbox must send nothing during a rebuild. The owner decided this on 2026-11-17 (#132). How the outbox and its timer flow get their state after a rebuild is an [open question](#open-questions). |
 | REC-FR-15 | A rebuild must raise the rebuild epoch. Rebuilt state must carry it into every metric mutation, so that its rows replace older rows in `user_metrics` ([PRW-FR-16](profile-writer.md#functional-requirements)). A rebuild must not rewrite `user_metrics` in bulk. A person's row catches up at their next flush. The owner decided this on 2026-11-17 (#121). |
-| REC-FR-16 | A rebuild must skip every person in `person_tombstones`: every record whose `user_id`, hashed under the tombstone key, matches a `customer_key_hash` there, and every record of a `canon_id` such a record resolves to. `person_tombstones` holds the hash, never the key. The rebuilt state must hold no metric, segment flag, or journey entry of that person, and no mutation may write their `user_metrics` rows. The raw events stay (LKH-FR-16). The owner decided this on 2026-11-18, in the review of PR #173. |
+| REC-FR-16 | A rebuild must skip every person in `person_tombstones`: every record whose `user_id`, hashed under the [tombstone key](../../features/data-import.md#terms), matches a `customer_key_hash` there, and every record of a `canon_id` such a record resolves to. `person_tombstones` holds the hash, never the key. The rebuilt state must hold no metric, segment flag, or journey entry of that person, and no mutation may write their `user_metrics` rows. The raw events stay (LKH-FR-16). The owner decided this on 2026-11-18, in the review of PR #173. |
 
 ## Non-functional requirements
 
@@ -134,6 +134,7 @@ Steps:
 | Write and read | Object storage, savepoints | Per job, versioned, kept 7 days |
 | Read | `user_metrics` | The projection, on a state miss. See [the data model](../data-model.md). |
 | Read | Lakehouse `raw_events`, `internal_events`, and `change_history` | For a rebuild. See [the lakehouse sink](lakehouse.md#interfaces). |
+| Read | `person_tombstones` | `customer_key_hash`, matched against the hash of each record's `user_id` under the tombstone key (REC-FR-16). See [data import](../../features/data-import.md#privacy). |
 
 [Configuration](../../operations/configuration.md) will name the schedule, the retention, and the storage paths.
 

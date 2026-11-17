@@ -5,12 +5,12 @@ status: accepted
 date: 2026-11-17
 tags: [storage, lakehouse, iceberg, s3, data-import, analytics]
 supersedes: ["0040"]
-superseded_by: ["0058"]
+superseded_by: ["0058", "0059"]
 ---
 
 # 0053. Store raw events, transition history, and imports in an Iceberg lakehouse
 
-> Superseded in part by [decision 0058](0058-read-recent-analytics-from-postgres-and-history-from-the-lakehouse.md): recent analytics ranges keep reading the hot table, and only history comes from the lakehouse. Amended on 2026-11-17 with the owner's answers to the other open questions, which add detail. [Amendments](#amendments) lists them. The text above them is unchanged.
+> Superseded in part by [decision 0058](0058-read-recent-analytics-from-postgres-and-history-from-the-lakehouse.md): recent analytics ranges keep reading the hot table, and only history comes from the lakehouse. Superseded in part by [decision 0059](0059-compute-node-stats-as-a-materialized-view-over-hot-and-moved-counts.md): `campaign_node_stats` counts moved partitions from counts the move keeps in Postgres, and neither combines both stores nor moves to the lakehouse. Amended on 2026-11-17 with the owner's answers to the other open questions, which add detail. [Amendments](#amendments) lists them. The text above them is unchanged.
 
 ## Context
 
@@ -69,7 +69,7 @@ These are open, and the contracts list them under "Open questions":
 - A person's deletion of imported data must reach the import tables' files and every snapshot that still references them, within the 24 hours of IAP-NFR-05. Iceberg keeps old snapshots until they expire, so snapshot expiry is part of a deletion, not housekeeping. Whether a deletion reaches `raw_events` too is open ([lakehouse sink](../components/lakehouse.md#open-questions)).
 - Imported emails and phones now sit in files on S3. The lakehouse's bucket encrypts every object on the server with a customer-managed KMS key (SSE-KMS). The owner decided this on 2026-11-17, and DIM-NFR-08 and LKH-NFR-06 require it.
 - Analytics reads are as fresh as the transition history in the lakehouse. Until the freshness question is answered, the home overview and journey analytics keep reading the hot table, and their known issues record it.
-- `campaign_node_stats` counts only the rows still in Postgres once partitions move. Its all-time count must combine both stores, or move to the lakehouse with the rest of analytics ([journey execution](../components/journey-execution.md#open-questions)).
+- `campaign_node_stats` counts only the rows still in Postgres once partitions move. Its all-time count must combine both stores, or move to the lakehouse with the rest of analytics ([journey execution](../components/journey-execution.md#open-questions)). [Decision 0059](0059-compute-node-stats-as-a-materialized-view-over-hot-and-moved-counts.md) answers this another way: the move keeps each partition's counts in Postgres.
 - Decision 0040 is superseded in part. Its batch path, governor, and `customer_attributes` stay. Its import store does not.
 
 ## Amendments

@@ -76,7 +76,7 @@ flowchart LR
 	hot --> move{Every row in the lakehouse?}
 	move -- yes --> counts[(campaign_node_moved_counts)]
 	counts --> drop[Remove the partition from Postgres]
-	hot --> stats[campaign_node_stats, refreshed every 5 s]
+	hot --> stats[campaign_node_stats, refreshed every 5 s by default]
 	counts --> stats
 	move -- no --> keep[Keep the partition, alert]
 	move --> hist[(transition_history)]
@@ -130,10 +130,10 @@ The partitions are cut by entry start ([JEX-FR-20](journey-execution.md#function
 2. Copy its rows to the transitions history table, keyed by the transition key alone. A row whose key the table already holds is not written again.
 3. Close the partition to inserts. From then on, a transition for its range is a late transition and goes straight to `transition_history` (LKH-FR-12).
 4. Copy again, for the rows written between steps 2 and 3. Then count the partition's rows and compare its set of transition keys with the history's. Every key of the partition must be in the history. No insert can land in the partition after this check, because step 3 closed it.
-5. If they match, write the partition's count per node to `campaign_node_moved_counts`: for each (`campaign_id`, `node_id`) with a transition in the partition, the number of distinct entries, keyed by the partition's start (LKH-FR-23). The partition is closed, so the counts are final. If they do not match, keep the partition closed, count the mismatch, and alert.
-6. Remove the partition from Postgres as one unit, never row by row. The counts and the removal become visible together, so that no refresh of `campaign_node_stats` sees both the partition and its moved counts.
+5. If they match, write the partition's count per node to `campaign_node_moved_counts`: for each (`campaign_id`, `node_id`) with a transition in the partition, the number of distinct (`canon_id`, `entry_id`) pairs, keyed by `partition_start`, the lower bound of the partition's range of entry starts (LKH-FR-23). The partition is closed, so the counts are final. If they do not match, keep the partition closed, count the mismatch, and alert.
+6. If they match, remove the partition from Postgres as one unit, never row by row. Steps 5 and 6 commit together, so that no refresh of `campaign_node_stats` sees both the partition and its moved counts.
 
-A move run twice converges. Steps 2 and 4 write nothing new, step 5 writes the same rows again, and step 6 finds the partition gone. Removing the oldest partition raises the move boundary in the same step.
+A move run twice converges. Steps 2 and 4 write nothing new. Steps 5 and 6 commit together, so a rerun finds either the partition with no counts, and runs the move again, or no partition. The upsert keeps a rerun from writing a second count row. Removing the oldest partition raises the move boundary in the same step.
 
 ### Read across both stores
 
@@ -173,7 +173,7 @@ A move between steps 1 and 2 changes nothing. The moved rows are at or above the
 | LKH-FR-20 | A write that spans several lakehouse tables must commit them one table at a time, and write its completion marker last, to a marker table. A reader must trust only rows that a committed marker covers, and must skip the rest. The owner decided this on 2026-11-17, during the review of PR #173 (#115). |
 | LKH-FR-21 | A move must close its partition to inserts before its final check (step 3 of [Move a hot partition](#move-a-hot-partition)), so that no transition lands in the partition between the check and its removal. |
 | LKH-FR-22 | A range that starts no more than 90 days ago must read Postgres only, with no lakehouse query. It may leave out late transitions. A range that starts earlier must read both stores by LKH-FR-17. The owner decided this on 2026-11-18, in the review of PR #173. |
-| LKH-FR-23 | Before a partition leaves Postgres, the move must write to `campaign_node_moved_counts` one row per (`campaign_id`, `node_id`) with a transition in the partition, keyed by the partition, with the number of distinct entries that completed the node in it. The write must be an upsert, so that a move run twice writes the same rows. The counts and the removal must become visible together, so that no reader sees the partition and its moved counts at once. `campaign_node_stats` adds the rows to its count over the hot partitions ([JEX-FR-25](journey-execution.md#functional-requirements)). The owner decided on 2026-11-18, after the review of PR #173, that a materialized view unifies the hot and moved counts. The moved counts are the lead's reading of that choice. |
+| LKH-FR-23 | Before a partition leaves Postgres, the move must write to `campaign_node_moved_counts` one row per (`campaign_id`, `node_id`) with a transition in the partition, keyed by `partition_start`, the lower bound of the partition's range of entry starts, with the number of distinct (`canon_id`, `entry_id`) pairs with a transition of the node in it. The write must be an upsert, so that a move run twice writes the same rows. The counts and the removal must become visible together, so that no reader sees the partition and its moved counts at once. `campaign_node_stats` adds the rows to its count over the hot partitions ([JEX-FR-25](journey-execution.md#functional-requirements)). The owner decided on 2026-11-18, after the review of PR #173, that a materialized view unifies the hot and moved counts. The moved counts are the lead's reading of that choice. |
 
 ## Non-functional requirements
 
@@ -183,7 +183,7 @@ A move between steps 1 and 2 changes nothing. The moved rows are at or above the
 | LKH-NFR-02 | The sink must keep up with the target load of [platform capacity](../capacity.md#non-functional-requirements): 500 events per second sustained, 2,000 per second for 10 minutes, and 1,000 per second for 1 hour, with its consumer lag back to normal after each burst. |
 | LKH-NFR-03 | The sink must commit raw events at least once per checkpoint of its job. The lag from the topic to a committed row must stay under the commit interval plus one checkpoint duration. |
 | LKH-NFR-04 | Every lakehouse table with a time column must be partitioned by day of its main time column (LKH-FR-19), and compacted by the catalog's built-in maintenance (LKH-NFR-08), so that a read of one day of one table opens only the files of that day's partition. |
-| LKH-NFR-05 | The lakehouse must write nothing to the main Postgres's WAL except the removal of a hot partition, which is a catalog change, not a row change. |
+| LKH-NFR-05 | The lakehouse must write nothing to the main Postgres's WAL except the removal of a hot partition, which is a catalog change, not a row change, and that partition's moved counts (LKH-FR-23), one row per campaign and node in it, never proportional to its rows. |
 | LKH-NFR-06 | Every object of every lakehouse table must be encrypted at rest on the server with a customer-managed KMS key, as [data import](../../features/data-import.md#non-functional-requirements) requires of imported data (DIM-NFR-08). The owner decided this on 2026-11-17. |
 | LKH-NFR-07 | `change_history` must keep every change for 13 months after its commit time, and must then delete it by [Expire by age](#expire-by-age), the rule of LKH-NFR-01. The owner decided this on 2026-11-17, during the review of PR #173 (#127). A row's value from before its oldest kept change is not in the history, so a rebuild cannot read it from there ([REC-NFR-06](state-recovery.md#non-functional-requirements)). |
 | LKH-NFR-08 | Every lakehouse table, the import tables included, must be in one catalog, S3 Tables, which compacts tables with its built-in maintenance. The owner decided this on 2026-11-17 (#115). |
@@ -204,7 +204,7 @@ A move between steps 1 and 2 changes nothing. The moved rows are at or above the
 | Out | Lakehouse `change_history` | `table_name`, `row_key`, `operation`, `row` (the row after the change, none for a delete), `change_lsn`, `committed_at`. Key (`table_name`, `row_key`, `change_lsn`). |
 | Out | Lakehouse `transition_history` | Every column of `user_campaign_state_transitions`, `entry_started_at` included. Key: the transition key. |
 | Write | Partitions of `user_campaign_state_transitions` | Created ahead of time, and removed after a move (LKH-FR-11). |
-| Write | `campaign_node_moved_counts` | One row per (`campaign_id`, `node_id`) of each partition the move removes, keyed by the partition, with its distinct entry count (LKH-FR-23). |
+| Write | `campaign_node_moved_counts` | One row per (`campaign_id`, `node_id`) of each partition the move removes, keyed by `partition_start`, with its count of distinct (`canon_id`, `entry_id`) pairs (LKH-FR-23). |
 | Read by | [State recovery](state-recovery.md) | `raw_events`, `internal_events`, and `change_history`, for a rebuild |
 | Read by | [Home overview](../../features/home-overview.md), [journey builder](../../features/journey-builder.md#node-analytics), [customer lookup](../../features/customer-lookup.md) | `transition_history` below the move boundary, through Athena (LKH-FR-17) |
 | Read by | `campaign_node_stats`, for the [journey builder](../../features/journey-builder.md#journey-pages) | `campaign_node_moved_counts`, added to the count over the hot partitions (JEX-FR-25) |
