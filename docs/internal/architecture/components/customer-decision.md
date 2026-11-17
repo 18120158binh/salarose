@@ -342,7 +342,7 @@ A rule fails to parse when an entry has an unknown `type`, a missing field, or a
 | DEC-FR-03 | A series must count every occurrence within its retention period, however many there are, in buckets by the rules in [Buckets](#buckets). |
 | DEC-FR-04 | The job must emit a mutation for an event if and only if at least one series changed. |
 | DEC-FR-14 | Each mutation must carry a behavior version greater than that of every earlier mutation for the same person. |
-| DEC-FR-44 | Each mutation must carry the rebuild epoch of the job's state, `rebuildEpoch`: 0 before any rebuild, and the epoch the latest rebuild set after one ([REC-FR-15](state-recovery.md#functional-requirements)). |
+| DEC-FR-44 | Each mutation must carry the rebuild epoch of the job's state, `rebuildEpoch`: 0 before any rebuild, and the epoch the latest rebuild set after one ([REC-FR-15](state-recovery.md#functional-requirements)). The owner decided this on 2026-11-17 (#121). |
 | DEC-FR-15 | On a segment check, the job must evaluate the condition split against the person's whole snapshot as of the check's `event_time`, and emit `yes` if its condition holds. The check must not change any series. |
 | DEC-FR-16 | `>`, `>=`, `<`, and `<=` on event and profile fields must order two ISO 8601 datetimes in time by the [datetime rules](#condition-language), and must be false when either side is neither a number nor such a value. |
 | DEC-FR-05 | Rules must be evaluated against the metrics after the current event is counted. |

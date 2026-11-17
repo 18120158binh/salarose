@@ -39,7 +39,7 @@ Out of scope:
 
 | Term | Meaning |
 |---|---|
-| Target load | The events per second the platform must carry, counted where the collector accepts them. It has two parts, the sustained load and the burst. |
+| Target load | The events per second the platform must carry, counted where the collector accepts them. It has three parts: the sustained load, the burst, and the long burst. |
 | Sustained load | 500 events per second, held for as long as the platform runs. |
 | Burst | 2,000 events per second for 10 minutes. The rate at the collector is 2,000 during the burst, not 500 plus 2,000. |
 | Long burst | 1,000 events per second for 1 hour, a second burst shape for a peak that lasts longer than the burst. The rate at the collector is 1,000 during it. |
@@ -58,7 +58,7 @@ Out of scope:
 | Margin | The cap on slot WAL divided by the largest held WAL the sizing expects. 2 is the lead's default, pending owner review. [Decision 0039](decisions/0039-shorten-the-cdc-restore-window.md#why) chose a cap twice its largest hold but did not set a margin as a rule. |
 | Slot status | The database's WAL status of a slot: `reserved`, `extended`, `unreserved`, or `lost`. A slot is `extended` while it holds more WAL than the database keeps anyway, its maximum WAL size, which is 1 GB by default. At the held WAL this contract expects, every slot is `extended` at the burst, and that is normal. `unreserved` means the next checkpoint may remove WAL the slot needs. `lost` means it already has. |
 | Consumer lag | Per consumer of a Kafka topic, the messages written to the topic that the consumer has not yet read. |
-| Normal lag | The highest lag a consumer shows at the sustained load over the longest confirm window before the burst starts. |
+| Normal lag | The highest lag a consumer shows at the sustained load over the longest confirm window before the first burst starts. |
 | Sizing sheet | The written result of the sizing: every input, every formula, and every result, next to the setting each result sets. |
 | Capacity report | The written result of a load test: the measurements, the comparison with the sizing sheet, and a pass or fail for each requirement. |
 
@@ -141,7 +141,7 @@ Bounds that need no measurement:
 
 A flush writes `D(r, T)` rows at once, every `T` seconds. The held WAL of step 3 uses the average over the confirm window, which is unchanged while `T` is no longer than the shortest confirm window, 330 s at the defaults. A window longer than that makes the hold depend on when the flush falls, and the sizing then uses the WAL of one flush plus the average.
 
-The transitions table is not coalesced. Each completed node is still one row. Analytics keep reading recent ranges from it, so its analytics indexes stay and its `w` does not drop ([JEX-NFR-13](components/journey-execution.md#non-functional-requirements)). Its data on disk stops growing with time. It holds at most its rows per second × bytes per row × the Postgres retention of transitions ([JEX-NFR-12](components/journey-execution.md#non-functional-requirements)), plus one partition. The retention is 90 days of entry starts, the journey state TTL.
+The transitions table is not coalesced. Each completed node is still one row. Analytics keep reading recent ranges from it, so its analytics indexes stay and its `w` does not drop ([JEX-NFR-13](components/journey-execution.md#non-functional-requirements)). Its data on disk stops growing with time. It holds at most its rows per second × bytes per row × the Postgres retention of transitions ([JEX-NFR-12](components/journey-execution.md#non-functional-requirements)), plus one partition. The retention is 90 days of entry starts (JEX-NFR-12).
 
 The lakehouse sink reads the rebuild inputs in Postgres through CDC ([LKH-FR-14 and LKH-FR-15](components/lakehouse.md#functional-requirements)). Its slots join the set of replication slots the sizing counts, by CAP-FR-07.
 
@@ -149,7 +149,7 @@ The lakehouse sink reads the rebuild inputs in Postgres through CDC ([LKH-FR-14 
 
 Inputs:
 
-- The target load: the sustained rate and the burst rate, in events per second.
+- The target load: the sustained rate, the burst rate, and the long burst's rate, in events per second.
 - For each table on the event path, the rows per event. For each topic on the event path, the messages per event, the bytes per event, and its partitions. All from a measured run of the workload profile.
 - The WAL per event, from a measured run.
 - For each coalesced table, its coalescing window `T`, `m`, `w`, and `D(r, T)` at both rates, from a measured run.
@@ -167,7 +167,7 @@ Steps:
 3. **Held WAL.** For each slot `s` and rate `r`, `H(s, r)` = `W(r)` × (confirm count + 1) × the checkpoint interval of its job. For the cap, use `H(s, burst)`, with the burst rate for the whole confirm window, even where the window is longer than the burst. This holds while checkpoints complete on schedule and the CDC source keeps up with the WAL. A long checkpoint or a source behind the WAL adds to the hold, so the load test measures the hold itself (CAP-FR-09).
 4. **Cap.** The cap on slot WAL must be at least the margin × the largest `H(s, burst)`.
 5. **Stopped slot.** A stopped job confirms nothing, and its slot already holds `H(s, r)` when the job stops. Time to the cap = (cap − `H(s, r)`) ÷ `W(r)`, for each slot, at both rates.
-6. **Kafka.** For each topic, retained bytes = the topic's sustained bytes per second × its time retention + bursts per retention period × (burst rate − sustained rate) × 600 s × the topic's bytes per event + long bursts per retention period × (1,000 − sustained rate) × 3,600 s × the topic's bytes per event. At 500 events per second, one long burst adds 1.8 million events, twice the burst's 0.9 million. Multiply by the topic's replicas for the bytes on disk. A byte limit applies to each partition, so a topic's byte limit must be at least its retained bytes divided by its partitions, assuming its messages spread evenly over them.
+6. **Kafka.** For each topic, retained bytes = the topic's sustained bytes per second × its time retention + bursts per retention period × (burst rate − sustained rate) × 600 s × the topic's bytes per event + long bursts per retention period × (1,000 − sustained rate) × 3,600 s × the topic's bytes per event. One long burst per retention period is the lead's default, pending owner review. At 500 events per second, one long burst adds 1.8 million events, twice the burst's 0.9 million. Multiply by the topic's replicas for the bytes on disk. A byte limit applies to each partition, so a topic's byte limit must be at least its retained bytes divided by its partitions, assuming its messages spread evenly over them.
 7. **Disk.** For each disk, used space at the target = the Postgres data on it, grown at the sustained rate over the period the sizing sheet states, with `user_campaign_state_transitions` capped by its retention as [Coalesced writes](#coalesced-writes) says + the cap on slot WAL + every topic's retained bytes on it + everything else it holds. Postgres and Kafka sum when they share a disk.
 
 Output: the sizing sheet. Each result sits next to the setting it sets, and each input says where it was measured.
@@ -189,7 +189,7 @@ Ties and edge cases:
 | CAP-FR-05 | The sizing sheet must give, for each slot at both rates, the time a stopped job's slot takes to reach the cap from the hold it had when the job stopped. |
 | CAP-FR-06 | The sizing sheet must give each topic's retained bytes at the target load, its byte limit per partition where one is set, and each disk's used space with every store on it. |
 | CAP-FR-07 | A change to the target load, the confirm count, a checkpoint interval, the cap on slot WAL, a disk, a topic's retention, the set of replication slots, a paced writer's budget, or the tables on the event path must check the sizing sheet again in the same change. |
-| CAP-FR-08 | The load test must send its traffic through the collector, with the workload profile the sizing used, and count the rate at the collector. It must run, in order: a ramp up to the sustained load, the sustained load for at least two of the longest confirm windows, the burst for 10 minutes, the sustained load until every consumer's lag is back to its normal lag, the long burst for 1 hour, and the sustained load again until every consumer's lag is back to its normal lag. The operator may end either recovery phase and record the lag left. Two windows is the lead's default, pending owner review: the first lets the held WAL reach a steady value, and the second gives CAP-NFR-06 a reading to compare with. |
+| CAP-FR-08 | The load test must send its traffic through the collector, with the workload profile the sizing used, and count the rate at the collector. It must run, in order: a ramp up to the sustained load, the sustained load for at least two of the longest confirm windows, the burst for 10 minutes, the sustained load until every consumer's lag is back to its normal lag, the long burst for 1 hour, and the sustained load again until every consumer's lag is back to its normal lag. The operator may end either recovery phase and record the lag left. Running both bursts in one run, in this order, is the lead's default, pending owner review. Two windows is the lead's default, pending owner review: the first lets the held WAL reach a steady value, and the second gives CAP-NFR-06 a reading to compare with. |
 | CAP-FR-09 | The load test must measure, throughout the run: the event rate at the collector, the WAL rate, the held WAL and the slot status of every replication slot, each job's checkpoint duration and its failed or expired checkpoints, the lag of every consumer of every topic, each job's restarts, and the free space on each volume that holds Postgres or Kafka and on the disk under it. |
 | CAP-FR-10 | The load test must measure the rows per event per table and the WAL per event, and the capacity report must compare them with the sizing sheet. |
 | CAP-FR-11 | When the measured WAL rate or a slot's held WAL is above the sizing sheet, the root-cause review must run, and no cap on slot WAL, disk, or retention may go up for that reason until it has. |
@@ -205,18 +205,18 @@ Ties and edge cases:
 
 | Id | Requirement |
 |---|---|
-| CAP-NFR-01 | The target load is 500 events per second sustained, and 2,000 events per second for 10 minutes, measured at the collector. |
+| CAP-NFR-01 | The target load is 500 events per second sustained, and 2,000 events per second for 10 minutes, measured at the collector. CAP-NFR-12 adds a long burst. |
 | CAP-NFR-02 | At the target load, no replication slot's status may become `unreserved` or `lost`. `extended` is allowed. |
 | CAP-NFR-03 | At the target load, with every job running, no slot's held WAL may exceed the cap on slot WAL divided by the margin. |
 | CAP-NFR-04 | At the target load, no checkpoint of any job may fail or expire. |
 | CAP-NFR-05 | At the target load, no job may restart. |
 | CAP-NFR-06 | At the sustained load, every consumer keeps up: its lag at the end of the sustained phase must be no higher than its lag at the end of the first of the longest confirm windows in that phase. This is the lead's default, pending owner review. |
-| CAP-NFR-07 | After the burst ends, every consumer's lag must return to its normal lag within a bound. The bound is an [open question](#open-questions). |
+| CAP-NFR-07 | After each burst ends, every consumer's lag must return to its normal lag within a bound. The bound is an [open question](#open-questions). |
 | CAP-NFR-08 | At the target load, each volume that holds Postgres or Kafka, and the disk under it, must keep at least 30% of its space free. This is the lead's default, pending owner review. A load run aborts above 70% full (SIM-FR-12 of [the traffic simulator](../features/traffic-simulator.md#functional-requirements)), so a finished run has shown it, and it keeps the disk clear of the WAL governor's pause under 20% free ([IMP-NFR-03](components/import-metric-pass.md#non-functional-requirements)). |
 | CAP-NFR-09 | The sizing must not meet the cap by lowering the confirm count of [JEX-NFR-10](components/journey-execution.md#non-functional-requirements). A shorter CDC restore window needs its own decision record. |
-| CAP-NFR-10 | `snowplow-good` must keep at least 72 hours of messages at the target load, and the volume that holds Kafka must be sized by CAP-FR-06 to hold that. A recovery that keeps Flink state relies on the raw events waiting there ([rollout known issues](../operations/rollout-known-issues.md#a-new-job-image-cannot-restore-its-savepoint)). Once the lakehouse keeps raw events ([LKH-FR-01](components/lakehouse.md#functional-requirements)), a recovery past 72 hours reads them there, and the 72 hours bound how long the lakehouse sink may be down without a gap. From step 6 of the [algorithm](#algorithm), with one burst, the topic alone retains (500 × 259,200 s + 1,500 × 600 s) × its bytes per event, about 130.5 million events: about 13 GB for every 100 bytes per event, and about 65 GB at 500 bytes. The bytes per event come from measurement, so the bound is that product, not a fixed number. |
+| CAP-NFR-10 | `snowplow-good` must keep at least 72 hours of messages at the target load, and the volume that holds Kafka must be sized by CAP-FR-06 to hold that. A recovery that keeps Flink state relies on the raw events waiting there ([rollout known issues](../operations/rollout-known-issues.md#a-new-job-image-cannot-restore-its-savepoint)). Once the lakehouse keeps raw events ([LKH-FR-01](components/lakehouse.md#functional-requirements)), a recovery past 72 hours reads them there, and the 72 hours bound how long the lakehouse sink may be down without a gap. From step 6 of the [algorithm](#algorithm), with one burst and one long burst, the topic alone retains (500 × 259,200 s + 1,500 × 600 s + 500 × 3,600 s) × its bytes per event, about 132.3 million events: about 13.2 GB for every 100 bytes per event, and about 66 GB at 500 bytes. The bytes per event come from measurement, so the bound is that product, not a fixed number. |
 | CAP-NFR-11 | The platform must take a monthly volume of 100 million to 500 million events. Its average, 38 to 190 events per second, must stay under the sustained load of CAP-NFR-01, and its peaks, 5 to 10 times the average, under the burst. CAP-NFR-01 is not changed by this. |
-| CAP-NFR-12 | The target load also has a long burst: 1,000 events per second for 1 hour, measured at the collector. Every requirement that holds at the target load holds through it. The owner decided this on 2026-11-17 (#116). |
+| CAP-NFR-12 | The target load also has a long burst: 1,000 events per second for 1 hour, measured at the collector. The owner decided this on 2026-11-17 (#116). Every requirement that holds at the target load holds through it, the lead's default, pending owner review. |
 
 ## Interfaces
 
@@ -276,7 +276,7 @@ The sizing and the load test read these. All exist today except the lakehouse si
 
 ## Open questions
 
-- **Bursts per retention period.** The Kafka sizing assumes one burst per retention period. That is the lead's default, pending owner review.
+- **Bursts per retention period.** The Kafka sizing assumes one burst and one long burst per retention period. That is the lead's default, pending owner review.
 - **Lag recovery bound.** How long after the burst ends may a consumer's lag take to return to normal (CAP-NFR-07)? No contract or decision sets it. Until the owner does, the capacity report gives the measured time and marks CAP-NFR-07 as not judged.
 - **End-to-end latency.** What latency from the collector to a journey transition must hold at the target load? No contract sets one for the whole path. The load test measures it, and the report states it without a pass or fail.
 - **Sustained phase length.** CAP-FR-08 requires at least two of the longest confirm windows. Whether the test must run longer, for example to show that Kafka retention and disk hold at the sustained rate, is undecided.

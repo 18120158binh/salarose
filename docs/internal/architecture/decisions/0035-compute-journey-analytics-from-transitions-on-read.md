@@ -10,7 +10,7 @@ superseded_by: []
 
 # 0035. Compute journey analytics from the transitions on read
 
-> Amended by [decision 0053](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md). The definitions and the compute-on-read approach stay. Analytics read the transition history in the lakehouse, not the hot table.
+> Amended by [decision 0053](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md). The definitions and the compute-on-read approach stay. Analytics read the transition history in the lakehouse, not the hot table. The owner then decided on 2026-11-17 that recent ranges stay on the hot table and only history comes from the lakehouse ([decision 0053, Amendments](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md#amendments), #111).
 
 ## Context
 

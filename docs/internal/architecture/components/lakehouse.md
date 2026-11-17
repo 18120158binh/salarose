@@ -54,7 +54,8 @@ Out of scope:
 | Transition key | (`canon_id`, `campaign_id`, `entry_id`, `node_id`, `branch`). See [journey execution](journey-execution.md#terms). |
 | Move | Copy a hot partition's rows to the transitions history table, check them, and then remove the partition from Postgres. |
 | Move boundary | The lower bound of the oldest hot partition. Every partition below it has left Postgres. |
-| Late transition | A transition whose entry start falls below the move boundary, so its partition already left Postgres. |
+| Closed partition | A hot partition that a move has closed to inserts. It stays readable in Postgres until the move removes it. |
+| Late transition | A transition whose entry start falls below the move boundary or in a closed partition, so its partition left Postgres or is leaving. |
 | Snapshot expiry | Removing old snapshots, and the data files that only they reference. |
 
 ## Behavior
@@ -101,13 +102,13 @@ The owner decided on 2026-11-17 that a rebuild reads its Postgres inputs as they
 
 1. Read every rebuild input in Postgres through CDC, from its saved log position.
 2. For each change, write a row to `change_history` with the table's name, the row's primary key, the operation, the row after the change (none for a delete), the change's log position, and its commit time.
-3. A CDC snapshot, read when the source starts without a saved position, writes a row only for a Postgres row whose newest version in `change_history` differs from it. A delete that happened while the source was stopped shows as a key the snapshot no longer holds, and is written as a delete at the snapshot's time.
+3. A CDC snapshot, read when the source starts without a saved position, writes a row only for a Postgres row whose newest version in `change_history` differs from it. A delete that happened while the source was stopped shows as a key the snapshot no longer holds, and is written as a delete at the snapshot's time. This snapshot rule is the lead's default, pending owner review.
 4. Commit at checkpoints, as raw events do. A change already committed has the same key, so it is not written again.
 
 ### Expire by age
 
-1. Once a day, delete from `raw_events` and `internal_events` every record whose topic timestamp is older than 13 months, and expire the snapshots that still reference it (LKH-FR-08).
-2. Delete from `change_history` every change older than 13 months, except the newest change of each row before that age, so that a rebuild can read every row as it was at the start of the window.
+1. Once a day, the lead's default pending owner review, delete from `raw_events` and `internal_events` every record whose topic timestamp is older than 13 months, and expire the snapshots that still reference it (LKH-FR-08).
+2. Delete from `change_history` every change whose commit time is older than 13 months, the same rule as raw events. A row whose last change is older than that has no change left in the history.
 
 No other deletion reaches these three tables. A person's deletion request does not (LKH-FR-16).
 
@@ -123,20 +124,21 @@ The partitions are cut by entry start ([JEX-FR-20](journey-execution.md#function
 
 1. Pick the oldest hot partition whose whole range is older than the Postgres retention of 90 days (JEX-NFR-12), and that no reader of the hot table still needs (JEX-FR-24).
 2. Copy its rows to the transitions history table, keyed by the transition key alone. A row whose key the table already holds is not written again.
-3. Count the partition's rows and compare its set of transition keys with the history's. Every key of the partition must be in the history.
-4. If they match, remove the partition from Postgres as one unit, never row by row. If not, keep it, count the mismatch, and alert.
+3. Close the partition to inserts. From then on, a transition for its range is a late transition and goes straight to `transition_history` (LKH-FR-12).
+4. Copy again, for the rows written between steps 2 and 3. Then count the partition's rows and compare its set of transition keys with the history's. Every key of the partition must be in the history. No insert can land in the partition after this check, because step 3 closed it.
+5. If they match, remove the partition from Postgres as one unit, never row by row. If not, keep it closed, count the mismatch, and alert.
 
-A move run twice converges. Step 2 writes nothing new, and step 4 finds the partition gone. Removing the oldest partition raises the move boundary in the same step.
+A move run twice converges. Steps 2 and 4 write nothing new, and step 5 finds the partition gone. Removing the oldest partition raises the move boundary in the same step.
 
 ### Read across both stores
 
 The owner decided on 2026-11-17 that analytics read recent ranges from Postgres, seconds fresh, and history from the lakehouse through a serverless query engine, Athena, with no engine running between queries (#111). Customer lookup reads a person's transitions the same way (#125). The two paths must agree at the boundary.
 
 1. Read the hot rows from `user_campaign_state_transitions`, and the move boundary from the hot partitions, in one Postgres snapshot.
-2. Read from `transition_history` only the rows whose entry start is below that boundary.
-3. Combine the two. Each transition is in exactly one of the two reads.
+2. Read from `transition_history` the rows whose entry start is below that boundary, and the rows of the partitions that step 1 saw closed.
+3. Combine the two, keeping one row per transition key. A closed partition's rows can be in both reads, and a late transition of a closed partition is only in the second.
 
-A move between steps 1 and 2 changes nothing. The moved rows are at or above the boundary read in step 1, so step 2 skips them. A late transition is below the boundary, so only step 2 reads it.
+A move between steps 1 and 2 changes nothing. The moved rows are at or above the boundary read in step 1, so step 2 skips them unless step 1 saw their partition closed, and then step 3 keeps one copy. A late transition below the boundary is only in step 2.
 
 ## Functional requirements
 
@@ -153,15 +155,16 @@ A move between steps 1 and 2 changes nothing. The moved rows are at or above the
 | LKH-FR-09 | The sink must not be on the decision path. A sink that is down or behind must not delay any job that writes Postgres or Kafka. |
 | LKH-FR-10 | The sink must expose, per table, the newest committed position: the topic offsets for `raw_events`, and the newest event time for `transition_history`. |
 | LKH-FR-11 | The sink must create each partition of `user_campaign_state_transitions` before any transition can fall in it, and must be the only component that creates or removes one. At every moment, partitions must exist for every entry start up to 2 months after the current time. The owner decided the 2 months on 2026-11-17 (#128). |
-| LKH-FR-12 | A transition whose entry start falls below the move boundary must be written straight to `transition_history`, once per transition key, and never to Postgres. The owner decided this on 2026-11-17 (#128). |
+| LKH-FR-12 | A transition whose entry start falls below the move boundary, or in a closed partition, must be written straight to `transition_history`, once per transition key, and never to Postgres. The owner decided this on 2026-11-17 (#128). |
 | LKH-FR-13 | The sink must write every record of every internal topic to `internal_events`, with the same columns and key as `raw_events`, unchanged and at most once per (`topic`, `partition`, `offset`). The owner decided this on 2026-11-17 (#119). |
 | LKH-FR-14 | The sink must write every change to `campaign_nodes`, `user_metric_definitions`, `segments`, `user_events`, and `user_event_fields` to `change_history`, through CDC, at most once per (`table_name`, `row_key`, `change_lsn`), so that a rebuild can read each table as it was at any commit time. The owner decided this on 2026-11-17 (#118). |
 | LKH-FR-15 | The sink must write every change to `customer_attributes` and `customer_profiles` to `change_history` by the same rules as LKH-FR-14. The owner decided this on 2026-11-17 (#119). |
 | LKH-FR-16 | A person's deletion must not reach `raw_events`, `internal_events`, or `change_history`. They are kept as received, so that a rebuild stays exact. The owner decided this for `raw_events` on 2026-11-17 (#127), and for the other two the same day, during the review of PR #173. |
-| LKH-FR-17 | Every reader that combines the hot table and `transition_history` must split them at the move boundary read in the same Postgres snapshot as its hot rows, by [Read across both stores](#read-across-both-stores), so that it reads each transition once. The owner decided on 2026-11-17 that the two read paths must agree (#111). |
+| LKH-FR-17 | Every reader that combines the hot table and `transition_history` must split them at the move boundary and the closed partitions read in the same Postgres snapshot as its hot rows, by [Read across both stores](#read-across-both-stores), so that it reads each transition once. The owner decided on 2026-11-17 that the two read paths must agree (#111). |
 | LKH-FR-18 | Rows of simulator runs must stay in `transition_history`. Simulator clean-up must not delete from it. Analytics leave out `sim_` campaigns instead. The owner decided this on 2026-11-17 (#124). |
 | LKH-FR-19 | Every lakehouse table must be partitioned by day of its main time column: `raw_events` and `internal_events` by `topic_timestamp`, `change_history` by `committed_at`, `transition_history` by `entry_started_at`, and the import tables as the [import applier](import-applier.md#interfaces) names. The owner decided this on 2026-11-17, during the review of PR #173 (#115). |
 | LKH-FR-20 | A write that spans several lakehouse tables must commit them one table at a time, and write its completion marker last, to a marker table. A reader must trust only rows that a committed marker covers, and must skip the rest. The owner decided this on 2026-11-17, during the review of PR #173 (#115). |
+| LKH-FR-21 | A move must close its partition to inserts before its final check (step 3 of [Move a hot partition](#move-a-hot-partition)), so that no transition lands in the partition between the check and its removal. |
 
 ## Non-functional requirements
 
@@ -173,7 +176,7 @@ A move between steps 1 and 2 changes nothing. The moved rows are at or above the
 | LKH-NFR-04 | Every lakehouse table with a time column must be partitioned by day of its main time column (LKH-FR-19), and compacted by the catalog's built-in maintenance (LKH-NFR-08), so that a read of one day of one table opens only the files of that day's partition. |
 | LKH-NFR-05 | The lakehouse must write nothing to the main Postgres's WAL except the removal of a hot partition, which is a catalog change, not a row change. |
 | LKH-NFR-06 | Every object of every lakehouse table must be encrypted at rest on the server with a customer-managed KMS key, as [data import](../../features/data-import.md#non-functional-requirements) requires of imported data (DIM-NFR-08). The owner decided this on 2026-11-17. |
-| LKH-NFR-07 | `change_history` must keep every change for 13 months after its commit time, and older changes only as [Expire by age](#expire-by-age) says, so that a rebuild over the 13 months of LKH-NFR-01 reads every input as of each event. |
+| LKH-NFR-07 | `change_history` must keep every change for 13 months after its commit time, and must then delete it by [Expire by age](#expire-by-age), the rule of LKH-NFR-01. The owner decided this on 2026-11-17, during the review of PR #173 (#127). A row's value from before its oldest kept change is not in the history, so a rebuild cannot read it from there ([REC-NFR-06](state-recovery.md#non-functional-requirements)). |
 | LKH-NFR-08 | Every lakehouse table, the import tables included, must be in one catalog, S3 Tables, which compacts tables with its built-in maintenance. The owner decided this on 2026-11-17 (#115). |
 | LKH-NFR-09 | Personal data in `raw_events`, `internal_events`, and `change_history` outlives a person's deletion request for up to 13 months, the retention of LKH-NFR-01 and LKH-NFR-07. This is a stated limit, not a defect. [Data import](../../features/data-import.md#privacy) states the same limit (DIM-NFR-10). The owner decided this on 2026-11-17 (#126, #127). |
 
@@ -186,7 +189,7 @@ A move between steps 1 and 2 changes nothing. The moved rows are at or above the
 | In | Kafka internal topics | The records the jobs with state read. See [Terms](#terms) and the [overview's topic list](../overview.md#kafka-topics). |
 | In | CDC of the rebuild inputs in Postgres | Every change, through a publication of the sink's own. See [the data model](../data-model.md#publications-for-cdc). |
 | In | `user_campaign_state_transitions` | Completed nodes. See [journey execution](journey-execution.md#interfaces) and [the data model](../data-model.md). |
-| In | Late transitions from the state machine | Transitions below the move boundary, in the columns of `user_campaign_state_transitions` (LKH-FR-12). |
+| In | Late transitions from the state machine | Transitions below the move boundary or in a closed partition, in the columns of `user_campaign_state_transitions` (LKH-FR-12). |
 | Out | Lakehouse `raw_events` | `topic`, `partition`, `offset`, `key`, `value` (bytes), `topic_timestamp`, `ingested_at`. Key (`topic`, `partition`, `offset`). |
 | Out | Lakehouse `internal_events` | The columns of `raw_events`, for the internal topics. Key (`topic`, `partition`, `offset`). |
 | Out | Lakehouse `change_history` | `table_name`, `row_key`, `operation`, `row` (the row after the change, none for a delete), `change_lsn`, `committed_at`. Key (`table_name`, `row_key`, `change_lsn`). |
@@ -207,7 +210,7 @@ The table names are the target names. Their namespace is chosen with the deploym
 | An outage longer than Kafka's retention | Records past the retention are lost from `raw_events`. The sink counts the gap by offset and alerts. |
 | A move finds a mismatch | The partition stays in Postgres, the mismatch is counted, and an operator is alerted (LKH-FR-06). |
 | A transition arrives for a partition that already left Postgres | It is a late transition. Write it straight to `transition_history` (LKH-FR-12). The outbox and the timer flow never see it. |
-| A CDC slot of the change history sink is lost | The sink starts again with a snapshot (step 3 of [Write changes](#write-changes)). Changes between the lost position and the snapshot that the snapshot no longer shows, such as a row updated twice, are missing, and a rebuild over that time is not exact. The sink counts the gap and alerts. |
+| A CDC slot of the change history sink is lost | The sink starts again with a snapshot (step 3 of [Write changes](#write-changes)). Changes between the lost position and the snapshot that the snapshot no longer shows, such as a row updated twice, are missing, and a rebuild over that time is not exact. The sink counts the gap and alerts, the lead's default pending owner review. |
 | A record that is not valid in its topic's format | Write it unchanged. Validation is event ingestion's job, and the raw table keeps what the topic held. |
 
 ## Acceptance criteria
@@ -217,6 +220,7 @@ The table names are the target names. Their namespace is chosen with the deploym
 - Given a commit of 1,000 rows, when a reader reads during the commit, then it sees 0 or 1,000 of them. (LKH-FR-03)
 - Given a transition row written to `user_campaign_state_transitions`, then `transition_history` holds a row with the same key and the same column values. (LKH-FR-04)
 - Given a move run twice for the same partition, then `transition_history` holds each row once. (LKH-FR-05)
+- Given a move that has closed its partition, when a transition for that partition's range arrives before the removal, then `transition_history` holds it, the partition does not, and a reader during the move counts it once. (LKH-FR-21, LKH-FR-12, LKH-FR-17)
 - Given a hot partition of 10,000 rows and a history range of 9,999, when the move runs, then the partition stays in Postgres and the mismatch is counted. (LKH-FR-06)
 - Given a partition that left Postgres, then no row change for it appeared on `outbox_transitions_pub`, and the WAL written by the removal is not proportional to its rows. (LKH-FR-07, LKH-NFR-05)
 - Given a row deleted from `transition_history`, when the deletion completes, then no kept snapshot references a file that holds it. (LKH-FR-08)
@@ -234,7 +238,7 @@ The table names are the target names. Their namespace is chosen with the deploym
 - Given a deletion request for a person with rows in `internal_events` and `change_history`, when the deletion completes, then those rows are unchanged, and each is gone 13 months after its time. (LKH-FR-16, LKH-NFR-09)
 - Given `raw_events`, then each data file holds records of one day of `topic_timestamp`, and a read of 2026-11-17 opens no file of another day. (LKH-FR-19, LKH-NFR-04)
 - Given a write to two tables that has committed the first and not yet its marker, when a reader reads, then it returns none of the write's rows. Given the marker committed, then it returns all of them. (LKH-FR-20)
-- Given a `segments` row last changed 14 months ago, then `change_history` still holds that change. Given a change to it 15 months ago that a later change 14 months ago replaced, then that older change is gone. (LKH-NFR-07)
+- Given a `segments` row changed 12 months ago and 14 months ago, then `change_history` holds the change of 12 months ago and not the one of 14 months ago. (LKH-NFR-07)
 - Given any lakehouse table, the import tables included, then the S3 Tables catalog lists it. (LKH-NFR-08)
 - Given a person's deletion request on 2026-11-17 and their raw events from 2026-11-01, then the raw events are in `raw_events` until 2027-12-01 and gone by 2027-12-03. (LKH-NFR-09)
 - Given the sink running at the sustained load, then a record's lag from the topic to a committed row stays under the commit interval plus one checkpoint duration. (LKH-NFR-03)
@@ -245,7 +249,9 @@ The table names are the target names. Their namespace is chosen with the deploym
 
 ## Open questions
 
-None. The owner decided the storage questions on 2026-11-17 (#111, #114, #115, #124, #126, #127, #128), and answered the parts left open in PR #173 the same day: the partitioning of every table and the multi-table commit (LKH-FR-19, LKH-FR-20), how far ahead partitions exist (LKH-FR-11), and deletion in `internal_events` and `change_history` (LKH-FR-16).
+The owner decided the storage questions on 2026-11-17 (#111, #114, #115, #124, #126, #127, #128), and answered the parts left open in PR #173 the same day: the partitioning of every table and the multi-table commit (LKH-FR-19, LKH-FR-20), how far ahead partitions exist (LKH-FR-11), and deletion in `internal_events` and `change_history` (LKH-FR-16). One part follows from those answers and stays open:
+
+- **A Postgres input's value at the start of the rebuild window.** `change_history` keeps 13 months (LKH-NFR-07), so it holds no value for a row from before the row's oldest kept change. A row with no change in the window could be read from its current Postgres value, which has not changed since. A row first changed inside the window has no earlier value anywhere. Whether a rebuild accepts that gap, or the history keeps each change's before-image, is undecided. Until then, REC-NFR-06 applies to these inputs too.
 
 ## Related
 

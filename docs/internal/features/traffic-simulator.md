@@ -208,7 +208,7 @@ Bench also has three runs that do not use a backlog:
 | SIM-NFR-05 | A load run must report its measurements at least every 15 seconds while it runs, so the engineer can watch it alongside the deployment's dashboards. |
 | SIM-NFR-06 | Running the simulator must add no compute to the deployment. It may add an image repository and narrow permissions for its own reports, whose cost is cents. |
 | SIM-NFR-07 | The simulator must run without a web browser. Its image stays small: no browser engine or browser automation. |
-| SIM-NFR-08 | The load generator must sustain the long burst of [platform capacity](../architecture/capacity.md#non-functional-requirements), 1,000 events per second for 1 hour, with under 1% send errors (CAP-NFR-12). |
+| SIM-NFR-08 | The load generator must sustain the long burst of [platform capacity](../architecture/capacity.md#non-functional-requirements), 1,000 events per second for 1 hour, with under 1% send errors (CAP-NFR-12). The 1% follows SIM-NFR-03, the lead's default pending owner review. |
 
 ## Interfaces
 

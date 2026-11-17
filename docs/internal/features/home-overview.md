@@ -208,7 +208,7 @@ Worked example. Transitions with event times on 2026-11-09 local: 3 setup rows, 
 - Given cutover has happened, then no link on the page opens `/campaign`, `/segments`, `/admin`, or `/platform`. (HOM-FR-11)
 - Given a viewer who uses every control on the page, then no row of any table changes. (HOM-NFR-02)
 - Given 20 viewers who load `/v2` within 15 seconds, then studio reads the dead-letter topic's offsets once. (HOM-NFR-03)
-- Given 4 entries in hot partitions and 1 late transition in `transition_history`, all in Last 30 days, then Entries is 5. Given a move of a partition while the page loads, then no entry counts twice or not at all. (HOM-NFR-04)
+- Given 4 entries in hot partitions and 1 entry in a partition that moved to `transition_history`, all with their setup transition in the range, then Entries is 5. Given a move of a partition while the page loads, then no entry counts twice or not at all. (HOM-NFR-04)
 - Given a campaign `sim_purchase_60s` with 10 entries in the range and a campaign `welcome` with 3, then Entries is 3, and the journeys table does not list `sim_purchase_60s`. (HOM-FR-12)
 - Given a deployed database with 30 days of transitions, when Last 30 days loads, then each region answers within 2 seconds at the 95th percentile, or the result of decision 0035's check is recorded. (HOM-NFR-01)
 

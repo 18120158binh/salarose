@@ -17,7 +17,7 @@ Every issue has an id, a severity, and the requirement it breaks. Fix an issue a
 | [Notification outbox](components/notification-outbox.md) | 0 | 0 | 0 | 0 |
 | [Business event fan-out](components/business-event-fan-out.md) | 1 | 0 | 0 | 0 |
 | [Lakehouse sink](components/lakehouse.md), not built | 0 | 0 | 0 | 0 |
-| [State recovery](components/state-recovery.md) | 0 | 0 | 5 | 0 |
+| [State recovery](components/state-recovery.md) | 0 | 0 | 6 | 0 |
 | [Segment membership pass](components/segment-membership-pass.md), not built | 1 | 0 | 0 | 0 |
 | [Import applier](components/import-applier.md) | 1 | 0 | 3 | 1 |
 | [Import metric pass](components/import-metric-pass.md) | 0 | 0 | 4 | 2 |
@@ -38,7 +38,7 @@ Every issue has an id, a severity, and the requirement it breaks. Fix an issue a
 | [Data health](features/data-health.md), not built | 0 | 0 | 1 | 0 |
 | [Data import](features/data-import.md), not built | 0 | 0 | 2 | 0 |
 | [CDP agent](features/cdp-agent.md), not built | 0 | 0 | 0 | 0 |
-| Total | 4 | 3 | 28 | 8 |
+| Total | 4 | 3 | 38 | 8 |
 
 To recount one page, run `grep -cE '^\| [A-Z]+-KI-[0-9]+ \| Blocking \|' <page>.md`, with each severity in turn.
 

@@ -89,7 +89,7 @@ The owner answered this record's open questions on 2026-11-17. Each answer is wr
 
 Two consequences differ from the text above. Analytics keep reading the hot table for recent ranges, so the analytics indexes stay on the hot partitions ([JEX-NFR-13](../components/journey-execution.md#non-functional-requirements)). The lakehouse also keeps the internal topics and the history of the Postgres tables a rebuild reads, by the answers in [decision 0054](0054-recover-flink-state-in-four-layers.md#amendments).
 
-The owner answered the parts the first answers left open during the review of PR #173 on 2026-11-17: the partitioning and multi-table commits above, partitions created 2 months ahead for early transitions ([LKH-FR-11](../components/lakehouse.md#functional-requirements)), and deletion in the other rebuild histories. No question of this record stays open.
+The owner answered the parts the first answers left open during the review of PR #173 on 2026-11-17: the partitioning and multi-table commits above, partitions created 2 months ahead for early transitions ([LKH-FR-11](../components/lakehouse.md#functional-requirements)), and deletion in the other rebuild histories. One part that follows from them stays open in the [lakehouse sink](../components/lakehouse.md#open-questions): a Postgres input's value at the start of the rebuild window.
 
 ## Related
 
