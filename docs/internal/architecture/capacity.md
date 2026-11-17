@@ -280,9 +280,9 @@ The sizing and the load test read these. All exist today except the lakehouse si
 - **The segment membership pass's budget.** SMP-NFR-02 gives the pass the governor's thresholds but no rate cap of its own. The sizing counts it at the import metric pass's 0.25 MB/s. That is the lead's default, pending owner review.
 - **Checkpoint duration bound.** The load test measures checkpoint duration, and CAP-NFR-04 forbids failures. Whether a duration under the timeout but close to it fails the run is undecided.
 - **Background writers during the test.** Whether the load test runs with the paced writers at their caps, or counts them only on paper, is undecided. The sizing counts them either way (CAP-FR-02).
-- **Peaks longer than the burst.** At 500 million events a month, a peak of 5 to 10 times the average is 950 to 1,900 events per second. The burst covers that for 10 minutes (CAP-NFR-11). How long a real peak lasts, and whether the target needs a longer burst, is undecided.
-- **The coalescing window.** `T` is open in [the profile writer](components/profile-writer.md#open-questions). The sizing cannot give the WAL of `user_metrics` until it is set and `D(r, T)` is measured.
-- **Postgres retention of transitions.** It caps the transitions table's data on disk and is open in [journey execution](components/journey-execution.md#open-questions).
+- **Peaks longer than the burst.** At 500 million events a month, a peak of 5 to 10 times the average is 950 to 1,900 events per second. The burst covers that for 10 minutes (CAP-NFR-11). How long a real peak lasts, and whether the target needs a longer burst, is undecided. Tracked in #116.
+- **The coalescing window.** `T` is open in [the profile writer](components/profile-writer.md#open-questions). The sizing cannot give the WAL of `user_metrics` until it is set and `D(r, T)` is measured. Tracked in #112.
+- **Postgres retention of transitions.** It caps the transitions table's data on disk and is open in [journey execution](components/journey-execution.md#open-questions). Tracked in #114.
 - **Rerunning the test.** CAP-FR-07 requires the sizing sheet to be checked again on a change. Which changes also require a new load test is undecided.
 
 ## Related

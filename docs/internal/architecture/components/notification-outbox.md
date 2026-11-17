@@ -172,7 +172,7 @@ The request's `context` is the transition's context, as a JSON object.
 
 ## Open questions
 
-- Does the outbox need more than today's publication? `outbox_transitions_pub` already covers only the transitions table and the heartbeat table, and [decision 0052](../decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) records it as the current state. Once the table is partitioned, how the publication delivers each partition's inserts, for example under the parent table's name, is undecided too.
+- Does the outbox need more than today's publication? `outbox_transitions_pub` already covers only the transitions table and the heartbeat table, and [decision 0052](../decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) records it as the current state. Once the table is partitioned, how the publication delivers each partition's inserts, for example under the parent table's name, is undecided too. Tracked in #122.
 - Should a request whose profile lookup failed keep the transition's `user_id` and `domain_user_id`? OUT-FR-08 says yes, so that `web_push` stays deliverable. The alternative is to leave out `profile`. This was chosen while fixing the code, and is pending owner review.
 - Should `generated_at` be the event time of the transition or the time the request is published?
 - Which content fields does each channel require, and should the outbox reject an action that lacks them?
