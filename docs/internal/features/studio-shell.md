@@ -7,8 +7,8 @@ implementation: partial
 area: studio
 tags: [ui, studio-v2, studio-v3, navigation, roles, routes]
 created: 2026-11-07
-updated: 2026-11-08
-version: 1.0
+updated: 2026-11-17
+version: 1.1
 known_issues: ../known-issues/features/studio-shell.md
 ---
 
@@ -92,6 +92,7 @@ The Stage column gives each route's stage when studio v3 starts. The release tha
 | `/data/datasets`, `/data/imports`, `/data/metrics` | Reserved for [data import](data-import.md). `/data/datasets` replaces `/data/record-types`. | As the data import contract says | `reserved` | None |
 | `/data/privacy` | Reserved for [data import](data-import.md) | Admin | `reserved` | None |
 | `/platform` | [Platform console](platform-console.md) | Admin | `shipped` | `/platform` |
+| `/agent` | Reserved for the [CDP agent](cdp-agent.md#placement). Its sidebar entry, once built, is **Ask the agent** (#169). | As the CDP agent contract says | `reserved` | None |
 | `/account` | [Your account](#account-page) | Any staff user | `preview` | `/campaign` |
 | `/settings` | [Workspace settings](#settings-page) | Admin | `preview` | `/campaign` |
 
@@ -103,7 +104,7 @@ The Stage column gives each route's stage when studio v3 starts. The release tha
 |---|---|
 | `preview` | Preview viewers whose role the Who column allows. The sidebar entry and the page header carry a Preview badge. Nobody else sees the route in the sidebar or the palette, and a request from anybody else gets the not-found page, as for a route that does not exist. |
 | `shipped` | Every staff user whose role the Who column allows |
-| `reserved` | Nobody. The path has no page and no sidebar entry. The data import contract fills it. |
+| `reserved` | Nobody. The path has no page and no sidebar entry. The contract the route names fills it: data import, or the CDP agent for `/agent`. |
 
 The preview flag narrows who reaches a route and never widens the Who column. An editor with the flag still gets the forbidden state on an admin route. A control that an area adds to a `shipped` route, such as **New segment** on `/segments`, follows the same rule while its area is at `preview`. Preview viewers see it with a Preview badge, and everyone else sees the page as it was, classic links included.
 
