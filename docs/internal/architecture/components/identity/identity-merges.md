@@ -143,7 +143,7 @@ A fold makes no rule a candidate. A rule whose metric condition the fold made tr
 | IMG-FR-16 | A fold must not make a rule a candidate. |
 | IMG-FR-17 | A fold must not rewrite `user_campaign_state_transitions` rows. `campaign_node_stats` must map retired ids through the merge records. |
 | IMG-FR-18 | A node that completes a second time between a merge and its fold must be counted by campaign and node. |
-| IMG-FR-19 | A merge must correct the moved counts of `campaign_node_stats`: for every node the retired `canon_id` completed in a partition that left Postgres, the count is recomputed from `transition_history` mapped through the merge records ([LKH-FR-24](../lakehouse.md#functional-requirements)), so that IMG-FR-13 holds across moved partitions. The owner decided this on 2026-11-18, in the review of PR #174. |
+| IMG-FR-19 | A merge must correct the moved counts of `campaign_node_stats`: for every node the retired `canon_id` completed in a partition that left Postgres, that partition's count is recomputed from its rows in `transition_history` mapped through the merge records ([LKH-FR-24](../lakehouse.md#functional-requirements)), so that IMG-FR-13 holds within each moved partition. A person whose ids completed the node in different partitions still counts once per partition; that limit is for the owner ([decision 0059](../../decisions/0059-compute-node-stats-as-a-materialized-view-over-hot-and-moved-counts.md#consequences)). The owner decided this on 2026-11-18, in the review of PR #174. |
 
 ## Non-functional requirements
 
@@ -160,7 +160,7 @@ Numbers marked "proposed" are starting values for review, not decisions.
 | Direction | Interface | Contract |
 |---|---|---|
 | Out, from the identity graph | Kafka `identity-merges` | Key: the retired `canon_id`. Message below. |
-| In | Customer decision, journey execution | Read `identity-merges`. |
+| In | Customer decision, journey execution, the [lakehouse sink](../lakehouse.md#interfaces) | Read `identity-merges`. The sink recomputes moved counts from it (LKH-FR-24). |
 | Out | Kafka `customer-profile-mutations` | The fold mutation for the winner, and a retire mutation for the retired `canon_id`. The retire mutation is a new message kind. The [customer decision](../customer-decision.md#interfaces) contract defines its shape when this contract is accepted. |
 | Write | `user_metrics` | The profile writer removes the rows of a retired `canon_id`. |
 | Read | `user_campaign_state_transitions`, `campaign_node_stats` | Node counts across merged ids. |
@@ -214,7 +214,7 @@ The merge record:
 - Given a segment campaign with re-entry `never`, and an entry under each `canon_id`, when they merge, then only the earlier entry survives. (IMG-FR-15)
 - Given a rule `m_view_count COUNT >= 5` and 3 views under `C1` and 2 under `C2`, when the fold makes the count 5, then the rule does not fire until the next `view_product`. (IMG-FR-16)
 - Given transition rows under `C1`, when `C1` is retired into `C2`, then the rows still carry `C1`, and `campaign_node_stats` counts the person once. (IMG-FR-17, IMG-FR-13)
-- Given `n1_view` completed under `C1` in a partition that left Postgres and under `C2` in a hot partition, when `C1` is retired into `C2`, then the moved count of `n1_view` for that partition is recomputed, and `campaign_node_stats` counts the person once. (IMG-FR-19, IMG-FR-13)
+- Given `n1_view` completed under `C1` and under `C2` in the same partition that left Postgres, when `C1` is retired into `C2`, then the moved count of `n1_view` for that partition is recomputed, and `campaign_node_stats` counts the person once. (IMG-FR-19, IMG-FR-13)
 - Given `n1_view` completing under `C2` on another device 3 seconds after the merge and before the fold, then the second-completion count for `CAMP-0001` and `n1_view` rises by 1. (IMG-FR-18)
 
 ## Open questions
