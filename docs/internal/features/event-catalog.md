@@ -7,8 +7,8 @@ implementation: partial
 area: studio
 tags: [ui, admin, events, schema]
 created: 2026-10-14
-updated: 2026-11-08
-version: 2.0
+updated: 2026-11-17
+version: 2.1
 known_issues: ../known-issues/features/event-catalog.md
 ---
 
@@ -51,6 +51,7 @@ The studio shows marketers a plainer word for some terms. The contract uses the 
 | Path | Field name | An attribute's dotted key from the root, such as `product.price`. |
 | Type | Text, Number, Yes or no, Date and time, Group of fields | One of `string`, `number`, `boolean`, `datetime`, and `json`, in that order. A `json` attribute can have children, its sub-fields. |
 | Required | Must be sent | An attribute that every event of its name must send with a value, whenever its parent object is present. Off by default. |
+| PII flag | Personal data | A per-attribute mark, off by default, that says the attribute's values are personal data. The [CDP agent](cdp-agent.md#privacy) sends a flagged value to its model only as a keyed hash. Planned. The owner decided this on 2026-11-17 (#166). |
 | Schema gate | Strict | A per-event switch, off by default. While it is on, ingestion drops each event of that name that does not match its attributes. The owner decided this on 2026-10-18. |
 | Use | In use | A metric definition or a published campaign node that reads an attribute or names an event, as CAT-FR-11 defines it. |
 | Dropped data | Dropped data | The records that ingestion drops, the gate's drops included. They are kept for 7 days and admins read them at Data > Monitoring > Dropped data, as [data health](data-health.md#dropped-data) says. |
@@ -77,6 +78,7 @@ Example. An admin adds `com.acme/add_to_cart` with attributes `product.id` (stri
 - **Add a field inside a field.** Every field row offers **+ Add field inside**, in the detail page and in the **Add event** dialog. A sub-field can also be inferred from a pasted sample of the parent. Adding inside a field that is not a group turns it into a group, of type `json`. That is a breaking change: the form warns first and says that events that send the old value type will no longer match, and are dropped while the gate is on. It is refused while the field is in use. The owner decided this on 2026-11-08.
 - **Delete an event.** An event can be deleted only when it has no metric definition, archived ones included, and no other use. Otherwise the delete is refused. The refusal names its metric definitions and its other uses, says that metric definitions are kept for history and never deleted, and offers to hide the event. A delete that is allowed asks for confirmation and deletes the event and its attributes. The owner decided this on 2026-11-08.
 - **Mark an attribute required.** Making an attribute Must be sent asks first. The confirmation names who sends the event, the website tracker, the app, and any API source with a key, and says that while the gate is on, every event that misses the attribute is dropped. Clearing Must be sent is safe and applies at once.
+- **Mark an attribute as personal data.** Planned. An admin sets or clears an attribute's PII flag on the detail page. The flag changes nothing at ingestion. It decides only whether the [CDP agent](cdp-agent.md#privacy) may send the attribute's values to its model as they are (flag off) or only as keyed hashes (flag on).
 - **Turn the schema gate on or off.** Turning it on asks first. The confirmation names the required attributes, and says that ingestion then drops every event of that name that misses one or sends a value of the wrong type, that journeys, segments, and metrics never see a dropped event and the studio does not put it back, and that admins can read dropped events in Monitoring > Dropped data for 7 days. Turning it off applies at once. Both changes reach ingestion within seconds, and apply to the events it reads after that.
 
 ### Event detail page
@@ -84,7 +86,7 @@ Example. An admin adds `com.acme/add_to_cart` with attributes `product.id` (stri
 `/data/events/[id]` shows one event. An admin opens it from a row of `/data/events`, or lands on it after **Add event** succeeds. It has these parts:
 
 - **Header.** The display name, the system name, a kind badge, the creation date, a "Hidden from builder" badge when the event is inactive, and a Strict badge when the gate is on. An admin edits the display name and the description here. The page offers no kind change. An existing business event shows its kind and its item key read-only, to every viewer.
-- **Fields.** A tree table with each attribute's path, label, type, Must be sent flag, example, and default value, and an "In use" badge with the number of uses. Row actions edit, add a field inside, change Must be sent, and delete. **Add field** adds one field at the top level, or infers fields from a pasted sample payload. Below the table, a sample event built from the examples.
+- **Fields.** A tree table with each attribute's path, label, type, Must be sent flag, PII flag (planned), example, and default value, and an "In use" badge with the number of uses. Row actions edit, add a field inside, change Must be sent, and delete. **Add field** adds one field at the top level, or infers fields from a pasted sample payload. Below the table, a sample event built from the examples.
 - **Where it's used.** The campaigns that use the event, with their status, its metric definitions, archived ones marked, linking to Data > Metrics, and the segments that use it.
 - **Strict checking.** The gate's switch, and an example of an event it accepts and one it drops.
 - **Field change rules.** The three kinds of CAT-FR-11, each with its changes.
@@ -127,6 +129,7 @@ An attribute whose stored type is not one of the five has no type rule. Only its
 | CAT-FR-18 | The studio must not offer the kind `business` when it creates an event, until customer decision reads business-event matches. It must create every new event with the kind `person`. |
 | CAT-FR-19 | An admin must be able to add an attribute inside any attribute, by hand or from a pasted sample of that attribute. Adding inside an attribute that is not `json` turns it into a `json` group, which is a Breaking change under CAT-FR-11: the form must warn before the save that events sending the old value type will no longer match. |
 | CAT-FR-20 | The detail page must show, for each attribute, the number of its uses, and for the event, the campaigns, the metric definitions, archived ones marked, and the segments that use it. |
+| CAT-FR-22 | An admin must be able to mark each attribute as personal data, and clear the mark. A new attribute is not marked, and neither is an existing one when the flag arrives. The detail page must show the flag on each attribute. Planned. Decided by the owner on 2026-11-17 (#166). |
 
 ## Non-functional requirements
 
@@ -142,7 +145,8 @@ An attribute whose stored type is not one of the five has no type rule. Only its
 | UI | `/data/events/[id]` | The [event detail page](#event-detail-page). Changes for admins, read-only for editors. Under `/v2` until the prefix drops. |
 | UI | `/admin/events` | The classic catalog page, admin only, until cutover. From cutover it redirects to `/data/events`, as the [studio shell](studio-shell.md#cutover-and-redirects) says. |
 | Read and write | `user_events` | One row per event. `enforce_schema` holds the schema gate, `status` the status. |
-| Read and write | `user_event_fields` | One row per attribute, keyed by path. `required` holds the Required flag. |
+| Read and write | `user_event_fields` | One row per attribute, keyed by path. `required` holds the Required flag. A planned column holds the PII flag (CAT-FR-22). |
+| Read by the CDP agent | `user_event_fields` | The PII flag, to hash flagged values before they reach the model ([AGT-FR-14](cdp-agent.md#functional-requirements)) |
 | Read by ingestion | `user_events_pub`, `user_event_fields_pub` | CDC publications of the two tables, which ingestion reads to apply the schema gate |
 | Referenced by | `user_metric_definitions.user_event_id` | An event with a metric definition cannot be deleted (CAT-FR-08). |
 | Read | `user_metric_definitions`: `agg_field`, `default_properties`, `filter_conditions` | Attribute uses, for a breaking change |
@@ -194,9 +198,11 @@ See [the data model](../architecture/data-model.md).
 - Given the admin turns on the schema gate of `com.acme/add_to_cart`, then the confirmation names the required attributes and says that dropped events are kept 7 days in Monitoring > Dropped data. When the admin cancels it, the gate stays off. (CAT-FR-13)
 - Given `com.acme/add_to_cart` with `product.price` (number, required) and the gate on, when a `com.acme/add_to_cart` arrives with `product.price` `"12990000"` or without `product.price`, then customer decision does not see it. When the gate is off, it does. (CAT-FR-15)
 - Given `product.price` used by one journey and one metric definition, then its row shows "In use · 2", and the page lists the journey, the metric definition, and the segments that use the event. (CAT-FR-20)
+- Given an admin who marks `customer.email` of `com.acme/add_to_cart` as personal data, then the detail page shows the flag, ingestion accepts and drops the same events as before, and the CDP agent reads `customer.email` values only as keyed hashes. (CAT-FR-22)
 
 ## Open questions
 
+- How a PII flag change classifies under CAT-FR-11. Setting the flag only narrows what the CDP agent sends to its model. Clearing it lets the attribute's values reach the model as they are. Is clearing it Safe, or does it ask first?
 - Whether a segment that uses an event or an attribute counts as a use that refuses a breaking change or an event delete. The detail page lists segments (CAT-FR-20), but CAT-FR-08 and CAT-FR-11 do not count them yet.
 - Where the workspace's vendor prefix is configured, and who may change it. CAT-FR-21 needs one prefix per workspace but does not say where it is set.
 

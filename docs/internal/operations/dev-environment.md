@@ -8,7 +8,7 @@ area: infra
 tags: [deployment, aws, kubernetes, environment, cost]
 created: 2026-11-17
 updated: 2026-11-17
-version: 0.1
+version: 0.2
 ---
 
 # Dev environment
@@ -59,11 +59,11 @@ Out of scope:
 2. **Use.** A person signs in to studio, Grafana, Argo CD, or the Flink UI through Cognito, and may run the traffic simulator against the collector. Each of these counts as use.
 3. **Idle stop.** Every 5 minutes the idle stop checks for use. After 30 minutes with none, it takes a stop savepoint of every Flink job, then stops the node.
 4. **Cap.** Twelve hours after a start, the idle stop stops the node whatever the activity, through the same savepoint and stop. A forgotten simulator cannot run all night. To keep working, the operator starts the environment again.
-5. **Failed savepoint.** If a stop savepoint fails or times out, the idle stop logs the failure and stops the node anyway. At the next start, that job resumes from its last checkpoint, as after a Spot reclaim (the lead's default, pending owner review).
-6. **Spot reclaim.** The node goes away without a stop savepoint. The Flink jobs resume from their last checkpoint at the next start, as after a node failure. Kafka and Postgres data are on the persistent volume and survive. Whether a new node starts on its own after a reclaim is an [open question](#open-questions).
+5. **Failed savepoint.** If a stop savepoint fails or has not finished 5 minutes after the idle stop asked for it, the idle stop logs the failure and stops the node anyway. At the next start, that job resumes from its last checkpoint, as after a Spot reclaim. The owner decided this on 2026-11-17 (#149).
+6. **Spot reclaim.** The node goes away without a stop savepoint. No new node starts on its own: the environment stays stopped until the operator runs the start command, so it never bills for a node nobody asked for. The start command asks for the node as a one-time Spot request. The Flink jobs resume from their last checkpoint at that start, as after a node failure. Kafka and Postgres data are on the persistent volume and survive. The owner decided this on 2026-11-17 (#146).
 7. **While stopped.** Nothing runs and nothing answers on the hostnames. Tracker hits sent to the collector are lost, and that is accepted, because only the simulator sends events, and only while the owner uses the environment (owner, 2026-11-17). No buffer sits in front of the collector.
 8. **Backup.** Once a week, Data Lifecycle Manager snapshots the persistent volume and keeps the last 4 snapshots (the lead's default, pending owner review).
-9. **Spend alert.** AWS Budgets alerts when the month's spend passes a threshold. The amount and the recipient are an [open question](#open-questions).
+9. **Spend alert.** AWS Budgets alerts the owner when the month's actual or forecast spend passes $30. The [cost estimate](#cost-estimate) reaches $38, so the alert may fire in a normal month, and the owner chose $30 knowing that. The recipient is the owner's address, set outside git as a Terraform variable. The owner decided both on 2026-11-17 (#145).
 10. **Change.** To change what runs, the operator pushes to the deploy branch, and the CI build-and-pin flow of the Free Plan environment applies unchanged (DEV-FR-21). A push while the environment is stopped builds and pins images, and Argo CD rolls them out at the next start. Changes to AWS resources go through Terraform, never through CI.
 
 Example. The owner starts the environment at 09:00, works until 12:10, and leaves the simulator off. The idle stop sees no use from 12:10, takes the stop savepoints at about 12:40 to 12:45, and stops the node. The owner starts it again at 14:00 and forgets the simulator running at 18:00. The simulator's events count as use, so the node runs until the cap at 02:00 and stops then.
@@ -83,11 +83,11 @@ Example. The owner starts the environment at 09:00, works until 12:10, and leave
 | DEV-FR-09 | The idle stop must count the environment in use when, within the check window, at least one of these happened: an HTTP request to studio, Grafana, Argo CD, or the Flink UI, read from the ingress access log; a new event at the collector; an open Session Manager session or a connection to the Kubernetes API. |
 | DEV-FR-10 | The idle stop must check for use every 5 minutes. After 30 minutes with no use, it must take a savepoint of every Flink job, then stop the node. |
 | DEV-FR-11 | The idle stop must stop the node 12 hours after the start, whatever the activity, through the same savepoint and stop as DEV-FR-10. |
-| DEV-FR-12 | If a stop savepoint fails or does not finish in time, the idle stop must log which job failed and stop the node anyway. The job then resumes from its last checkpoint at the next start (the lead's default, pending owner review). |
+| DEV-FR-12 | If a stop savepoint fails or has not finished 5 minutes after the idle stop asked for it, the idle stop must log which job failed and stop the node anyway. The job then resumes from its last checkpoint at the next start. Decided by the owner on 2026-11-17 (#149). |
 | DEV-FR-13 | At every start, each Flink job must resume from its newest savepoint or retained checkpoint, whichever is newer, and never with `allowNonRestoredState`. A job with neither starts clean only on the first start of a new account. |
 | DEV-FR-14 | The idle stop must run on the node and keep working when Argo CD, Prometheus, or any Flink job is down. A failure of the idle stop itself must not leave the node running past the 12-hour cap: a second mechanism, independent of the idle stop and chosen by the builder, must stop the node at the cap (the lead's default, pending owner review). |
 | DEV-FR-15 | Data Lifecycle Manager must snapshot the persistent volume once a week and keep the last 4 snapshots (the lead's default, pending owner review). |
-| DEV-FR-16 | An AWS Budgets budget must alert when the month's actual or forecast spend passes the threshold the owner sets. |
+| DEV-FR-16 | An AWS Budgets budget must alert when the month's actual or forecast spend passes $30. Decided by the owner on 2026-11-17 (#145). |
 | DEV-FR-17 | Studio, the collector, Argo CD, Grafana, and the Flink UI must be reachable only over HTTPS on port 443, through the k3s Traefik ingress, with certificates from Let's Encrypt for the public hostnames. Port 80 is open only for the ACME challenge and the redirect to HTTPS. No other port may be open to the internet. Operators reach the node and the Kubernetes API through AWS Systems Manager Session Manager. This carries over AFP-FR-15 and AFP-FR-16 (the lead's default, pending owner review). |
 | DEV-FR-18 | Every tool must sign people in through one Cognito user pool, as AFP-FR-17 and AFP-FR-23 to AFP-FR-32 of the [Free Plan contract](aws-free-plan.md#functional-requirements) say, with this environment's names, and with each app client's callback and logout URLs on the public hostnames (the lead's default, pending owner review). |
 | DEV-FR-19 | The Kafka browser must be off by default, to save memory. When an operator enables it, AFP-FR-30 applies (the lead's default, pending owner review). |
@@ -96,13 +96,17 @@ Example. The owner starts the environment at 09:00, works until 12:10, and leave
 | DEV-FR-22 | The node must pull images from ECR with its instance role, as AFP-FR-06 says (the lead's default, pending owner review). |
 | DEV-FR-23 | Argo CD, Postgres, Kafka, the Flink jobs, the customer profiles table, the collector's client address, the metrics, the Flink jobs dashboard, and the pipeline alerts must meet AFP-FR-07 to AFP-FR-14, AFP-FR-22, AFP-FR-26, AFP-FR-34 to AFP-FR-36, with this environment's names (the lead's default, pending owner review). |
 | DEV-FR-24 | The checkpoint and savepoint bucket must have versioning on, as [state recovery](../architecture/components/state-recovery.md) requires for savepoints. |
+| DEV-FR-25 | The alert of DEV-FR-16 must go to the owner's address, set outside git as a Terraform variable. The address must not appear in the repo, in a Terraform file or plan output committed to it, or in a tag. Decided by the owner on 2026-11-17 (#145). |
+| DEV-FR-26 | The start command must ask for the node as a one-time Spot request. Nothing may start a node on its own after a Spot reclaim, an idle stop, or the cap: no persistent Spot request, Auto Scaling group, or fleet that replaces a lost node. After a reclaim the environment stays stopped until the operator runs the start command. Decided by the owner on 2026-11-17 (#146). |
+| DEV-FR-27 | Every regional AWS resource of the environment must be in `us-east-1`. Decided by the owner on 2026-11-17 (#147). |
+| DEV-FR-28 | The environment's Terraform, start and stop scripts, and Kubernetes overlay must grow out of the Free Plan ones, moved and renamed for this environment, not built as a second set beside them. Once the move lands, no Terraform root, overlay, CI trigger, or deploy skill reference may name the Free Plan environment as a live target. Decided by the owner on 2026-11-17 (#148). |
 
 ## Non-functional requirements
 
 | Id | Requirement |
 |---|---|
 | DEV-NFR-01 | From the start command to five Flink jobs `RUNNING` and studio answering `GET /login` with `200` must take 10 minutes or less, when Spot capacity is available. The owner accepts this wait (2026-11-17). |
-| DEV-NFR-02 | The node must stop no later than 40 minutes after the last use, and no later than 12 hours and 15 minutes after the start, unless AWS refuses the stop. The 10 minutes past the rule cover one 5-minute check and the stop savepoints. This bound is derived on this page, not set by the owner, and depends on the [savepoint time limit](#open-questions). |
+| DEV-NFR-02 | The node must stop no later than 40 minutes after the last use, and no later than 12 hours and 15 minutes after the start, unless AWS refuses the stop. The 10 minutes past the rule cover one 5-minute check and the 5-minute savepoint limit of DEV-FR-12. This bound is derived on this page, not set by the owner. |
 | DEV-NFR-03 | A stop, a Spot reclaim, or the loss of the node must lose no Kafka message, no Postgres row, and no Flink state older than the last completed checkpoint. |
 | DEV-NFR-04 | The loss of the persistent volume may lose at most the Kafka and Postgres data written since the last weekly snapshot. Flink state survives it, because it lives in S3. |
 | DEV-NFR-05 | The sum of memory requests on the node must stay at or below 80% of its allocatable memory, as AFP-NFR-03 says (the lead's default, pending owner review). |
@@ -112,11 +116,11 @@ Example. The owner starts the environment at 09:00, works until 12:10, and leave
 
 ### AWS resources
 
-All resources are in one region and one availability zone, because an EBS volume can attach only to an instance in its own zone. Which region is an [open question](#open-questions).
+All resources are in `us-east-1` (DEV-FR-27) and in one availability zone, because an EBS volume can attach only to an instance in its own zone.
 
 | Resource | Size or setting |
 |---|---|
-| EC2 Spot instance | One node, about 4 vCPUs and 16 to 32 GiB of memory, IMDSv2 required with a hop limit of 2 so that pods can reach the instance role (the lead's default, pending owner review). Terraform owns its launch template, not the instance (DEV-FR-02). The builder picks the type from measured memory requests (DEV-NFR-05). |
+| EC2 Spot instance | One node from a one-time Spot request (DEV-FR-26), about 4 vCPUs and 16 to 32 GiB of memory, IMDSv2 required with a hop limit of 2 so that pods can reach the instance role (the lead's default, pending owner review). Terraform owns its launch template, not the instance (DEV-FR-02). The builder picks the type from measured memory requests (DEV-NFR-05). |
 | EBS gp3 persistent volume | One, in the node's zone, holding the Kafka, Postgres, and k3s data. Its size is the builder's choice. |
 | Elastic IP | One, kept while the environment is stopped, about $3.60 a month. |
 | Security group | Inbound 80 and 443 from anywhere. Nothing else. |
@@ -130,7 +134,7 @@ All resources are in one region and one availability zone, because an EBS volume
 | Secrets Manager or SSM Parameter Store | The logins and the secrets the node cannot generate. |
 | Cognito user pool | The managed login pages, the groups `studio-admin` and `studio-editor`, and one confidential app client per tool, as in the [Free Plan contract](aws-free-plan.md#aws-resources). |
 | Data Lifecycle Manager policy | Weekly snapshot of the persistent volume, keep 4. |
-| AWS Budgets budget | Monthly cost budget with an alert at the owner's threshold. |
+| AWS Budgets budget | Monthly cost budget with an alert at $30 of actual or forecast spend, sent to the owner's address from a Terraform variable set outside git (DEV-FR-16, DEV-FR-25). |
 
 ### Kubernetes layout
 
@@ -183,6 +187,8 @@ The lead carried these over from the [AWS Free Plan contract](aws-free-plan.md) 
 
 The lead also extended the services DEV-FR-03 rules out with Managed Flink, Kinesis, and Aurora, from the owner's choice to self-host the streaming core, and added the independent cap of DEV-FR-14. Both are the lead's defaults, pending owner review.
 
+The owner decided on 2026-11-17 (#148) to reuse and rename the Free Plan code (DEV-FR-28). The Free Plan Terraform, scripts, and overlay become this environment's, under the names the builder picks ([left to the builder](#left-to-the-builder)), and the CI workflows and the deploy skill follow the rename. Open issues labeled `aws-free-plan` that applied only to the closed account are closed, and the rest move to the dev environment. The [Free Plan contract](aws-free-plan.md) stays as the record of the retired environment.
+
 What does not carry over: the spend check against the Free Plan credit (AFP-FR-01, AFP-NFR-01), the six nodes and their pools (AFP-NFR-02), and the account's closure at expiry. The Budgets alert and the 12-hour cap take the spend check's place.
 
 ## Cost estimate
@@ -211,6 +217,7 @@ The design estimated $15 to $30. Either way it is far below the six-node cluster
 | Spot capacity shortage | The start command cannot get a node in the volume's zone. | The builder decides how the start command handles it. |
 | CDC slots while stopped | Postgres keeps WAL for each slot while Flink is down. | Postgres stops with the node, and nothing writes while it is stopped, so little WAL builds up. |
 | A failure of the idle stop | The node runs and bills until someone notices. | The independent cap of DEV-FR-14, and the Budgets alert. |
+| A Spot reclaim during use | The environment stays down until the operator notices and runs the start command (DEV-FR-26). | Accepted by the owner on 2026-11-17 (#146): staying down never bills for a node nobody asked for. |
 
 ## Acceptance criteria
 
@@ -222,10 +229,15 @@ The design estimated $15 to $30. Either way it is far below the six-node cluster
 - [ ] With no request, no event, and no session for 30 minutes, the node stops within 40 minutes of the last use, and S3 holds a new savepoint for each of the five jobs (DEV-FR-10, DEV-NFR-02).
 - [ ] With the simulator sending events, the node stops between 12 hours and 12 hours 15 minutes after the start (DEV-FR-11, DEV-NFR-02).
 - [ ] With one job's savepoint made to fail, the node still stops, the log names the job, and at the next start that job resumes from its last checkpoint (DEV-FR-12, DEV-FR-13).
+- [ ] With one job's savepoint made to hang, the idle stop gives up on it 5 minutes after asking, logs the job, and stops the node (DEV-FR-12).
 - [ ] A topic message and a Postgres row written before a stop are there after the next start, and so are they after a simulated Spot reclaim (DEV-NFR-03).
 - [ ] A Flink job's keyed state, such as a metric value, is the same after a stop and start as before it (DEV-FR-13).
 - [ ] Data Lifecycle Manager shows the policy, and after five weeks exactly 4 snapshots of the persistent volume exist (DEV-FR-15).
-- [ ] AWS Budgets shows the budget with its alert threshold and recipient (DEV-FR-16).
+- [ ] AWS Budgets shows the budget with an alert at $30 of actual or forecast spend and one email recipient (DEV-FR-16).
+- [ ] A search of the repo and the resource tags finds no alert recipient address, and the Terraform code reads the recipient from a variable with no default (DEV-FR-25).
+- [ ] After a simulated Spot reclaim, no instance starts for 30 minutes, and `describe-spot-instance-requests` shows only one-time requests. The next start command brings the environment up (DEV-FR-26).
+- [ ] `aws resourcegroupstaggingapi get-resources` with the project tag, run against every region other than `us-east-1`, lists nothing (DEV-FR-27).
+- [ ] Once the move lands, `git grep aws-free-plan` outside `docs/` finds no Terraform root, overlay, CI trigger, or deploy skill reference to a live Free Plan target (DEV-FR-28).
 - [ ] A scan of the Elastic IP from outside AWS finds only ports 80 and 443 open (DEV-FR-17).
 - [ ] A `studio-admin` member signs in to studio, then opens Argo CD, Grafana, and the Flink UI without a password prompt (DEV-FR-18).
 - [ ] With the Kafka browser not enabled, `https://kafka.<ip>.sslip.io` serves nothing from the cluster (DEV-FR-19).
@@ -256,9 +268,4 @@ The design leaves these to whoever builds the environment. The build issues carr
 
 ## Open questions
 
-- **The Budgets threshold and recipient.** The design gives "such as $30" for the alert. This page estimates $21 to $38 a month, so a threshold below the estimate fires in a normal month. What amount, and which address gets the alert?
-- **Restart after a Spot reclaim.** Does a new node start on its own after a reclaim during use, or does the environment stay stopped until the operator runs the start command? Starting on its own keeps a working session alive. Staying stopped can never bill for a node nobody asked for.
-- **The region.** The Free Plan environment ran in `us-east-1`, and the cost estimate assumes it. A region nearer the owner costs more per hour but answers faster.
-- **The Free Plan code and branch.** What happens to `infra/aws-free-plan/`, the `deploy/aws-free-plan` branch, the deploy skill's Free Plan reference, and the open issues labeled `aws-free-plan`, now that the account is closed? Delete them, keep them as history, or reuse them for this environment?
-- **The savepoint time limit.** How long may the stop savepoints take before the idle stop gives up and stops the node (DEV-FR-12)? DEV-NFR-02 assumes about 5 minutes.
 - **Stop savepoint retention.** A stop savepoint lands on every working day. How long they are kept follows the savepoint retention of [state recovery](../architecture/components/state-recovery.md#open-questions), tracked in #113.

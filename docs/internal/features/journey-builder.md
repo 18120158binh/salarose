@@ -48,7 +48,7 @@ Out of scope:
 |---|---|
 | Journey | The graph of one campaign. The UI uses "campaign" and "journey" for the same thing. |
 | Draft | A journey that is not published yet. It is one row of `journey_drafts`, belongs to one staff user, and has the id the campaign will have. |
-| Origin | How a draft started: `blank`, `template:<key>`, `ai`, `duplicate:<id>`, or `browser`. |
+| Origin | How a draft started: `blank`, `template:<key>`, `ai`, `duplicate:<id>`, `browser`, or, planned, `agent` for a draft opened from a [CDP agent](cdp-agent.md#draft-proposals) proposal. |
 | Node | One step of the journey. Its type decides what it does. |
 | Path type | A node's set of outgoing branches, such as `YesOrNoPath`. |
 | Main path | The chain from the setup node through the first outgoing branch of each node. |

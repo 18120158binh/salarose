@@ -288,6 +288,7 @@ Each step's workflow and checks are in [the AWS Free Plan environment](../operat
 | `journey-engine-matched-events` | Customer decision, outbox timers | State machine | `canon_id` + U+001F + `campaign_id` |
 | `journey-engine-segment-checks` | State machine | Customer decision | `canon_id` |
 | `journey-engine-outbound-noti` | Outbox | Sender, not in this repo | None |
+| Delivery outcomes, planned, name open | Sender, not in this repo. The sender's change to produce it is outside this repo. | [CDP agent](../features/cdp-agent.md#delivery-outcomes) (planned) | `execution_id` |
 | `business-events`, planned | Data ingestion API | Business event fan-out, lakehouse sink (planned) | Event name + U+001F + item key |
 | `segment-membership-changes` | Customer decision | Profile writer, business event fan-out | `canon_id` |
 | `current-member-entries`, planned | Segment membership pass | Customer decision | `canon_id` |
