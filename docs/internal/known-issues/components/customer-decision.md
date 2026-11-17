@@ -1,7 +1,7 @@
 ---
 title: Customer decision known issues
 contract: ../../architecture/components/customer-decision.md
-updated: 2026-11-08
+updated: 2026-11-17
 verified_at: f971ed5a
 ---
 
@@ -13,6 +13,7 @@ Java paths are relative to `event-processor/src/main/java/com/cdp/platform/`.
 |---|---|---|---|
 | DEC-KI-41 | Wrong result | No membership flags, no business-event matches, and no entry id | DEC-FR-31, DEC-FR-32, DEC-FR-33, DEC-FR-34 |
 | DEC-KI-44 | Wrong result | Rules cannot reach an entity key that contains dots | DEC-FR-08, CAT-FR-15 |
+| DEC-KI-45 | Risk | Mutations carry no rebuild epoch | DEC-FR-44 |
 
 ## DEC-KI-41. No membership flags, no business-event matches, and no entry id
 
@@ -31,3 +32,10 @@ Tracked in #220.
 - **Cause.** Every path parser splits on each `.`, so `com.acme/product.sku` becomes `com`, `acme/product`, and `sku`. In Java: `JsonAttributeResolver.node` in `shared/utils/JsonAttributeResolver.java` (line 47), which `Event.propertyValue` uses for event conditions, metric filters, and `agg_field`, and `CatalogAttribute.normalize` in `shared/models/db/CatalogAttribute.java` (line 61), which feeds the schema gate. In TypeScript: `parseEventAttributePath` in `shared/lib/eventCatalog.ts` (line 66), and `isAtOrUnder` and the rename query in `shared/lib/db.ts`. `JsonAttributeResolver.node` tries the whole path as one key first, so `com.acme/product` alone resolves, but nothing below it does.
 - **Evidence.** Read from the code at `7768d24c`. Not reproduced at runtime.
 - **Fix direction.** The owner decides how rules address event fields: a path syntax that can quote a key, or replacing path-based field access altogether. A path syntax proposal lists every place that parses or builds a path, three syntax options, and the files each touches.
+
+## DEC-KI-45. Mutations carry no rebuild epoch
+
+- **Symptom.** After a rebuild from raw events, the profile writer cannot tell rebuilt series from older stored ones, so it keeps the stored row whenever its behavior version is higher (PRW-KI-12).
+- **Cause.** `CustomerProfileMutationEvent` in `shared/models/` has `behaviorVersion` and no epoch, and `CustomerBehaviorProcessFunction` in `jobs/customerdecision/transforms/` keeps no epoch in state.
+- **Evidence.** Read from the code at `fe53fe6`. No rebuild exists yet, so the symptom cannot occur today.
+- **Fix direction.** Keep the rebuild epoch in state, 0 by default, and write it on each mutation as `rebuildEpoch`. Land it with PRW-KI-12.

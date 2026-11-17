@@ -10,6 +10,8 @@ superseded_by: []
 
 # 0054. Recover Flink state in four layers
 
+> Amended on 2026-11-17. The owner answered the questions this record left open. [Amendments](#amendments) lists the answers. The text above them is unchanged.
+
 ## Context
 
 [Decision 0052](0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) makes Flink keyed state the source of truth for metrics and profiles while the jobs run. Postgres keeps owning `identity_graph` ([decision 0012](0012-resolve-events-without-a-device-from-the-durable-copy.md)), and it is not a recovery layer here. Postgres holds a projection that may lag by one coalescing window. So losing Flink state is losing data, and the platform needs a stated way back from each kind of loss.
@@ -61,6 +63,26 @@ N, the days a savepoint is kept, is open. The owner left it undecided on 2026-11
 - A rebuild needs the jobs to run in batch over a bounded input. Code that reads wall-clock time on the decision path, such as processing-time watch timers, needs a stated rule for the rebuild. The [state recovery](../components/state-recovery.md#open-questions) contract lists it as open.
 - Savepoint storage is versioned. The bucket also holds the import drop zone, whose files must leave no noncurrent version after a rewrite ([data import](../../features/data-import.md#privacy), DIM-NFR-08). Savepoints therefore need a bucket or a lifecycle rule of their own.
 - A deploy takes a savepoint first. What a deploy does when that savepoint fails is open in [state recovery](../components/state-recovery.md#open-questions).
+
+## Amendments
+
+The owner answered this record's open questions on 2026-11-17. Each answer is written as requirements in the contract it changes.
+
+| Question | Answer | Where |
+|---|---|---|
+| N, the days a savepoint is kept, and the savepoint age alert | 7 days. An alert fires when a job has had no new scheduled savepoint for more than 26 hours (#113). | [REC-FR-04](../components/state-recovery.md#functional-requirements), [REC-NFR-04](../components/state-recovery.md#non-functional-requirements) |
+| What triggers the restore test | Every change to `event-processor` (#123). | [REC-FR-06](../components/state-recovery.md#functional-requirements) |
+| A deploy whose savepoint fails, or whose job's last checkpoint is old | A deploy whose savepoint fails may roll from a completed checkpoint younger than 1 hour, and is refused otherwise. A deploy is refused when the last completed checkpoint is more than 1 hour old. An operator is alerted (#133, read by the lead on 2026-11-18). | [REC-FR-03, REC-FR-12](../components/state-recovery.md#functional-requirements) |
+| Configuration as of each event | Every change to `campaign_nodes` with its `graph_version`, the metric definitions, the segments, and the event catalog is kept in the lakehouse through a CDC-to-lakehouse path (#118). | [LKH-FR-14](../components/lakehouse.md#functional-requirements) |
+| The other inputs | The history of `customer_attributes`, `customer_profiles`, and the internal topics is kept in the lakehouse (#119). | [LKH-FR-13, LKH-FR-15](../components/lakehouse.md#functional-requirements) |
+| Offsets of downstream jobs | The rebuild records the cut on the input topics and the matching positions downstream, and starts each job there (#120). | [REC-FR-13](../components/state-recovery.md#functional-requirements) |
+| The version guard | A rebuild epoch in the version. Rebuilt state wins over older rows, and normal writes catch up, with no bulk rewrite (#121). | [REC-FR-15](../components/state-recovery.md#functional-requirements), [PRW-FR-16](../components/profile-writer.md#functional-requirements) |
+| Watch timers and the outbox | Watch timeouts apply at their deadline in event time during the rebuild. The outbox sends nothing during a rebuild (#132). | [REC-FR-14](../components/state-recovery.md#functional-requirements), [OUT-FR-12](../components/notification-outbox.md#functional-requirements) |
+| How long raw events are kept, and deletion | 13 months, and a deletion does not reach them, nor the internal events and change history (#126, #127). | [REC-NFR-06, REC-NFR-07](../components/state-recovery.md#non-functional-requirements) |
+
+Layer 4 of the table above is therefore exact only within 13 months. State whose inputs are older, such as a segment flag that has not changed for 14 months, cannot be rebuilt from raw events. A rebuild inside the 13 months reads the raw events of a person who asked for a deletion, but restores none of their state: it skips every person in `person_tombstones` ([REC-FR-16](../components/state-recovery.md#functional-requirements), owner decision of 2026-11-18).
+
+The owner set the alert age and the checkpoint age during the review of PR #173 on 2026-11-17. Two parts follow from the answers and stay open in [state recovery](../components/state-recovery.md#open-questions) and the [lakehouse sink](../components/lakehouse.md#open-questions): the outbox's state after a rebuild, and a Postgres input's value at the start of the rebuild window.
 
 ## Related
 

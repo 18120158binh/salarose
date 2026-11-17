@@ -8,7 +8,7 @@ area: event-processor
 tags: [metrics, postgres, projection, kafka]
 created: 2026-10-14
 updated: 2026-11-17
-version: 3.0
+version: 3.1
 known_issues: ../../known-issues/components/profile-writer.md
 ---
 
@@ -44,7 +44,9 @@ Out of scope:
 | Row | One `user_metrics` row per `canon_id` and `metric_id`. |
 | Membership change | A message that one person entered or exited one segment. See [customer decision](customer-decision.md#interfaces). |
 | Member row | One `segment_members` row per `segment_id` and `canon_id`, for a person who is in the segment. |
-| Coalescing window | The time over which the writer gathers the mutations of a row before it writes the row once. Its length is an [open question](#open-questions). |
+| Coalescing window | The time over which the writer gathers the mutations of a row before it writes the row once. Once per checkpoint, 30 seconds by default (PRW-NFR-07). |
+| Rebuild epoch | The number of the last [rebuild from raw events](state-recovery.md#rebuild-from-raw-events) the mutation's state comes from. 0 before any rebuild. |
+| Row version | The pair (rebuild epoch, behavior version). A higher epoch wins, and within one epoch a higher behavior version wins. |
 | Flush | The write of every row whose window ended. |
 
 ## Behavior
@@ -67,8 +69,8 @@ flowchart LR
 For each metric in a mutation:
 
 1. Build a row: `canon_id`, `metric_id`, the series clock, and the buckets, exactly as the mutation carries them.
-2. Hold the row in the writer's keyed state for its coalescing window. A later mutation for the same row replaces the held row when its behavior version is higher, and is ignored otherwise.
-3. At the end of the window, flush. Write the held row with an upsert on (`canon_id`, `metric_id`). Replace the stored row only if its `last_behavior_version` is lower than the held row's behavior version, or no row exists.
+2. Hold the row in the writer's keyed state for its coalescing window. A later mutation for the same row replaces the held row when its row version is higher, and is ignored otherwise.
+3. At the end of the window, flush. Write the held row with an upsert on (`canon_id`, `metric_id`). Replace the stored row only if its row version is lower than the held row's, or no row exists. A row written by state from a later rebuild has a higher epoch, so it replaces a row with a higher behavior version from before the rebuild (PRW-FR-16).
 
 ### Coalesce metric writes
 
@@ -76,7 +78,7 @@ A person who sends 20 events in one window, each changing `m_purchase_count`, gi
 
 The held rows are keyed state, so a checkpoint holds them. A restart restores them with the topic offsets, so no mutation read before the checkpoint is lost or written twice out of order. A replay after the restart reads mutations again, and the behavior version guard ignores those the held or stored row already passed.
 
-Writing only the buckets that changed, in narrow rows, is an option the owner left open. Until it is decided, a flush writes the whole series.
+A flush writes the whole series, one row per series. The owner decided on 2026-11-17 to keep one row per series, and to revisit narrow rows, which write only the changed buckets, only if the load test shows the WAL of `user_metrics` above the sizing sheet (#129).
 
 
 ### Segment membership
@@ -100,7 +102,7 @@ The writer reads the changes no faster than the cap of PRW-NFR-06, so a backlog,
 |---|---|
 | PRW-FR-01 | The writer must store each metric of a mutation as one row keyed by `canon_id` and `metric_id`. |
 | PRW-FR-02 | The row must hold the mutation's whole series, replacing the stored series. |
-| PRW-FR-03 | The writer must not replace a row whose `last_behavior_version` is equal to or higher than the mutation's. |
+| PRW-FR-03 | The writer must not replace a row whose row version, (`last_rebuild_epoch`, `last_behavior_version`), is equal to or higher than the mutation's. |
 | PRW-FR-04 | The row must store the series clock and every bucket unchanged, including the summaries the writer cannot read. |
 | PRW-FR-05 | Writing the same mutation twice must leave the same row as writing it once. The writer must not generate ids. |
 | PRW-FR-06 | A mutation that does not decode, or a row that the database rejects, must not stop the writer. The writer logs it and continues. |
@@ -113,6 +115,8 @@ The writer reads the changes no faster than the cap of PRW-NFR-06, so a backlog,
 | PRW-FR-13 | The writer must write each `user_metrics` row at most once per coalescing window. |
 | PRW-FR-14 | A flush must leave the row that applying every mutation of the window one after the other would leave: the series with the highest behavior version the writer read for that row. |
 | PRW-FR-15 | Mutations read but not yet flushed must be in the writer's checkpointed state. A restart must neither lose them nor write an older series over a newer one. |
+| PRW-FR-16 | The writer must store each mutation's rebuild epoch as the row's `last_rebuild_epoch`, and must compare row versions epoch first. A mutation with a higher epoch replaces the row whatever its behavior version. No step may rewrite `user_metrics` in bulk after a rebuild. The owner decided this on 2026-11-17 (#121). |
+| PRW-FR-17 | `user_metrics` must hold one row per (`canon_id`, `metric_id`), and a flush must write the whole series. The owner decided this on 2026-11-17 (#129). |
 
 ## Non-functional requirements
 
@@ -124,14 +128,14 @@ The writer reads the changes no faster than the cap of PRW-NFR-06, so a backlog,
 | PRW-NFR-04 | The `customer-profile-mutations` topic is transport, not storage. Its retention can be short. |
 | PRW-NFR-05 | `segment_members` joins no CDC publication. Rows lag the membership changes by at most one flush, 100 rows or 500 ms, whichever comes first, except while PRW-NFR-06 holds a backlog back. |
 | PRW-NFR-06 | The membership sink writes at most 1,000 rows a second, about 1 MB/s of WAL, and the limit is configurable. It paces the backlog after the first rollout of flags. This is the lead's default, pending owner review. See [decision 0038](../decisions/0038-store-segment-membership-and-evaluate-every-segment.md#why). |
-| PRW-NFR-07 | The coalescing window is configurable. Its default is an [open question](#open-questions). It bounds how much a start without state loses when it reads `user_metrics` on a miss ([state recovery](state-recovery.md), layer 3). |
+| PRW-NFR-07 | The coalescing window is configurable. Its default is once per checkpoint, 30 seconds at the default checkpoint interval. The owner decided this on 2026-11-17 (#112). It bounds how much a start without state loses when it reads `user_metrics` on a miss ([state recovery](state-recovery.md), layer 3). |
 
 ## Interfaces
 
 | Direction | Interface | Contract |
 |---|---|---|
 | In | Kafka `customer-profile-mutations` | Mutation, key `canon_id`. See [customer decision](customer-decision.md#interfaces). |
-| Out | `user_metrics` | One row per (`canon_id`, `metric_id`): `series_clock`, `buckets` as JSON in the mutation's shape, `last_behavior_version`, `updated_at`. See [the data model](../data-model.md). |
+| Out | `user_metrics` | One row per (`canon_id`, `metric_id`): `series_clock`, `buckets` as JSON in the mutation's shape, `last_behavior_version`, `last_rebuild_epoch`, `updated_at`. See [the data model](../data-model.md). |
 | In | Kafka `segment-membership-changes` | Membership change: `canon_id`, `segment_id`, `entered` or `exited`, the `event_id` that caused it, and the event time. Key `canon_id`. See [customer decision](customer-decision.md#interfaces). |
 | Out | `segment_members` | One row per current member: `segment_id`, `canon_id`, and `since`, the event time of the `entered` change. Primary key (`segment_id`, `canon_id`). See [the data model](../data-model.md). |
 
@@ -148,7 +152,7 @@ The table has no event context JSON. Each row holds at most the buckets that cus
 | Metric has no `valueType`, or one the writer does not know | Skip that row and log it. |
 | A bucket without `size`, `start`, or `count`, or with a `size` the writer does not know | Skip that row and log it. |
 | A row the database rejects for its data | Skip that row, log it, and count it. The writer keeps running. |
-| Older behavior version | Ignore the row. |
+| Older row version | Ignore the row. |
 | Duplicate mutation | Ignore the row, because its version is not higher. |
 | Restart | Restore the held rows and the offsets from the last checkpoint, and replay from there. Without a checkpoint, replay from the earliest offset. |
 | Membership change does not decode, has no `canon_id` or `segment_id`, has a change other than `entered` or `exited`, or is an `entered` change with no `event_time` | Skip it and log it. |
@@ -178,13 +182,13 @@ The table has no event context JSON. Each row holds at most the buckets that cus
 - Given mutations held for a row when the writer takes a checkpoint and then crashes, when it restores, then the next flush writes the newest of them, and the stored row never goes back to an older version. (PRW-FR-15)
 - Given a mutation for a row whose stored version is 25, when the writer holds version 22 and flushes, then the stored row keeps version 25. (PRW-FR-03, PRW-FR-14)
 - Given a mutation read at 10:00:00 and a coalescing window `T`, then its row is in `user_metrics` by 10:00:00 plus `T` plus one flush. (PRW-NFR-02)
-- Given the coalescing window set to 10 s, then the writer writes each row at most once per 10 s. Given no setting, then the default the owner sets holds. (PRW-NFR-07)
+- Given the coalescing window set to 10 s, then the writer writes each row at most once per 10 s. Given no setting, then the writer writes each row at most once per checkpoint, 30 s. (PRW-NFR-07)
+- Given a row at epoch 0 and behavior version 40, when a mutation at epoch 1 and behavior version 12 flushes, then the row holds the epoch-1 series. When a mutation at epoch 0 and version 41 arrives after it, then the row is unchanged. (PRW-FR-16)
+- Given a mutation that changes one bucket of a series, then the flush writes one row with the whole series. (PRW-FR-17)
 
 ## Open questions
 
-- **The coalescing window.** Its length and default (PRW-NFR-07). Once per checkpoint is the example the owner gave, not a decision. Tracked in #112.
-- **Narrow rows.** Whether `user_metrics` splits a series into rows that a flush writes only when they change. Tracked in #129.
-- **The profile read model.** [Decision 0052](../decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) adds a per-person profile read model in `jsonb`. Its table name, its columns, its writer, whether this writer writes it, whether it joins a CDC publication, its replica identity, what the value holds, and which reader it serves are all undecided. Tracked in #130.
+The owner decided the coalescing window (#112) and narrow rows (#129) on 2026-11-17, and deferred the profile read model of [decision 0052](../decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) (#130). No table is added for it now, and `studio` keeps assembling a person from several tables.
 
 ## Related
 

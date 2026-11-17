@@ -28,7 +28,7 @@ The engine has six layers. Each layer talks only to the one next to it, except P
 flowchart TB
 	subgraph ingest[Ingestion]
 		collector[Collector]
-		api[Ingestion API: /v1/events, /v1/business-events]
+		api[Ingestion API service: /v1/events, /v1/business-events]
 	end
 	subgraph stream[Streaming]
 		kafka[(Kafka topics)]
@@ -53,24 +53,24 @@ flowchart TB
 	kafka <--> flink
 	flink <--> state
 	flink <-->|writes, CDC| pg
-	kafka -.->|raw events| lake
-	pg -.->|old transition partitions| lake
+	kafka -.->|raw and internal events| lake
+	pg -.->|old transition partitions, changes to rebuild inputs| lake
 	batch -.-> lake
 	batch --> pg
 	batch --> kafka
 	studio -->|campaigns, segments, metric definitions| pg
-	studio -.->|hosts| api
+	studio -->|source keys| pg
 	kafka -->|notification requests| sender
 	classDef planned stroke-dasharray: 5 5
-	class batch,lake planned
+	class batch,lake,api planned
 ```
 
 | Layer | Holds | Detail |
 |---|---|---|
-| Ingestion | The OpenSnowcat collector for tracker hits, and the HTTP API that studio serves for server-side events | [Event ingestion](components/event-ingestion.md), [data ingestion API](../features/data-ingestion-api.md) |
+| Ingestion | The OpenSnowcat collector for tracker hits, and the HTTP API for server-side events. Today studio serves the API and the import batch API. Both move to their own service, planned ([decision 0057](decisions/0057-run-the-data-ingestion-api-as-its-own-service.md)). | [Event ingestion](components/event-ingestion.md), [data ingestion API](../features/data-ingestion-api.md) |
 | Streaming | Kafka. Every hop between jobs is a topic | [Kafka topics](#kafka-topics) |
 | Processing | The five Flink jobs, which hold live state, and the planned nightly batch passes, which skip Flink | [Data flow](#data-flow), [components](#components) |
-| Storage | Two hot tiers and a planned lakehouse. Flink keyed state on RocksDB serves every read of per-person state on the decision path, and is the source of truth for metrics and profiles while the jobs run. Postgres holds configuration, read by the jobs through CDC, and a projection of the jobs' state, read on a state miss. The planned lakehouse holds raw events, transition history, and imported records as Iceberg tables on S3. | [Data model](data-model.md), [decision 0052](decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md), [decision 0053](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md), [decision 0054](decisions/0054-recover-flink-state-in-four-layers.md) |
+| Storage | Two hot tiers and a planned lakehouse. Flink keyed state on RocksDB serves every read of per-person state on the decision path, and is the source of truth for metrics and profiles while the jobs run. Postgres holds configuration, read by the jobs through CDC, and a projection of the jobs' state, read on a state miss. The planned lakehouse holds raw events, internal topic records, the change history of the Postgres tables a rebuild reads, transition history, and imported records, as Iceberg tables on S3 in an S3 Tables catalog. Analytics read recent transitions from Postgres and older ones from the lakehouse through Athena. | [Data model](data-model.md), [decision 0052](decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md), [decision 0053](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md), [decision 0054](decisions/0054-recover-flink-state-in-four-layers.md) |
 | Experience | studio, where staff build journeys and manage data | [Admin app layers](#admin-app-layers) |
 | Delivery | The sender that turns notification requests into push, SMS, and email | [Notification outbox](components/notification-outbox.md) |
 
@@ -114,7 +114,7 @@ flowchart LR
 |---|---|---|---|
 | Ingestion | Snowplow JavaScript tracker | | Behavior events from the website or app |
 | | OpenSnowcat collector (Kafka sink) | 1.2.1 | Receives tracker hits and writes `snowplow-good` and `snowplow-bad` |
-| | studio route handlers, kafkajs | kafkajs 2.2 | The data ingestion API at `/v1/events` and `/v1/business-events` |
+| | studio route handlers, kafkajs | kafkajs 2.2 | The data ingestion API at `/v1/events` and `/v1/business-events`, until its own service is built ([decision 0057](decisions/0057-run-the-data-ingestion-api-as-its-own-service.md)) |
 | Streaming | Apache Kafka in KRaft mode | 4.3.2 | Every hop between jobs |
 | | Strimzi operator | 1.3.1 | Runs the broker and creates the topics from Git |
 | Processing | Apache Flink, DataStream API | 2.2.0 | The five jobs |
@@ -127,7 +127,9 @@ flowchart LR
 | | node-postgres (`pg`) | 8.11 | SQL in studio |
 | | CloudNativePG operator | chart 0.29.1 | Runs the Postgres cluster |
 | | Flyway | 13.11.1 | Applies migrations on every sync |
-| | Apache Iceberg tables on Amazon S3, planned | Open | Raw events, transition history, and imported records. The catalog and the query engine are open ([lakehouse sink](components/lakehouse.md#open-questions)). |
+| | Apache Iceberg tables on Amazon S3, planned | Open | Raw events, internal topic records, change history, transition history, and imported records |
+| | Amazon S3 Tables, planned | | The lakehouse's catalog, with built-in compaction ([LKH-NFR-08](components/lakehouse.md#non-functional-requirements)) |
+| | Amazon Athena, planned | | Serverless queries of the lakehouse for analytics and customer lookup history ([lakehouse sink](components/lakehouse.md#read-across-both-stores)) |
 | Experience | Next.js (App Router, server actions, standalone output) | 16.3 canary | studio |
 | | React, TypeScript | 19.2, 5 | UI code |
 | | Tailwind CSS, Base UI, coss components | 4, 1.5 | Styling and accessible primitives |
@@ -215,7 +217,8 @@ One event goes through these stages:
 | State machine | Flink | `StateMachineJob` | [Journey execution](components/journey-execution.md) |
 | Outbox and timers | Flink | `CampaignOutboxJob` | [Notification outbox](components/notification-outbox.md), [journey execution](components/journey-execution.md#watch-timers) |
 | Business event fan-out | Flink, planned | None yet | [Business event fan-out](components/business-event-fan-out.md) |
-| Lakehouse sink | Planned. Writes raw events and transition history to the lakehouse, and moves old transition partitions out of Postgres. | None yet | [Lakehouse sink](components/lakehouse.md) |
+| Data ingestion API service | Planned ([decision 0057](decisions/0057-run-the-data-ingestion-api-as-its-own-service.md)). Serves every `/v1` route, the event routes and the data import's batch API, apart from studio, which keeps only the UI. Today studio's route handlers serve them. | None yet | [Data ingestion API](../features/data-ingestion-api.md) |
+| Lakehouse sink | Planned. Writes raw events, internal topic records, changes to the rebuild inputs, and transition history to the lakehouse, and moves old transition partitions out of Postgres. | None yet | [Lakehouse sink](components/lakehouse.md) |
 | State recovery | Checkpoints, savepoints, and a planned rebuild from raw events, for every job with state | Flink configuration, CI restore check | [State recovery](components/state-recovery.md) |
 | Import applier | Kubernetes CronJob, planned. No Flink. | None yet | [Import applier](components/import-applier.md) |
 | Import metric pass | Kubernetes CronJob, planned. No Flink. | None yet | [Import metric pass](components/import-metric-pass.md) |
@@ -229,7 +232,7 @@ studio is one Next.js app. Its code is split into layers, and a layer imports on
 
 ```mermaid
 flowchart TB
-	routes[Routes and pages: /v2 screens, /v1 ingestion API, /api/auth]
+	routes[Routes and pages: /v2 screens, /v1 ingestion and import API until their service is built, /api/auth]
 	widgets[Widgets: app shell, admin header]
 	features[Features: journey builder, journeys, segments, customers, data, platform, access, agent planned]
 	entities[Entities: journey, its saved format]
@@ -282,17 +285,17 @@ Each step's workflow and checks are in [the AWS Free Plan environment](../operat
 | Topic | Producer | Consumers | Key |
 |---|---|---|---|
 | `snowplow-good`, `snowplow-bad` | Collector | Event parse, lakehouse sink (planned) | None |
-| `snowplow-parsed` | Event parse | Customer decision | `canon_id` |
+| `snowplow-parsed` | Event parse | Customer decision, lakehouse sink (planned) | `canon_id` |
 | `snowplow-parsed-dead-letters` | Event parse | Operators, by hand | None |
-| `customer-profile-mutations` | Customer decision | Profile writer | `canon_id` |
-| `journey-engine-matched-events` | Customer decision, outbox timers | State machine | `canon_id` + U+001F + `campaign_id` |
-| `journey-engine-segment-checks` | State machine | Customer decision | `canon_id` |
+| `customer-profile-mutations` | Customer decision | Profile writer, lakehouse sink (planned) | `canon_id` |
+| `journey-engine-matched-events` | Customer decision, outbox timers | State machine, lakehouse sink (planned) | `canon_id` + U+001F + `campaign_id` |
+| `journey-engine-segment-checks` | State machine | Customer decision, lakehouse sink (planned) | `canon_id` |
 | `journey-engine-outbound-noti` | Outbox | Sender, not in this repo | None |
 | Delivery outcomes, planned, name open | Sender, not in this repo. The sender's change to produce it is outside this repo. | [CDP agent](../features/cdp-agent.md#delivery-outcomes) (planned) | `execution_id` |
 | `business-events`, planned | Data ingestion API | Business event fan-out, lakehouse sink (planned) | Event name + U+001F + item key |
-| `segment-membership-changes` | Customer decision | Profile writer, business event fan-out | `canon_id` |
-| `current-member-entries`, planned | Segment membership pass | Customer decision | `canon_id` |
-| `business-event-matches`, planned | Business event fan-out | Customer decision | `canon_id` |
+| `segment-membership-changes` | Customer decision | Profile writer, business event fan-out, lakehouse sink (planned) | `canon_id` |
+| `current-member-entries`, planned | Segment membership pass | Customer decision, lakehouse sink (planned) | `canon_id` |
+| `business-event-matches`, planned | Business event fan-out | Customer decision, lakehouse sink (planned) | `canon_id` |
 
 The component contracts define each message. [Configuration](../operations/configuration.md) lists the variables that rename the topics.
 
@@ -320,11 +323,13 @@ The component contracts define each message. [Configuration](../operations/confi
 | [0005. Keep live state in Flink and a durable copy in Postgres](decisions/0005-keep-live-state-in-flink.md) | Postgres is a lagging projection, off the decision path. |
 | [0006. At-least-once delivery with idempotent writes](decisions/0006-at-least-once-delivery-with-idempotent-writes.md) | Replays are safe because every write converges. |
 | [0040. Import through a batch path and a separate store](decisions/0040-import-through-a-batch-path-and-a-separate-store.md) | Imported records skip Flink. A nightly pass publishes only changed rows to the main Postgres, under a WAL governor. Its second Postgres cluster is superseded by 0053. |
-| [0052. Keep hot state in Flink and a redesigned projection in Postgres](decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) | Two hot tiers, no new database. Postgres writes less: metrics coalesced, transitions partitioned, a profile read model. |
-| [0053. Store raw events, transition history, and imports in an Iceberg lakehouse](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) | Unbounded data goes to Iceberg on S3. Analytics leave the hot table. Supersedes 0040's import store. |
+| [0052. Keep hot state in Flink and a redesigned projection in Postgres](decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) | Two hot tiers, no new database. Postgres writes less: metrics coalesced once per checkpoint, transitions partitioned by entry start with 90 days kept. The profile read model is deferred. |
+| [0053. Store raw events, transition history, and imports in an Iceberg lakehouse](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) | Unbounded data goes to Iceberg on S3. Raw events are kept 13 months. Supersedes 0040's import store. Its point on analytics is superseded in part by 0058. |
 | [0054. Recover Flink state in four layers](decisions/0054-recover-flink-state-in-four-layers.md) | Checkpoints, savepoints, the projection, and a rebuild from raw events. Trust goes raw events first, then Flink state, then the projection. |
 | [0055. Run the dev environment on one stoppable Spot node and pay-per-use services](decisions/0055-run-the-dev-environment-on-one-stoppable-spot-node.md) | One k3s node that stops when nobody uses it. Kafka, Postgres, and Flink stay self-hosted, because the managed versions bill by the hour. |
 | [0056. A read-only agent with no PII and a provider-agnostic tool-use model](decisions/0056-a-read-only-agent-with-no-pii-and-a-provider-agnostic-tool-use-model.md) | The agent explains and proposes drafts, never applies them. The model sees `canon_id` (an accepted risk), profile attributes, counts, flags, and keyed hashes, never contact data. Any model with tool use. |
+| [0057. Run the data ingestion API as its own service, outside studio](decisions/0057-run-the-data-ingestion-api-as-its-own-service.md) | Every `/v1` route, events and imports, leaves the admin app, so ingestion uptime and scaling no longer follow it. Source keys stay in studio. |
+| [0058. Read recent analytics from Postgres and history from the lakehouse](decisions/0058-read-recent-analytics-from-postgres-and-history-from-the-lakehouse.md) | Ranges that start within 90 days read Postgres only, seconds fresh. Longer ranges also read the lakehouse through Athena. |
 | [0007. Staff sign in through OpenID Connect](decisions/0007-staff-sign-in-through-oidc.md) | No stored passwords. [0024](decisions/0024-create-staff-at-first-sign-in-with-the-providers-role.md) leaves who gets in, and with which role, to the identity provider. |
 
 ## Scaling limits

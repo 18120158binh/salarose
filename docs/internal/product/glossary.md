@@ -46,7 +46,7 @@ Terms used across the code and these documents. Where the UI and the code use di
 | Imported-only customer | A customer key that data import knows, with rows in `customer_attributes`, and that maps to no tracked person. The nightly segment pass evaluates segments for it. |
 | Interest | A business trigger's audience: people who did an event on the same item at least N times in a window. |
 | Journey instance | One person in one campaign. Key: `canon_id` + U+001F + `campaign_id`. |
-| Lakehouse | Planned. Data files on S3, read and written as Apache Iceberg tables. Holds raw events, transition history, and imported records. See [the lakehouse sink](../architecture/components/lakehouse.md). |
+| Lakehouse | Planned. Data files on S3, read and written as Apache Iceberg tables. Holds raw events, the internal topics' records (`internal_events`), the change history of the Postgres tables a rebuild reads (`change_history`), transition history, and imported records, in an S3 Tables catalog. See [the lakehouse sink](../architecture/components/lakehouse.md). |
 | Matched event, trigger | A record that a person's event satisfied one node's condition on one branch. Topic `journey-engine-matched-events`. |
 | Metric | One event, one function such as `COUNT` or `SUM`, optionally one attribute, and filters. Publish derives it from a behavior condition, with an id `m_` and 16 hexadecimal digits. |
 | Nightly segment pass | A batch job that runs once a night after the data-import metric pass, evaluates every segment for imported-only customers, and writes changed rows to `segment_import_members`. It starts no journey. See [the segment membership pass](../architecture/components/segment-membership-pass.md). |

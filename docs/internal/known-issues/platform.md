@@ -16,6 +16,7 @@ This page holds the gaps against [platform capacity](../architecture/capacity.md
 | PLT-KI-18 | Risk | `user_metrics` has full replica identity, but no publication covers it | CAP-FR-14 |
 | PLT-KI-19 | Risk | The simulator's load mode does not stop when a slot becomes `unreserved` or `lost` | CAP-FR-16 |
 | PLT-KI-20 | Risk | The 6 GiB Kafka volume cannot hold 72 hours of `snowplow-good` at the target load | CAP-NFR-10 |
+| PLT-KI-21 | Risk | The simulator's load profile cannot hold both burst shapes with a recovery between them | CAP-FR-08, CAP-NFR-12 |
 
 ## PLT-KI-16. The event-path tables share the database whose WAL every CDC slot holds
 
@@ -51,3 +52,10 @@ This page holds the gaps against [platform capacity](../architecture/capacity.md
 - **Cause.** `infra/k8s/data/kafka.yaml` claims `size: 6Gi` on the `local-path` storage class, on `data-1`'s root disk. Nothing sized it from the target load.
 - **Evidence.** The volume and disk sizes are read from the manifests and [decision 0039](../architecture/decisions/0039-shorten-the-cdc-restore-window.md#why). The message counts are arithmetic from CAP-NFR-10. Bytes per message are not measured.
 - **Fix direction.** Measure the bytes per message of `snowplow-good`, size Kafka's volume and the disk under it by CAP-FR-06, and move Kafka off the disk Postgres uses if both do not fit with CAP-NFR-08's free space.
+
+## PLT-KI-21. The simulator's load profile cannot hold both burst shapes with a recovery between them
+
+- **Symptom.** A load run can hold the burst in `peak` and the long burst in `soak`, but has no sustained phase between them, so the lag cannot recover before the long burst, as CAP-FR-08 orders.
+- **Cause.** `simulator/cdp_sim/load.py` fixes the phases to `ramp`, `steady`, `peak`, and `soak` (`PHASE_NAMES`), each once. `DEFAULT_PROFILE` in `simulator/cdp_sim/__main__.py` peaks at 3,000 for 10 minutes.
+- **Evidence.** Read from the code at `fe53fe6`.
+- **Fix direction.** Let a profile list a second peak and the recovery before it, and set the default to the target load of [platform capacity](../architecture/capacity.md#non-functional-requirements).

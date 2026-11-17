@@ -70,7 +70,7 @@ A week after the last area ships, cutover sends a bookmark to `/campaign/CAMP-4f
 
 ### Routes
 
-This contract writes each route as its final path. Until the prefix drops, every route except `/login` lives under `/v2`, so Home is `/v2` and `/journeys` is `/v2/journeys`. `/login`, the routes under `/api/`, and `/v1/business-events` never move. The identity providers have `/login` registered as the post-logout redirect ([AUTH-FR-14](admin-authentication.md#functional-requirements)) and the callback path as the redirect URI.
+This contract writes each route as its final path. Until the prefix drops, every route except `/login` lives under `/v2`, so Home is `/v2` and `/journeys` is `/v2/journeys`. `/login`, the routes under `/api/`, and `/v1/business-events` never move. The `/v1` routes leave studio for the ingestion service once it is built ([decision 0057](../architecture/decisions/0057-run-the-data-ingestion-api-as-its-own-service.md)). The identity providers have `/login` registered as the post-logout redirect ([AUTH-FR-14](admin-authentication.md#functional-requirements)) and the callback path as the redirect URI.
 
 The Stage column gives each route's stage when studio v3 starts. The release that changes a stage changes this table in the same change. A route that is not built does not exist, and it arrives at stage `preview`. The last column holds until cutover and is deleted at cutover.
 

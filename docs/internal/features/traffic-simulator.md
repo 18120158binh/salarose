@@ -8,7 +8,7 @@ area: infra
 tags: [testing, simulation, smoke, load]
 created: 2026-11-07
 updated: 2026-11-17
-version: 0.7
+version: 0.8
 known_issues: ../known-issues/features/traffic-simulator.md
 ---
 
@@ -195,6 +195,7 @@ Bench also has three runs that do not use a backlog:
 | SIM-FR-25 | Whenever the sender drives the measured rate, as in the collector bench, a bench run must check that the sender is not the limiter, and must say so in the report. |
 | SIM-FR-26 | A recovery run must report the time from the pod stopping to the job being `RUNNING` again, and the count of the run's events lost or duplicated at every stage after it. |
 | SIM-FR-27 | A bench run must run each component as the deployment runs it: the deployed image, settings, parallelism, and state backend, unless the run exists to change one of them, which its report must name. |
+| SIM-FR-28 | Clean-up must not delete from the lakehouse's `transition_history`. A run's transitions that reached it stay, and the home overview leaves out every campaign whose id starts with `sim_` ([HOM-FR-12](home-overview.md#functional-requirements)). The owner decided this on 2026-11-17 (#124). |
 
 ## Non-functional requirements
 
@@ -207,6 +208,7 @@ Bench also has three runs that do not use a backlog:
 | SIM-NFR-05 | A load run must report its measurements at least every 15 seconds while it runs, so the engineer can watch it alongside the deployment's dashboards. |
 | SIM-NFR-06 | Running the simulator must add no compute to the deployment. It may add an image repository and narrow permissions for its own reports, whose cost is cents. |
 | SIM-NFR-07 | The simulator must run without a web browser. Its image stays small: no browser engine or browser automation. |
+| SIM-NFR-08 | The load generator must sustain the long burst of [platform capacity](../architecture/capacity.md#non-functional-requirements), 1,000 events per second for 1 hour, with under 1% send errors (CAP-NFR-12). The 1% follows SIM-NFR-03, the lead's default pending owner review. |
 
 ## Interfaces
 
@@ -218,7 +220,7 @@ Bench also has three runs that do not use a backlog:
 | `snowplow-good`, `snowplow-parsed`, `snowplow-parsed-dead-letters`, `customer-profile-mutations`, `journey-engine-matched-events`, `journey-engine-outbound-noti` | Reads | Stage checks and expectations, matched by run id or shopper id |
 | `user_campaign_state_transitions`, `identity_graph` | Reads | Stage checks and expectations. See the [data model](../architecture/data-model.md). |
 | `user_events`, `user_event_fields`, `campaigns`, `user_metric_definitions` | Reads | Prepare compares the stored `sim_` fixtures with the ones it needs, in a read-only session, and writes through studio only what is missing or differs (SIM-FR-05). Clean-up lists the `sim_` campaigns and catalog events, and reads them again after it deletes them. |
-| `user_campaign_state_transitions`, `user_metrics`, `identity_graph` | Deletes | Clean-up reaches only the transition partitions still in Postgres. Whether it must also delete rows already moved to the lakehouse's `transition_history` is open in the [lakehouse sink](../architecture/components/lakehouse.md#open-questions). Clean-up, only when asked to apply, removes the rows of the given runs in batches of the runs' devices, each batch in its own transaction, so a load run's hundreds of thousands of devices fit its memory (SIM-FR-14). A clean-up that stops part way leaves earlier batches removed, and running it again with the same run ids finishes it. It deletes the `sim_` campaigns and catalog events through campaign management and the event catalog, never in Postgres. |
+| `user_campaign_state_transitions`, `user_metrics`, `identity_graph` | Deletes | Clean-up reaches only the transition partitions still in Postgres. Rows already moved to the lakehouse's `transition_history` stay there, and analytics leave out `sim_` campaigns instead (SIM-FR-28). Clean-up, only when asked to apply, removes the rows of the given runs in batches of the runs' devices, each batch in its own transaction, so a load run's hundreds of thousands of devices fit its memory (SIM-FR-14). A clean-up that stops part way leaves earlier batches removed, and running it again with the same run ids finishes it. It deletes the `sim_` campaigns and catalog events through campaign management and the event catalog, never in Postgres. |
 | Run report | Writes | One per run, as [SIM-FR-16](#functional-requirements) says |
 
 The simulator reads topics with a consumer group of its own per run, so it never moves the offsets of the pipeline's jobs.
@@ -242,6 +244,8 @@ The simulator reads topics with a consumer group of its own per run, so it never
 - [ ] Given a load run, when the Kafka volume passes 70%, then the run aborts and its report names the condition (SIM-FR-12).
 - [ ] Given two runs at the same time, when both finish, then each verdict matches what it would be alone (SIM-FR-13).
 - [ ] Given a finished run, when the engineer cleans up, then no `sim_` fixture and no row with that run's id remains, and no other row changed (SIM-FR-14).
+- [ ] Given a run whose transitions partly moved to `transition_history`, when the engineer cleans up, then those rows are still in `transition_history`, and the home KPIs count none of them (SIM-FR-28).
+- [ ] Given a load profile with the long burst, when it runs, then the rate at the collector holds 1,000 events per second for 1 hour with under 1% send errors (SIM-NFR-08).
 - [ ] Given a deployment sync, when Argo CD applies the simulator's manifests, then no run starts (SIM-FR-06).
 - [ ] Given a backlog of 2 million events on `snowplow-parsed`, when a bench run resumes customer decision, then the report gives its drain rate with the run count, median, range, and a limiter named from metrics (SIM-FR-21, SIM-FR-22).
 - [ ] Given a bench run, when it ends, then the job resumed from its savepoint and its state is intact (SIM-FR-21).

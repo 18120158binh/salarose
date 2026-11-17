@@ -5,10 +5,12 @@ status: accepted
 date: 2026-11-17
 tags: [storage, lakehouse, iceberg, s3, data-import, analytics]
 supersedes: ["0040"]
-superseded_by: []
+superseded_by: ["0058"]
 ---
 
 # 0053. Store raw events, transition history, and imports in an Iceberg lakehouse
+
+> Superseded in part by [decision 0058](0058-read-recent-analytics-from-postgres-and-history-from-the-lakehouse.md): recent analytics ranges keep reading the hot table, and only history comes from the lakehouse. Amended on 2026-11-17 with the owner's answers to the other open questions, which add detail. [Amendments](#amendments) lists them. The text above them is unchanged.
 
 ## Context
 
@@ -69,6 +71,24 @@ These are open, and the contracts list them under "Open questions":
 - Analytics reads are as fresh as the transition history in the lakehouse. Until the freshness question is answered, the home overview and journey analytics keep reading the hot table, and their known issues record it.
 - `campaign_node_stats` counts only the rows still in Postgres once partitions move. Its all-time count must combine both stores, or move to the lakehouse with the rest of analytics ([journey execution](../components/journey-execution.md#open-questions)).
 - Decision 0040 is superseded in part. Its batch path, governor, and `customer_attributes` stay. Its import store does not.
+
+## Amendments
+
+The owner answered this record's open questions on 2026-11-17. Each answer is written as requirements in the contract it changes.
+
+| Question | Answer | Where |
+|---|---|---|
+| The catalog, layout, and partitioning | S3 Tables, with its built-in compaction, for every lakehouse table. Each table partitioned by day of its main time column. A write across tables commits table by table, with a completion marker written last, and readers trust only rows a marker covers (#115). | [LKH-NFR-08](../components/lakehouse.md#non-functional-requirements), [LKH-FR-19, LKH-FR-20](../components/lakehouse.md#functional-requirements), [IAP-FR-15](../components/import-applier.md#functional-requirements) |
+| How long transitions stay in Postgres | 90 days of entry starts (#114). | [JEX-NFR-12](../components/journey-execution.md#non-functional-requirements) |
+| How long `raw_events` keeps records | 13 months. A rebuild is exact only for state whose inputs fall within them (#126). | [LKH-NFR-01](../components/lakehouse.md#non-functional-requirements), [REC-NFR-06](../components/state-recovery.md#non-functional-requirements) |
+| Whether a person's deletion reaches `raw_events` | No. Raw events, and the internal events and change history kept for rebuilds, are kept as received, so rebuilds stay exact. Personal data in them outlives a deletion request for up to 13 months (#127). | [LKH-FR-16, LKH-NFR-09](../components/lakehouse.md#functional-requirements), [DIM-NFR-10](../../features/data-import.md#non-functional-requirements) |
+| Simulator rows in `transition_history` | Not deleted. Analytics leave out `sim_` campaigns (#124). | [LKH-FR-18](../components/lakehouse.md#functional-requirements), [SIM-FR-28](../../features/traffic-simulator.md#functional-requirements) |
+| Where customer lookup reads older transitions | From `transition_history` too, split at the same boundary as analytics (#125). | [CUS-FR-43](../../features/customer-lookup.md#functional-requirements) |
+| The import record cap | 100 million records per file. The metric pass must still meet its time bound (#131). | [IAP-NFR-03](../components/import-applier.md#non-functional-requirements), [IMP-NFR-01](../components/import-metric-pass.md#non-functional-requirements) |
+
+Who reads analytics, how fresh, and with which engine (#111) is answered in [decision 0058](0058-read-recent-analytics-from-postgres-and-history-from-the-lakehouse.md), because the answer reverses this record's third point. The lakehouse also keeps the internal topics and the history of the Postgres tables a rebuild reads, by the answers in [decision 0054](0054-recover-flink-state-in-four-layers.md#amendments).
+
+The owner answered the parts the first answers left open during the review of PR #173 on 2026-11-17: the partitioning and multi-table commits above, partitions created 2 months ahead for early transitions ([LKH-FR-11](../components/lakehouse.md#functional-requirements)), and deletion in the other rebuild histories. One part that follows from them stays open in the [lakehouse sink](../components/lakehouse.md#open-questions): a Postgres input's value at the start of the rebuild window.
 
 ## Related
 

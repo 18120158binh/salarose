@@ -38,7 +38,7 @@ Each record explains one choice that shapes the architecture: the context, the d
 | [0032](0032-fan-out-business-events-to-interested-people.md) | Fan out business events to interested people | Accepted | 2026-10-21 |
 | [0033](0033-a-journey-instance-is-one-entry.md) | A journey instance is one entry | Accepted | 2026-10-21 |
 | [0034](0034-build-studio-v2-side-by-side-under-v2.md) | Build studio v2 side by side under `/v2` in the same app | Accepted. Superseded in part by [0037](0037-one-studio-retire-the-classic-studio.md) and [0045](0045-adopt-the-salarose-design-system-and-approve-a-visual-draft-before-ui-code.md) | 2026-11-07 |
-| [0035](0035-compute-journey-analytics-from-transitions-on-read.md) | Compute journey analytics from the transitions on read | Accepted. Amended by [0053](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) | 2026-11-07 |
+| [0035](0035-compute-journey-analytics-from-transitions-on-read.md) | Compute journey analytics from the transitions on read | Accepted. Amended by [0053](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) and [0058](0058-read-recent-analytics-from-postgres-and-history-from-the-lakehouse.md) | 2026-11-07 |
 | [0036](0036-store-journey-drafts-on-the-server-outside-cdc.md) | Store journey drafts on the server, outside CDC | Accepted | 2026-11-08 |
 | [0037](0037-one-studio-retire-the-classic-studio.md) | One studio: retire the classic studio | Accepted | 2026-11-08 |
 | [0038](0038-store-segment-membership-and-evaluate-every-segment.md) | Store segment membership and evaluate every segment | Accepted | 2026-11-08 |
@@ -55,10 +55,12 @@ Each record explains one choice that shapes the architecture: the context, the d
 | [0049](0049-the-ingestion-api-writes-plain-json-to-its-own-topic-and-leaves-history-to-import.md) | The ingestion API writes plain JSON to its own topic, and leaves history to the import | Accepted | 2026-11-05 |
 | [0050](0050-one-account-per-person-no-unmerge-and-a-5-second-merge-bound.md) | One account per person, no unmerge, and a 5 second merge bound | Accepted | 2026-11-14 |
 | [0051](0051-fold-to-the-earliest-instance-and-count-nodes-through-merge-history.md) | Fold to the earliest instance, accept the fold window, and count nodes through merge history | Accepted | 2026-11-14 |
-| [0052](0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) | Keep hot state in Flink and a redesigned projection in Postgres, with no new database | Accepted | 2026-11-17 |
-| [0053](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) | Store raw events, transition history, and imports in an Iceberg lakehouse | Accepted | 2026-11-17 |
-| [0054](0054-recover-flink-state-in-four-layers.md) | Recover Flink state in four layers | Accepted | 2026-11-17 |
+| [0052](0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) | Keep hot state in Flink and a redesigned projection in Postgres, with no new database | Accepted. Amended on 2026-11-17 by the owner's answers to its open questions | 2026-11-17 |
+| [0053](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) | Store raw events, transition history, and imports in an Iceberg lakehouse | Accepted. Superseded in part by [0058](0058-read-recent-analytics-from-postgres-and-history-from-the-lakehouse.md). Amended on 2026-11-17 by the owner's answers to its other open questions | 2026-11-17 |
+| [0054](0054-recover-flink-state-in-four-layers.md) | Recover Flink state in four layers | Accepted. Amended on 2026-11-17 by the owner's answers to its open questions | 2026-11-17 |
 | [0055](0055-run-the-dev-environment-on-one-stoppable-spot-node.md) | Run the dev environment on one stoppable Spot node and pay-per-use services | Accepted | 2026-11-17 |
 | [0056](0056-a-read-only-agent-with-no-pii-and-a-provider-agnostic-tool-use-model.md) | A read-only agent with no PII and a provider-agnostic tool-use model | Accepted | 2026-11-17 |
+| [0057](0057-run-the-data-ingestion-api-as-its-own-service.md) | Run the data ingestion API as its own service, outside studio | Accepted | 2026-11-17 |
+| [0058](0058-read-recent-analytics-from-postgres-and-history-from-the-lakehouse.md) | Read recent analytics from Postgres and history from the lakehouse | Accepted | 2026-11-17 |
 
 To add a decision, copy [the template](../../_templates/decision.md) to the next free number. Never edit an accepted record to reverse it. Write a new record and set `superseded_by` on the old one.

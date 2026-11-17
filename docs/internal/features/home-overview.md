@@ -8,7 +8,7 @@ area: studio
 tags: [ui, studio-v2, analytics, journeys]
 created: 2026-11-07
 updated: 2026-11-17
-version: 0.3
+version: 0.4
 known_issues: ../known-issues/features/home-overview.md
 ---
 
@@ -147,6 +147,7 @@ Worked example. Transitions with event times on 2026-11-09 local: 3 setup rows, 
 | HOM-FR-09 | The page must not show delivery, open, click, conversion, or revenue numbers. |
 | HOM-FR-10 | Clicking a journey on the page must open `/v2/journeys/[id]`. |
 | HOM-FR-11 | **Create journey** must open `/v2/journeys/new`. Each other link must open its v2 page once that page has shipped to every staff user. Until then, it must open the classic page that does the same job for the viewer, or be absent when the viewer has none. After cutover, no link may open a classic page. No link may open a v2 route that does not exist. |
+| HOM-FR-12 | The KPIs and the journeys table must leave out every campaign whose id starts with `sim_`, the [traffic simulator](traffic-simulator.md)'s test campaigns, whose transitions stay in `transition_history` after clean-up. The owner decided this on 2026-11-17 (#124). |
 
 ## Non-functional requirements
 
@@ -155,15 +156,15 @@ Worked example. Transitions with event times on 2026-11-09 local: 3 setup rows, 
 | HOM-NFR-01 | Each data region must load within 2 seconds at the 95th percentile for Last 30 days, measured on the deployed database. [Decision 0035](../architecture/decisions/0035-compute-journey-analytics-from-transitions-on-read.md) says what happens when it does not. |
 | HOM-NFR-02 | The page must not change any row or produce a record to any topic, except through the browser-draft move of [JBD-FR-28](journey-builder.md#functional-requirements) when the viewer chooses it. It reads `user_campaign_state_transitions`, `campaigns`, `journey_drafts`, and `system_users`, and the offsets of the dead-letter topic without a consumer group, so the broker records no group for it either. |
 | HOM-NFR-03 | Studio must read the dead-letter topic's offsets at most once every 15 seconds, however many viewers open the page. |
-| HOM-NFR-04 | The KPI row and the journeys table must read transitions from the transition history in the lakehouse, not from `user_campaign_state_transitions`, as [decision 0053](../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) says. The health strip's engine lag and newest step may read the hot table, because they need the newest rows. How fresh the lakehouse numbers must be is an [open question](#open-questions). |
+| HOM-NFR-04 | The KPI row and the journeys table must read their ranges, which all start within 90 days, from `user_campaign_state_transitions` in Postgres only, seconds fresh, with no lakehouse query ([LKH-FR-22](../architecture/components/lakehouse.md#functional-requirements)). They may leave out late transitions, which are rare because an entry lives at most 90 days from its start. The owner decided this on 2026-11-18, in the review of PR #173. The health strip's engine lag and newest step read the hot table only, because they need the newest rows. The owner decided this on 2026-11-17 (#111). |
 
 ## Interfaces
 
 | Direction | Interface | Use |
 |---|---|---|
 | UI | `/v2?range=today`, `7d`, or `30d` | The page |
-| Read | `user_campaign_state_transitions` | `node_type`, `branch`, `campaign_id`, `event_timestamp`, `transitioned_at`. Until HOM-NFR-04 lands. |
-| Read, planned | Lakehouse `transition_history` | The same columns, for the KPIs and the journeys table ([lakehouse sink](../architecture/components/lakehouse.md#interfaces)) |
+| Read | `user_campaign_state_transitions` | `node_type`, `branch`, `campaign_id`, `event_timestamp`, `transitioned_at`, and the move boundary. The hot window of HOM-NFR-04, and the health strip. |
+| Read, planned | Lakehouse `transition_history`, through Athena | The same columns, below the move boundary, for the KPIs and the journeys table ([lakehouse sink](../architecture/components/lakehouse.md#read-across-both-stores)) |
 | Read | `campaigns` | `id`, `name`, `status`, `created_user`, `updated_at` |
 | Read | `journey_drafts` | The viewer's drafts: `id`, `name`, `owner_id`, `updated_at` |
 | Read | `system_users` | The owner's email |
@@ -207,12 +208,12 @@ Worked example. Transitions with event times on 2026-11-09 local: 3 setup rows, 
 - Given cutover has happened, then no link on the page opens `/campaign`, `/segments`, `/admin`, or `/platform`. (HOM-FR-11)
 - Given a viewer who uses every control on the page, then no row of any table changes. (HOM-NFR-02)
 - Given 20 viewers who load `/v2` within 15 seconds, then studio reads the dead-letter topic's offsets once. (HOM-NFR-03)
-- Given the home overview loading Last 30 days, then its KPI and journeys queries read no row of `user_campaign_state_transitions`. (HOM-NFR-04)
+- Given Last 30 days, then the KPI and journeys queries read only Postgres, and no Athena query runs. Given a move of a partition while the page loads, then no entry in the range counts twice or not at all. (HOM-NFR-04)
+- Given a campaign `sim_purchase_60s` with 10 entries in the range and a campaign `welcome` with 3, then Entries is 3, and the journeys table does not list `sim_purchase_60s`. (HOM-FR-12)
 - Given a deployed database with 30 days of transitions, when Last 30 days loads, then each region answers within 2 seconds at the 95th percentile, or the result of decision 0035's check is recorded. (HOM-NFR-01)
 
 ## Open questions
 
-- **Freshness of the lakehouse numbers.** How old the KPIs may be once they read the transition history (HOM-NFR-04), and so which query engine studio uses. The same question is open in the [lakehouse sink](../architecture/components/lakehouse.md#open-questions). Tracked in #111.
 
 Two choices the design left open are the lead's defaults, marked where they apply: counting entries rather than people, and the health strip thresholds.
 

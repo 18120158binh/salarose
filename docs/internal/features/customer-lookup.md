@@ -8,7 +8,7 @@ area: studio
 tags: [ui, studio-v2, identity, journeys, metrics]
 created: 2026-11-07
 updated: 2026-11-17
-version: 0.5
+version: 0.6
 known_issues: ../known-issues/features/customer-lookup.md
 ---
 
@@ -119,11 +119,11 @@ The page title is the person's newest user id, by `updated_at` among their ident
 
 **Activity timeline.** The person's tracked events and journey entries, newest first, grouped by day in the studio's time zone. An event row shows the event's display name, the device it came from, its system name, such as `com.acme/add_to_cart`, and its time. A journey entry row reads "Entered journey" and the journey's name, at the event time of the entry's setup transition. Filter chips above the timeline narrow it: **All**, the default; **Events**, tracked events other than orders; **Orders**, events of the order event; and **Journeys**, journey entries. Which catalog event counts as an order is an open question. The timeline shows 50 rows and offers **Load earlier activity** for the next 50 (CUS-FR-12). Until the store of a person's events is decided, the timeline region reads "Not available" with the reason, and shows no chips and no rows.
 
-**Messages received.** One row per engagement transition of the person in `user_campaign_state_transitions`, newest first by `event_timestamp`, up to 50 with the count of the rest. Each row shows the channel from the transition's `action_json` `type`, with its `title`, else its `subject`, else the first 60 characters of its `body`, in quotes; the journey's name, or "Deleted journey" when no `campaigns` row exists; the status; and the event time. The status reads "Sent" as an icon and a word, meaning the journey handed the request to the sender. Once the sender reports, it reads "Delivered" or "Failed". With no row, the region reads "No message sent to this shopper yet." (CUS-FR-13) Once transitions are partitioned ([decision 0052](../architecture/decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md)), this region reads only the partitions still in Postgres, and no partition leaves while it does ([JEX-FR-24](../architecture/components/journey-execution.md#functional-requirements)).
+**Messages received.** One row per engagement transition of the person, from the hot table and `transition_history` (CUS-FR-43), newest first by `event_timestamp`, up to 50 with the count of the rest. Each row shows the channel from the transition's `action_json` `type`, with its `title`, else its `subject`, else the first 60 characters of its `body`, in quotes; the journey's name, or "Deleted journey" when no `campaigns` row exists; the status; and the event time. The status reads "Sent" as an icon and a word, meaning the journey handed the request to the sender. Once the sender reports, it reads "Delivered" or "Failed". With no row, the region reads "No message sent to this shopper yet." (CUS-FR-13) Until it reads both stores, it holds partitions in Postgres ([JEX-FR-24](../architecture/components/journey-execution.md#functional-requirements)).
 
 **Segments.** Every segment the person is in now, by stored membership in `segment_members` and `segment_import_members`, as [segments](segments.md) defines it, each linking to its segment page (CUS-FR-14). Until stored membership exists, the region reads "Not available" with the reason.
 
-**Journeys.** One row per entry of the person in `user_campaign_state_transitions`, newest first by the time it entered. Like Messages received, it holds partitions in Postgres while it reads them ([JEX-FR-24](../architecture/components/journey-execution.md#functional-requirements)). The table shows 50 rows and says how many more exist.
+**Journeys.** One row per entry of the person, from the hot table and `transition_history` (CUS-FR-43), newest first by the time it entered. Until both regions read both stores, they hold partitions in Postgres ([JEX-FR-24](../architecture/components/journey-execution.md#functional-requirements)). The table shows 50 rows and says how many more exist.
 
 | Column | Value |
 |---|---|
@@ -172,6 +172,7 @@ Every staff user may search and open any profile. The design made this call for 
 | CUS-FR-40 | The profile must show the person's imported attributes by source, as [Profile](#profile) says, with every PII value masked on the server for every viewer, and **Reveal** for admins as a separate logged request that returns one value. |
 | CUS-FR-42 | The profile must show the person's identifiers by type and the merge records of their identity set, newest first: the winning and retired person ids, the linking identifiers, and the time of the merge. The view is read-only, needs a staff session checked on the server, and masks every email and phone on the server, as CUS-FR-40 does. It comes from the [identity graph](../architecture/components/identity/identity-graph.md) (IDG-FR-15, [decision 0050](../architecture/decisions/0050-one-account-per-person-no-unmerge-and-a-5-second-merge-bound.md)). |
 | CUS-FR-41 | A search equal to the customer key of an imported-only customer must open a profile titled with that key that shows only its imported attributes, under the imported-only note in [Profile](#profile). |
+| CUS-FR-43 | Messages received and Journeys must read the person's transitions from the hot partitions in Postgres and from `transition_history` in the lakehouse, split at the move boundary ([LKH-FR-17](../architecture/components/lakehouse.md#functional-requirements)), so that older messages and entries stay on the page after their partition moves. The owner decided this on 2026-11-17 (#125). |
 
 ## Non-functional requirements
 
@@ -188,7 +189,8 @@ Every staff user may search and open any profile. The design made this call for 
 | UI | `/v2/customers`, `/v2/customers?q=` | Search |
 | UI | `/v2/customers/[canonId]` | Profile |
 | Read | `identity_graph` | `domain_userid`, `user_id`, `canon_id`, `created_at`, `updated_at` |
-| Read | `user_campaign_state_transitions` | The person's entries and messages: `campaign_id`, `entry_id`, `node_id`, `node_type`, `branch`, `event_timestamp`, `transitioned_at`, `children`, `action_json` |
+| Read | `user_campaign_state_transitions` | The person's entries and messages: `campaign_id`, `entry_id`, `node_id`, `node_type`, `branch`, `event_timestamp`, `transitioned_at`, `children`, `action_json`, and the move boundary |
+| Read | Lakehouse `transition_history`, through Athena | The same columns, for the person's transitions below the move boundary ([lakehouse sink](../architecture/components/lakehouse.md#read-across-both-stores)) |
 | Read | `campaigns`, `campaign_nodes` | Journey names, current nodes, and labels |
 | Read | `user_metrics`, `user_metric_definitions`, `user_events` | Series, their definitions, and the event's display name |
 | Read | `segment_members`, `segment_import_members`, `segments` | The person's segments |
@@ -221,6 +223,7 @@ Every staff user may search and open any profile. The design made this call for 
 - Given a person with a `com.acme/product_viewed` event, a `com.acme/order_completed` event, and one entry of Cart abandonment, and `com.acme/order_completed` as the order event, then **All** shows three rows, **Events** shows the view, **Orders** shows the order, and **Journeys** shows "Entered journey Cart abandonment". (CUS-FR-12)
 - Given a person with no identity row, no entry, and no `user_metrics` row, then the profile shows the three empty-state texts in [Profile](#profile). (CUS-FR-15)
 - Given a person with an SMS engagement transition in Welcome series at 2026-10-02 09:15 local, then Messages received lists SMS, the message, "Welcome series", that time, and "Sent". (CUS-FR-13)
+- Given a person with an SMS transition in a partition that left Postgres and a push transition in a hot partition, then Messages received lists both, once each. (CUS-FR-43)
 - Given a person in `segment_members` for segment "Hà Nội shoppers" and in no other segment, then Segments lists only "Hà Nội shoppers". (CUS-FR-14)
 - Given `usr_7` seen with two devices that have different person ids, then the search lists both people. (CUS-FR-02)
 - Given an identity with user id `+84912345678`, when the viewer searches `0912 345 678`, then that person's profile opens. Given an identity with user id `lan@example.com`, when the viewer searches `Lan@Example.com`, then that person's profile opens. (CUS-FR-01, CUS-FR-11)
@@ -248,7 +251,6 @@ One choice the design left open is the lead's default: hiding `MEDIAN` and `DIST
 - Which catalog event counts as an order for the timeline's **Orders** chip?
 - Where does the timeline read a person's events? No table holds tracked events per person today.
 - Where is the sender's delivery report stored, so that a message can read "Delivered" or "Failed"?
-- Where do **Messages received** and **Journeys** read a person's older transitions once partitions leave Postgres ([decision 0052](../architecture/decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md))? They read the hot table today, so under [JEX-FR-24](../architecture/components/journey-execution.md#functional-requirements) no partition can leave while they do. The options are reading `transition_history` in the lakehouse as well, or showing only the recent rows with a note. Tracked in #125.
 
 ## Related
 

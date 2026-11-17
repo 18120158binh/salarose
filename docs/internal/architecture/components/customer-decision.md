@@ -7,8 +7,8 @@ implementation: partial
 area: event-processor
 tags: [rules, metrics, predicates, flink, journeys]
 created: 2026-10-14
-updated: 2026-11-08
-version: 2.3
+updated: 2026-11-17
+version: 2.4
 known_issues: ../../known-issues/components/customer-decision.md
 ---
 
@@ -110,6 +110,8 @@ Accept an event only if it has a `canon_id`, an `event_id`, an `event_name`, and
 7. If at least one series changed, add 1 to the person's behavior version, and emit one mutation with the new version and every changed series in full.
 
 The behavior version is a per-person counter that only increases. It orders mutations for the [profile writer](profile-writer.md), so that a replayed or delayed mutation cannot overwrite a newer row. It does not order events by time, and it is not shown to anyone.
+
+Each mutation also carries the rebuild epoch of the state it comes from: 0 before any rebuild, and the epoch of the latest [rebuild from raw events](state-recovery.md#rebuild-from-raw-events) after one. The profile writer compares the epoch first, so a person's rows catch up with rebuilt state at their next flush (DEC-FR-44). The owner decided this on 2026-11-17 (#121).
 
 The counter lives in state with the series. When state has no counter for the person, because it expired or the job started without a savepoint, the job reads the highest `last_behavior_version` among the person's `user_metrics` rows, or 0 if there are none, and continues from there. It reads the version only for an event that a definition counts, because no other event changes a series. This was chosen during the fix. It is pending owner review.
 
@@ -340,6 +342,7 @@ A rule fails to parse when an entry has an unknown `type`, a missing field, or a
 | DEC-FR-03 | A series must count every occurrence within its retention period, however many there are, in buckets by the rules in [Buckets](#buckets). |
 | DEC-FR-04 | The job must emit a mutation for an event if and only if at least one series changed. |
 | DEC-FR-14 | Each mutation must carry a behavior version greater than that of every earlier mutation for the same person. |
+| DEC-FR-44 | Each mutation must carry the rebuild epoch of the job's state, `rebuildEpoch`: 0 before any rebuild, and the epoch the latest rebuild set after one ([REC-FR-15](state-recovery.md#functional-requirements)). The owner decided this on 2026-11-17 (#121). |
 | DEC-FR-15 | On a segment check, the job must evaluate the condition split against the person's whole snapshot as of the check's `event_time`, and emit `yes` if its condition holds. The check must not change any series. |
 | DEC-FR-16 | `>`, `>=`, `<`, and `<=` on event and profile fields must order two ISO 8601 datetimes in time by the [datetime rules](#condition-language), and must be false when either side is neither a number nor such a value. |
 | DEC-FR-05 | Rules must be evaluated against the metrics after the current event is counted. |
@@ -536,6 +539,7 @@ A membership change:
 - Given a campaign set to `paused`, when a matching event arrives, then no trigger is emitted for its nodes. (DEC-FR-08, DEC-FR-12)
 - Given an event that changes no series, then no mutation is emitted. (DEC-FR-04)
 - Given no behavior version in state, and `user_metrics` rows for the person whose highest `last_behavior_version` is 41, when an event changes a series, then the mutation carries version 42. (DEC-FR-14)
+- Given state rebuilt with rebuild epoch 1, when an event changes a series, then the mutation carries `rebuildEpoch` 1. (DEC-FR-44)
 - Given a behavior version in state and `user_metrics` unreachable, when an event updates a series missing from state, then the job emits nothing for that event and restarts from the last checkpoint. (DEC-NFR-11)
 - Given a `NUMBER` metric and an event whose attribute is `"abc"`, `"NaN"`, or `"Infinity"`, then the job keeps running and the series gains an occurrence with no value.
 - Given a `NUMBER` metric and add-to-cart events with values 10, none, 30, and none in the window, then `COUNT = 4`, `SUM = 40`, `AVG = 20`, `MIN = 10`, `MAX = 30`, `MEDIAN = 20`, and `LATEST = 30` pass.

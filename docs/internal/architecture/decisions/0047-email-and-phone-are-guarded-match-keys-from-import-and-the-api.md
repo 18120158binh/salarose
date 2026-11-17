@@ -10,6 +10,8 @@ superseded_by: []
 
 # 0047. Email and phone are guarded match keys, learned from imports and the API
 
+> The owner answered the two questions this record leaves open on 2026-11-17 (#4). The graph keeps email and phone in clear text ([IDN-FR-11](../components/identity/identifiers.md#functional-requirements)), and no stored `canon_id` is rewritten (IDN-FR-12).
+
 ## Context
 
 The [identifiers contract](../components/identity/identifiers.md) typed `user_id` and `domain_userid`, and left `email` and `phone` without a source, a match-key rule, or a merge priority. It asked four questions this record answers:
