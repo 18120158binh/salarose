@@ -7,8 +7,8 @@ implementation: partial
 area: studio
 tags: [ui, journeys, canvas, conditions, drafts, templates]
 created: 2026-10-14
-updated: 2026-11-17
-version: 3.3
+updated: 2026-11-18
+version: 3.4
 known_issues: ../known-issues/features/journey-builder.md
 ---
 
@@ -437,7 +437,7 @@ Each published row has an action menu with Open, Duplicate, Pause or Resume, and
 - **Header actions.** The owner or an admin sees **Pause** or **Resume**, **Duplicate to edit**, and **Delete**. Every other staff user sees **Duplicate to edit** only. No page links to the classic builder.
 - **Duplicate to edit** creates a draft named "Copy of" and the journey's name, with `origin` `duplicate:<id>`, owned by the viewer, and opens it in the builder. Any staff user may duplicate any published journey, because every staff user can already see every published journey under **All**.
 - **Delete** opens a dialog that names the journey and says how many people are waiting in it, as [CMP-FR-19](campaign-management.md#functional-requirements) says.
-- **Journey tab.** The read-only canvas, with each node's all-time Completed count from `campaign_node_stats`. It refreshes every 5 seconds, skips a refresh while the browser tab is hidden, and starts the next refresh only after the last one has finished. When a refresh fails, it keeps the last counts and says that they could not refresh (JBD-FR-09). The analytics graph and the builder canvas use the same node cards.
+- **Journey tab.** The read-only canvas, with each node's all-time Completed count from `campaign_node_stats`, the materialized view of [journey execution](../architecture/components/journey-execution.md#functional-requirements) (JEX-FR-25), which includes the partitions that left Postgres. It refreshes every 5 seconds, skips a refresh while the browser tab is hidden, and starts the next refresh only after the last one has finished. When a refresh fails, it keeps the last counts and says that they could not refresh (JBD-FR-09). A count lags its transition by the view's refresh plus the tab's (JBD-NFR-05). The analytics graph and the builder canvas use the same node cards.
 
 The Analytics tab has:
 
@@ -498,7 +498,7 @@ So Entered counts the entries that reached the step during the range. Completed 
 
 A node `N` is a **waiting step** of one entry when the entry has a transition of `N`'s parent on `N`'s `parent_branch` and no transition of `N`. The setup node is never a waiting step. An engagement or End node completes with its parent, so it is waiting only if the engine failed. A person stays at a watch until the deadline, at a check until its trigger arrives, and at a condition split until its conditions hold. A check that never gets its trigger keeps the person waiting there. Only a draft can change its tree (JBD-FR-08), so a published campaign keeps its node ids. Two cases still leave transitions under ids that are not current nodes. End nodes saved before stable End ids got a new id on every save (JBD-FR-12), and rows can predate a manual repair. Those ids show as removed steps. They are never waiting steps, because a waiting step must be a current node.
 
-`campaign_node_stats` counts every entry with a transition of the node. That is Completed over all time, which is why the Journey tab's counts and the analytics' All time Completed agree. [Decision 0035](../architecture/decisions/0035-compute-journey-analytics-from-transitions-on-read.md) explains why v2 computes these numbers from the transitions on read.
+`campaign_node_stats` counts every entry with a transition of the node, in the hot partitions and, through the moved counts, in the partitions that left Postgres ([JEX-FR-25](../architecture/components/journey-execution.md#functional-requirements)). That is Completed over all time, which is why the Journey tab's counts and the analytics' All time Completed agree, up to the view's refresh (JBD-NFR-05) and the late transitions that only `transition_history` holds. [Decision 0035](../architecture/decisions/0035-compute-journey-analytics-from-transitions-on-read.md) explains why v2 computes these numbers from the transitions on read.
 
 Worked example. A journey has setup `S`, a watch `W` under `S` on `next`, and End `E1` under `W` on `success`. In the range, 3 entries complete `S`. Entry 1 completes `W` on `success` and then `E1`. Entry 2 completes `W` on `timeout`. Entry 3 has no transition of `W`. Then `S` shows Entered 3 and Completed 3. `W` shows Entered 3, Completed 2, Waiting 1, and the split 1 `success` and 1 `timeout`. `E1` shows Entered 1 and Completed 1. Entry 3's waiting step is `W`.
 
@@ -514,7 +514,7 @@ Worked example. A journey has setup `S`, a watch `W` under `S` on `next`, and En
 | JBD-FR-06 | The condition editor must offer only operators that fit the attribute's type. |
 | JBD-FR-07 | Changing a path type must delete the subtrees of the removed branches. Deleting a node must follow JBD-FR-42. The setup node must not be deletable. |
 | JBD-FR-08 | Active and paused campaigns must open read-only. |
-| JBD-FR-09 | The Journey tab of a published journey must show each node's all-time Completed count from `campaign_node_stats`, refreshed every 5 seconds, skipping a refresh while the browser tab is hidden, and keeping the last counts when a refresh fails. |
+| JBD-FR-09 | The Journey tab of a published journey must show each node's all-time Completed count from `campaign_node_stats`, the materialized view of [JEX-FR-25](../architecture/components/journey-execution.md#functional-requirements), refreshed every 5 seconds, skipping a refresh while the browser tab is hidden, and keeping the last counts when a refresh fails. The 5 seconds are the lead's default, pending owner review. |
 | JBD-FR-10 | Each node type must open its own editor. |
 | JBD-FR-11 | The journey must stay a tree under the setup node: one parent for every other node, and no cycle. The builder must offer no free edge, and every insert must attach the new node to a parent. Saving or publishing a tree that breaks this must fail with a message that names the node. |
 | JBD-FR-13 | Filters and conditions must be saved as groups. Every group must pass, and a group passes when any of its conditions passes. A group must not be empty. |
@@ -551,7 +551,8 @@ Worked example. A journey has setup `S`, a watch `W` under `S` on `next`, and En
 | JBD-NFR-01 | Only a signed-in user can open the builder. See [admin authentication](admin-authentication.md). |
 | JBD-NFR-02 | A draft lives on the server, in `journey_drafts`, until it is published or deleted. Clearing browser data does not touch it. |
 | JBD-NFR-03 | Journey analytics must load within 2 seconds at the 95th percentile for Last 30 days on the deployed database. [Decision 0035](../architecture/decisions/0035-compute-journey-analytics-from-transitions-on-read.md) says what happens when it does not. |
-| JBD-NFR-04 | Journey analytics for a range that starts no more than 90 days ago must read `user_campaign_state_transitions` in Postgres only, seconds fresh, and may leave out late transitions ([LKH-FR-22](../architecture/components/lakehouse.md#functional-requirements)). A range that starts earlier, such as All time, must also read `transition_history` in the lakehouse through Athena, split at the move boundary so that each transition counts once ([LKH-FR-17](../architecture/components/lakehouse.md#functional-requirements)). The owner decided the recent-range rule on 2026-11-18, in the review of PR #173. The [Node analytics](#node-analytics) definitions do not change. The Journey tab's counts from `campaign_node_stats` (JBD-FR-09) are not covered. That view reads the hot table only, so it holds partitions in Postgres ([JEX-FR-24](../architecture/components/journey-execution.md#functional-requirements)), and how it counts over all time is open in [journey execution](../architecture/components/journey-execution.md#open-questions). The owner decided this on 2026-11-17 (#111). |
+| JBD-NFR-04 | Journey analytics for a range that starts no more than 90 days ago must read `user_campaign_state_transitions` in Postgres only, seconds fresh, and may leave out late transitions ([LKH-FR-22](../architecture/components/lakehouse.md#functional-requirements)). A range that starts earlier, such as All time, must also read `transition_history` in the lakehouse through Athena, split at the move boundary so that each transition counts once ([LKH-FR-17](../architecture/components/lakehouse.md#functional-requirements)). The owner decided the two stores on 2026-11-17 (#111) and the recent-range rule on 2026-11-18, in the review of PR #173. The [Node analytics](#node-analytics) definitions do not change. The Journey tab's counts from `campaign_node_stats` (JBD-FR-09) read no lakehouse. That view includes the partitions that left Postgres through their moved counts ([JEX-FR-25](../architecture/components/journey-execution.md#functional-requirements)). |
+| JBD-NFR-05 | A node count on the Journey tab may lag its transition by the lag of `campaign_node_stats` ([JEX-NFR-14](../architecture/components/journey-execution.md#non-functional-requirements)) plus the tab's refresh (JBD-FR-09), 15 seconds with both intervals at 5 seconds, and leaves out late transitions, which only `transition_history` holds. Both intervals are the lead's default, pending owner review. |
 
 ## Interfaces
 
@@ -568,7 +569,7 @@ Worked example. A journey has setup `S`, a watch `W` under `S` on `next`, and En
 | Read, planned | Lakehouse `transition_history`, through Athena | Node analytics, the same columns, below the move boundary ([lakehouse sink](../architecture/components/lakehouse.md#read-across-both-stores)) |
 | Read | `campaign_nodes` | The current nodes, their parents and branches, and their labels |
 | Read | `campaigns` | The tree of a published campaign, for the Journey tab and for duplicates |
-| Read | `campaign_node_stats` | Completed counts on the Journey tab |
+| Read | `campaign_node_stats` | Completed counts on the Journey tab, over the hot partitions and the moved counts (JEX-FR-25) |
 | Read | `user_events`, `user_event_fields` | Event and attribute pickers, and the template event mapping. The event's kind decides which trigger list offers it. |
 | Read | `segments` | Segment pickers for entry triggers, segment audiences, and `segment_membership` conditions |
 | Read | `import_record_types`, `import_record_type_versions`, `import_metric_definitions` | Imported fields for the profile field picker |
@@ -633,7 +634,7 @@ Worked example. A journey has setup `S`, a watch `W` under `S` on `next`, and En
 - Given the transitions of the [node analytics worked example](#node-analytics), then the analytics show `W` with Entered 3, Completed 2, Waiting 1, and 1 `success` and 1 `timeout`. (JBD-FR-19)
 - Given a multi-branch check where one entry fired `vip` and `regular`, then the check's Completed is 1 and its split shows 1 on each branch. (JBD-FR-19)
 - Given an entry whose parent transition has an event time before the range and whose node transition falls in the range, then that node's Entered does not count it. (JBD-FR-19, JBD-FR-20)
-- Given All time, then each node's Completed equals its `user_count` in `campaign_node_stats`. (JBD-FR-19, JBD-FR-20)
+- Given All time and no late transition, then each node's Completed equals its `user_count` in `campaign_node_stats` after its refresh. (JBD-FR-19, JBD-FR-20)
 - Given transitions of an End node id that is not in the current nodes, then it shows under removed steps with its count. (JBD-FR-21)
 - Given a watch on `com.acme/add_to_cart` limited to 1 day, then its label is "Wait for" the event's display name and "1 day". (JBD-FR-22)
 - Given an editor on another user's active journey, then the analytics load, **Duplicate to edit** shows, and **Pause**, **Resume**, and **Delete** are absent from the header and from the row menu. No link on the page opens `/campaign`. (JBD-FR-19, JBD-FR-23)
@@ -643,6 +644,8 @@ Worked example. A journey has setup `S`, a watch `W` under `S` on `next`, and En
 - Given a deployed database with 30 days of transitions, then journey analytics for Last 30 days load within 2 seconds at the 95th percentile, or the result of decision 0035's check is recorded. (JBD-NFR-03)
 - Given a node with 3 completions in hot partitions and 2 in `transition_history` below the move boundary, then All time shows 5 completions, and Last 30 days reads no lakehouse row. (JBD-NFR-04)
 - Given a published journey open on its Journey tab, when `campaign_node_stats` changes, then the node counts update within 5 seconds. While the browser tab is hidden, no refresh runs. When a refresh fails, the last counts stay and the page says they could not refresh. (JBD-FR-09)
+- Given a node with 3 entries in a partition that left Postgres and 2 in a hot one, then the Journey tab shows 5, and no lakehouse query runs. (JBD-FR-09, JBD-NFR-04)
+- Given a transition written at 10:00:00 and the Journey tab open, then its node's count rises by 10:00:15. (JBD-NFR-05)
 - Given a draft with a watch that has no event and a check with an empty group, then the checklist lists both problems in tree order, each with its node and field, and the publish dialog's confirm button is disabled. **Go to** on the watch's problem opens its panel with the event field focused. (JBD-FR-25)
 - Given a draft whose only problem is a condition split's No branch saved by an older build, then the checklist shows a warning and publish is allowed. (JBD-FR-25)
 - Given the browser's validator and the server's validator on the same fixture trees, then both return the same problems. (JBD-FR-25)
@@ -707,6 +710,7 @@ The question "should drafts be stored on the server" is answered. They are, in `
 - [Journey execution](../architecture/components/journey-execution.md)
 - [Data model](../architecture/data-model.md)
 - [0009. Compute node stats as a view](../architecture/decisions/0009-compute-node-stats-as-a-view.md)
+- [0059. Compute node stats as a materialized view over the hot and moved counts](../architecture/decisions/0059-compute-node-stats-as-a-materialized-view-over-hot-and-moved-counts.md)
 - [0029. Model a rule as a trigger and person conditions](../architecture/decisions/0029-model-a-rule-as-a-trigger-and-person-conditions.md)
 - [0035. Compute journey analytics from the transitions on read](../architecture/decisions/0035-compute-journey-analytics-from-transitions-on-read.md)
 - [0036. Store journey drafts on the server, outside CDC](../architecture/decisions/0036-store-journey-drafts-on-the-server-outside-cdc.md)

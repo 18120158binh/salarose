@@ -12,7 +12,7 @@ Each record explains one choice that shapes the architecture: the context, the d
 | [0006](0006-at-least-once-delivery-with-idempotent-writes.md) | At-least-once delivery with idempotent writes | Accepted | 2026-08-21 |
 | [0007](0007-staff-sign-in-through-oidc.md) | Staff sign in through OpenID Connect | Accepted. Superseded in part by [0024](0024-create-staff-at-first-sign-in-with-the-providers-role.md) | 2026-10-14 |
 | [0008](0008-one-trigger-watermark-for-both-producers.md) | One trigger watermark for both producers | Proposed | 2026-10-18 |
-| [0009](0009-compute-node-stats-as-a-view.md) | Compute node stats as a view, not a trigger-maintained table | Accepted by [0035](0035-compute-journey-analytics-from-transitions-on-read.md) | 2026-10-18 |
+| [0009](0009-compute-node-stats-as-a-view.md) | Compute node stats as a view, not a trigger-maintained table | Accepted by [0035](0035-compute-journey-analytics-from-transitions-on-read.md). Superseded in part by [0059](0059-compute-node-stats-as-a-materialized-view-over-hot-and-moved-counts.md) | 2026-10-18 |
 | [0010](0010-link-staff-to-provider-accounts-and-end-sessions-server-side.md) | Link staff to provider accounts and end sessions server-side | Proposed. Superseded in part by [0024](0024-create-staff-at-first-sign-in-with-the-providers-role.md) | 2026-10-17 |
 | [0011](0011-the-first-trigger-to-arrive-completes-a-node.md) | The first trigger to arrive completes a node | Accepted | 2026-10-17 |
 | [0012](0012-resolve-events-without-a-device-from-the-durable-copy.md) | Resolve events without a device from the durable copy | Proposed | 2026-10-18 |
@@ -62,5 +62,6 @@ Each record explains one choice that shapes the architecture: the context, the d
 | [0056](0056-a-read-only-agent-with-no-pii-and-a-provider-agnostic-tool-use-model.md) | A read-only agent with no PII and a provider-agnostic tool-use model | Accepted | 2026-11-17 |
 | [0057](0057-run-the-data-ingestion-api-as-its-own-service.md) | Run the data ingestion API as its own service, outside studio | Accepted | 2026-11-17 |
 | [0058](0058-read-recent-analytics-from-postgres-and-history-from-the-lakehouse.md) | Read recent analytics from Postgres and history from the lakehouse | Accepted | 2026-11-17 |
+| [0059](0059-compute-node-stats-as-a-materialized-view-over-hot-and-moved-counts.md) | Compute node stats as a materialized view over the hot and moved counts | Accepted | 2026-11-18 |
 
 To add a decision, copy [the template](../../_templates/decision.md) to the next free number. Never edit an accepted record to reverse it. Write a new record and set `superseded_by` on the old one.

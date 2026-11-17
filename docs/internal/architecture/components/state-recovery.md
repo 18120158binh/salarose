@@ -7,8 +7,8 @@ implementation: partial
 area: event-processor
 tags: [flink, state, checkpoints, savepoints, recovery, lakehouse]
 created: 2026-11-17
-updated: 2026-11-17
-version: 0.2
+updated: 2026-11-18
+version: 0.3
 known_issues: ../../known-issues/components/state-recovery.md
 ---
 
@@ -87,7 +87,7 @@ Steps:
 
 1. Stop the streaming jobs, taking a savepoint of each if they can still take one.
 2. Record the cut (REC-FR-13). For each partition of each ingestion topic, take the newest offset `raw_events` holds. For each partition of each internal topic, take the matching position: the position after the last record the jobs derived from ingestion records at or before the cut.
-3. Skip every record of a person in `person_tombstones` (REC-FR-16). Run every job with state in batch over its own recorded inputs up to the cut: event parse, customer decision, the business event fan-out, the state machine, and the profile writer. A job that reads an ingestion topic reads `raw_events`. A job that reads an internal topic reads that topic's recorded records in `internal_events`, never another job's rebuilt output. Each job reads its Postgres inputs from `change_history` as of each record's time.
+3. Skip every record of a person in `person_tombstones`: hash each record's `user_id` under the tombstone key, and skip the record when the hash is a `customer_key_hash` there (REC-FR-16). Run every job with state in batch over its own recorded inputs up to the cut: event parse, customer decision, the business event fan-out, the state machine, and the profile writer. A job that reads an ingestion topic reads `raw_events`. A job that reads an internal topic reads that topic's recorded records in `internal_events`, never another job's rebuilt output. Each job reads its Postgres inputs from `change_history` as of each record's time.
 4. Watch timeouts reach the state machine at their deadline in event time, because it reads them in the recorded `journey-engine-matched-events`, where the timer flow wrote them when it ran (REC-FR-14). The rebuild fires no second timeout. The state machine ignores a timeout for a watch that already completed, as it does when streaming.
 5. Write nothing to Postgres, Kafka, or a sender during the rebuild. The rebuild produces state only. The outbox sends nothing (REC-FR-14).
 6. Raise the rebuild epoch, and take a savepoint of each job at the end.
@@ -112,7 +112,7 @@ Steps:
 | REC-FR-13 | A rebuild must record its cut and start each streaming job at it: after the newest ingestion record it read, and at the matching position of each internal topic. No record before the cut may be read twice by the streaming jobs, and none after it skipped. The owner decided this on 2026-11-17 (#120). |
 | REC-FR-14 | A rebuild must apply every watch timeout at its deadline in event time, once per watch: the state machine reads the recorded timeouts and no rebuilt timer emits another. The outbox must send nothing during a rebuild. The owner decided this on 2026-11-17 (#132). How the outbox and its timer flow get their state after a rebuild is an [open question](#open-questions). |
 | REC-FR-15 | A rebuild must raise the rebuild epoch. Rebuilt state must carry it into every metric mutation, so that its rows replace older rows in `user_metrics` ([PRW-FR-16](profile-writer.md#functional-requirements)). A rebuild must not rewrite `user_metrics` in bulk. A person's row catches up at their next flush. The owner decided this on 2026-11-17 (#121). |
-| REC-FR-16 | A rebuild must skip every person in `person_tombstones`: every record whose `user_id` has a tombstone, and every record of a `canon_id` such a record resolves to. The rebuilt state must hold no metric, segment flag, or journey entry of that person, and no mutation may write their `user_metrics` rows. The raw events stay (LKH-FR-16). The owner decided this on 2026-11-18, in the review of PR #173. |
+| REC-FR-16 | A rebuild must skip every person in `person_tombstones`: every record whose `user_id`, hashed under the tombstone key, matches a `customer_key_hash` there, and every record of a `canon_id` such a record resolves to. `person_tombstones` holds the hash, never the key. The rebuilt state must hold no metric, segment flag, or journey entry of that person, and no mutation may write their `user_metrics` rows. The raw events stay (LKH-FR-16). The owner decided this on 2026-11-18, in the review of PR #173. |
 
 ## Non-functional requirements
 
@@ -173,6 +173,7 @@ Steps:
 - Given customer decision started without state, then each person's series lag their true value by at most one coalescing window plus one flush of changes. (REC-NFR-02)
 - Given a job whose newest scheduled savepoint is 26 hours and 5 minutes old, then an alert fires. Given one 25 hours old, then none fires. (REC-NFR-04)
 - Given a person's deletion request and their raw events 2 months old, when a rebuild runs, then the raw events are still in `raw_events`, and the rebuilt state holds no metric, flag, or entry of the person. (REC-NFR-07, REC-FR-16)
+- Given a tombstone whose `customer_key_hash` is the hash of `0912345678` under the tombstone key, and a raw event with `user_id` `0912345678`, when a rebuild runs, then the record is skipped, and the rebuild reads no plain key from `person_tombstones`. (REC-FR-16)
 - Given a rebuild, then its report states its duration. (REC-NFR-05)
 
 ## Open questions

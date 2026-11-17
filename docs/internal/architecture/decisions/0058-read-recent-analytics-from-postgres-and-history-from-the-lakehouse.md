@@ -31,7 +31,7 @@ This supersedes in part decision 0053's third point, "Analytics off the hot tabl
 
 **Recent numbers must be seconds fresh.** Transitions reach `transition_history` only when their partition moves, up to 90 days after their entry starts. The lakehouse cannot serve a dashboard of today's entries.
 
-**Late transitions are rare.** Every entry lives at most 90 days from its start ([JEX-NFR-03](../components/journey-execution.md#non-functional-requirements)), and a partition moves only once all its entries have expired. A late transition comes only from a replay after a restore, or from an entry's last moments while a move has its partition closed. Leaving them out of a recent range keeps every recent page off Athena, whose latency would break the 2-second bounds of HOM-NFR-01 and JBD-NFR-03.
+**Late transitions are rare.** Every entry lives at most 90 days from its start ([JEX-NFR-03](../components/journey-execution.md#non-functional-requirements)), and a partition moves only once all its entries have expired. A late transition comes only from a replay after a restore, or from an entry that completes a node at the exact 90-day edge, in its last moments, while a move has its partition closed. A partition moves only once every entry in it has expired (JEX-NFR-12), so the second case is rare. Leaving them out of a recent range keeps every recent page off Athena, whose latency would break the 2-second bounds of HOM-NFR-01 and JBD-NFR-03.
 
 **A serverless engine costs nothing when nobody reads history.** Long ranges are occasional. Athena bills per query, and nothing runs between them.
 
@@ -47,7 +47,7 @@ This supersedes in part decision 0053's third point, "Analytics off the hot tabl
 
 - The hot table keeps its analytics indexes, so the state machine's inserts keep their cost. The WAL saving 0053 expected from dropping them does not happen ([platform capacity](../capacity.md#coalesced-writes)).
 - A recent range can undercount by the late transitions in it. The contracts state this limit (HOM-NFR-04, JBD-NFR-04).
-- `campaign_node_stats` is a Postgres view and does not read the lakehouse. How it counts moved partitions is open in [journey execution](../components/journey-execution.md#open-questions).
+- `campaign_node_stats` does not read the lakehouse. [Decision 0059](0059-compute-node-stats-as-a-materialized-view-over-hot-and-moved-counts.md) makes it a materialized view that counts moved partitions from the counts the move writes to Postgres.
 
 ## Related
 

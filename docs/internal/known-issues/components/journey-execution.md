@@ -12,7 +12,7 @@ Java paths are relative to `event-processor/src/main/java/com/cdp/platform/`.
 | Id | Severity | Issue | Breaks |
 |---|---|---|---|
 | JEX-KI-37 | Minor | A setup trigger opens an entry for every new entry id, with no re-entry check and no refusal count | JEX-FR-18 |
-| JEX-KI-38 | Risk | `user_campaign_state_transitions` is one unpartitioned table that keeps every row | JEX-FR-20, JEX-FR-21, JEX-FR-22, JEX-FR-23, JEX-NFR-12 |
+| JEX-KI-38 | Risk | `user_campaign_state_transitions` is one unpartitioned table that keeps every row | JEX-FR-20, JEX-FR-21, JEX-FR-22, JEX-FR-23, JEX-FR-25, JEX-NFR-12, JEX-NFR-14 |
 | JEX-KI-39 | Risk | Journey state TTL resets on every read and write, not from the entry's start | JEX-NFR-03 |
 
 ## JEX-KI-37. A setup trigger opens an entry for every new entry id, with no re-entry check and no refusal count
@@ -29,7 +29,7 @@ Tracked in #223 and #220.
 - **Symptom.** The table grows with every completed node and never shrinks. No transition reaches the lakehouse. A transition carries no entry start, so the table has no column to partition by.
 - **Cause.** `infra/db/schema.sql` creates the table with `CREATE TABLE IF NOT EXISTS user_campaign_state_transitions (...)`, no `PARTITION BY`, and no `entry_started_at` column, and creates `outbox_transitions_pub` without `publish_via_partition_root`. No lakehouse sink exists.
 - **Evidence.** Read from `infra/db/schema.sql` at `a29730c`.
-- **Fix direction.** The engine carries each entry's start on every transition. A migration partitions the table by `entry_started_at`, adds it to the primary key, and sets `publish_via_partition_root` on `outbox_transitions_pub` (OUT-FR-09). Then the lakehouse sink's move at 90 days, and the write of late transitions straight to `transition_history`. The analytics indexes stay (JEX-NFR-13). Move no partition while a reader still needs the hot table: HOM-KI-01, JBD-KI-37, and CUS-KI-11 fixed first, and the other readers JEX-FR-24 names. Follows the `db-migration` skill.
+- **Fix direction.** The engine carries each entry's start on every transition. A migration partitions the table by `entry_started_at`, adds it to the primary key, and sets `publish_via_partition_root` on `outbox_transitions_pub` (OUT-FR-09). Then the lakehouse sink's move at 90 days, and the write of late transitions straight to `transition_history`. The analytics indexes stay (JEX-NFR-13). The move writes each partition's count per node to `campaign_node_moved_counts`, and `campaign_node_stats` becomes a materialized view over the hot partitions and those counts, refreshed every 5 seconds (JEX-FR-25, JEX-NFR-14). Move no partition while a reader still needs the hot table: HOM-KI-01, JBD-KI-37, and CUS-KI-11 fixed first, and the other readers JEX-FR-24 names. Follows the `db-migration` skill.
 
 Tracked in #101.
 
