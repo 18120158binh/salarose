@@ -108,7 +108,7 @@ Steps:
 | REC-FR-09 | A rebuild must write nothing to Postgres, Kafka, or a sender, and must end with a savepoint of each job. |
 | REC-FR-10 | When two layers disagree, the one earlier in the trust order must win: raw events, then Flink state, then the projection. |
 | REC-FR-11 | The versioned storage of savepoints must not keep earlier versions of imported files longer than DIM-NFR-08 allows. |
-| REC-FR-12 | A deploy of a job with state must refuse to roll when the job's last completed checkpoint is older than the bound of the [open question](#open-questions). The running job must keep running. The owner decided on 2026-11-17 that such a deploy is refused (#133). |
+| REC-FR-12 | A deploy of a job with state must refuse to roll when the job's last completed checkpoint is older than 1 hour. The running job must keep running. The owner decided this on 2026-11-17 (#133), and set the 1 hour during the review of PR #173. |
 | REC-FR-13 | A rebuild must record its cut and start each streaming job at it: after the newest ingestion record it read, and at the matching position of each internal topic. No record before the cut may be read twice by the streaming jobs, and none after it skipped. The owner decided this on 2026-11-17 (#120). |
 | REC-FR-14 | A rebuild must fire every watch timer at its deadline in event time, and must give the outbox and its timer flow rebuilt state. The outbox must send nothing during a rebuild. The owner decided this on 2026-11-17 (#132). |
 | REC-FR-15 | A rebuild must raise the rebuild epoch. Rebuilt state must carry it into every metric mutation, so that its rows replace older rows in `user_metrics` ([PRW-FR-16](profile-writer.md#functional-requirements)). A rebuild must not rewrite `user_metrics` in bulk. A person's row catches up at their next flush. The owner decided this on 2026-11-17 (#121). |
@@ -120,7 +120,7 @@ Steps:
 | REC-NFR-01 | Layer 1 loses no change the sources can replay. |
 | REC-NFR-02 | Layer 3 loses at most one coalescing window plus one flush of metric changes per person ([PRW-NFR-02](profile-writer.md#non-functional-requirements)), all journey progress, and segment flags until each person's next event. |
 | REC-NFR-03 | Layer 4 is exact for every record `raw_events` holds, when the inputs of [Rebuild from raw events](#rebuild-from-raw-events) are complete. |
-| REC-NFR-04 | Savepoint age is monitored for every job with state. The age that alerts is an [open question](#open-questions). |
+| REC-NFR-04 | Savepoint age is monitored for every job with state. An alert fires when a job has had no new scheduled savepoint for more than 26 hours. The owner decided this on 2026-11-17, during the review of PR #173 (#113). |
 | REC-NFR-05 | The duration of a rebuild is measured and recorded. No bound is set until the first rebuild runs. |
 | REC-NFR-06 | Layer 4 cannot rebuild state whose inputs are older than the 13 months `raw_events` keeps ([LKH-NFR-01](lakehouse.md#non-functional-requirements)). Such state is rebuilt as if those inputs never happened. The owner accepted this limit on 2026-11-17 (#126). |
 | REC-NFR-07 | Personal data in `raw_events` outlives a person's deletion request for up to 13 months ([LKH-NFR-09](lakehouse.md#non-functional-requirements)), and a rebuild in that time restores the person's state from it. The owner accepted this limit on 2026-11-17 (#127). |
@@ -142,7 +142,7 @@ Steps:
 |---|---|
 | A scheduled savepoint fails | Alert. The job keeps running. The next schedule tries again. |
 | A deploy's savepoint fails | The deploy stops. The running job keeps running, and an operator is alerted (REC-FR-03). |
-| A deploy finds the job's last completed checkpoint too old | The deploy refuses to roll. The running job keeps running, and an operator is alerted (REC-FR-12). |
+| A deploy finds the job's last completed checkpoint older than 1 hour | The deploy refuses to roll. The running job keeps running, and an operator is alerted (REC-FR-12). |
 | A restore test fails in CI | The change does not merge until the build restores the savepoint, or a decision accepts the state loss. |
 | A savepoint is restored past the CDC restore window | The job skips CDC changes up to its slot's position, as JEX-NFR-10 says. Apply campaign edits again after the restore. |
 | The projection is behind | A miss reads values up to one coalescing window plus one flush old (REC-NFR-02). |
@@ -160,7 +160,7 @@ Steps:
 - Given a change that breaks a state type of any job with state, when the restore test runs, then it fails. Given a change to any file under `event-processor/`, then the restore test runs for every job with state. (REC-FR-06)
 - Given customer decision started without state, when an event for a person with a `user_metrics` row arrives, then the job's series start from that row. (REC-FR-07)
 - Given one day of `raw_events`, `internal_events`, and `change_history`, and a rebuild over them, then each job's state for a sample of keys equals the state of the streaming job that read the same records. (REC-FR-08, REC-NFR-03)
-- Given a job whose last completed checkpoint is older than the bound, when a deploy runs, then it refuses to roll and the old job keeps running. (REC-FR-12)
+- Given a job whose last completed checkpoint is 61 minutes old, when a deploy runs, then it refuses to roll and the old job keeps running. Given one 59 minutes old and a savepoint that succeeds, then the deploy rolls. (REC-FR-12)
 - Given a rebuild with its cut at offset 500 of `snowplow-good` partition 0, then event parse starts at 501, and customer decision starts on `snowplow-parsed` at the position after the last record derived from offset 500 or earlier. (REC-FR-13)
 - Given a watch with a deadline of 10:15 in event time and no `success` before it in the raw events, when the rebuild passes 10:15, then the watch completes on `timeout`, and the outbox writes no request to Kafka. (REC-FR-14)
 - Given a `user_metrics` row at behavior version 40 and a rebuild whose state for that series is at version 12, when the person's next event flushes, then the row holds the rebuilt series. (REC-FR-15)
@@ -170,16 +170,13 @@ Steps:
 - Given an imported file rewritten for a deletion, then one day later no earlier version of it exists, while savepoints keep theirs. (REC-FR-11)
 - Given a crash of a task manager, then after the restore the job's state equals its state at the last checkpoint plus the replayed records. (REC-NFR-01)
 - Given customer decision started without state, then each person's series lag their true value by at most one coalescing window plus one flush of changes. (REC-NFR-02)
-- Given a job whose newest savepoint is older than the alert age, then an alert fires. (REC-NFR-04)
+- Given a job whose newest scheduled savepoint is 26 hours and 5 minutes old, then an alert fires. Given one 25 hours old, then none fires. (REC-NFR-04)
 - Given a person's deletion request and their raw events 2 months old, when a rebuild runs, then the person's rebuilt state reflects those raw events. (REC-NFR-07)
 - Given a rebuild, then its report states its duration. (REC-NFR-05)
 
 ## Open questions
 
-The owner decided the rebuild and savepoint questions on 2026-11-17: savepoint retention (#113), a deploy whose savepoint fails or whose checkpoint is old (#133), the restore test trigger (#123), configuration history (#118), the other inputs (#119), downstream offsets (#120), the version guard (#121), and processing-time logic and the outbox (#132). Two numbers stay open:
-
-- **Savepoint age alert.** Which savepoint age alerts (REC-NFR-04). #113 set the retention, 7 days, and not the alert age. The options it listed were 26 hours and 48 hours.
-- **The checkpoint age that refuses a deploy.** #133 decided that a deploy refuses to roll when the last completed checkpoint is old (REC-FR-12), not the age.
+None. The owner decided the rebuild and savepoint questions on 2026-11-17 (#113, #118 to #121, #123, #132, #133), and set the savepoint alert age and the checkpoint age the same day, during the review of PR #173.
 
 ## Related
 

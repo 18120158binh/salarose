@@ -230,7 +230,7 @@ A check sent twice, after a replay of either job, can produce two `yes` triggers
 | JEX-FR-19 | A trigger for a node below the setup node must apply to each of the journey key's entries, separately. |
 | JEX-FR-20 | `user_campaign_state_transitions` must be partitioned by entry start, `entry_started_at`, and must hold at most one row per transition key across all partitions, including after a restore that replays triggers in another order. The engine must carry the entry start on every transition. The owner decided this on 2026-11-17 (#117). |
 | JEX-FR-21 | Every transition must reach `transition_history` in the lakehouse. A partition must leave Postgres only after the history holds every row of it ([LKH-FR-06](lakehouse.md#functional-requirements)). |
-| JEX-FR-22 | A transition whose entry start falls before the oldest hot partition must be written straight to `transition_history` ([LKH-FR-12](lakehouse.md#functional-requirements)), not to Postgres. The outbox and the timer flow do not see it. The owner decided this on 2026-11-17 (#128). A transition whose entry start falls after the newest partition must not be lost. Where it goes is an [open question](#open-questions). |
+| JEX-FR-22 | A transition whose entry start falls before the oldest hot partition must be written straight to `transition_history` ([LKH-FR-12](lakehouse.md#functional-requirements)), not to Postgres. The outbox and the timer flow do not see it. The owner decided this on 2026-11-17 (#128). Partitions exist for entry starts up to 2 months after the current time ([LKH-FR-11](lakehouse.md#functional-requirements)), so a transition whose entry start is ahead of the clock still has its partition. The owner decided this on 2026-11-17, during the review of PR #173 (#128). |
 | JEX-FR-23 | Counts over all time, such as JEX-FR-11's, must include the transitions whose partition left Postgres. They must read the hot partitions from Postgres and the rest from `transition_history`, split at the move boundary ([LKH-FR-17](lakehouse.md#functional-requirements)), so each transition counts once. The owner decided on 2026-11-17 that analytics read both stores (#111). |
 | JEX-FR-24 | No partition may leave Postgres while a reader that reads only the hot table still needs its range: the home overview and journey analytics until they read both stores (HOM-NFR-04, JBD-NFR-04), customer lookup's messages and journeys until they read both stores (CUS-FR-43), campaign management's waiting count, and `campaign_node_stats`. Until each moves, the Postgres retention must cover the longest range it reads. |
 
@@ -299,7 +299,7 @@ A transition row holds the journey key and the entry id, `node_id`, `branch`, `n
 | Restore from an older checkpoint or savepoint, such as a rollback to the savepoint taken before a deploy | Within the CDC restore window (JEX-NFR-10), the engine and the timer flow read every change made after it again. Past the window, they skip the changes up to the position the slot still holds. |
 | Timer flow starts without its saved CDC log position | It reads every transition in the hot partitions again and keeps a watch for each watch child they list. A deadline already past fires at once. The engine ignores the timeout of a watch that completed, and a watch still pending completes on `timeout`. A watch whose parent transition already left Postgres gets no timer. Its entry started more than 90 days ago (JEX-NFR-12). The owner set the retention to the journey state TTL on 2026-11-17, not to the longest watch limit (#114). |
 | A transition's entry start falls before every hot partition | Write it straight to `transition_history`. The outbox and the timer flow do not see it (JEX-FR-22). |
-| A transition's entry start falls after every partition created | It must not be lost (JEX-FR-22). The rule is an [open question](#open-questions). |
+| A transition's entry start is ahead of the clock, such as from a device with a wrong clock | It goes to its partition, which exists up to 2 months ahead (JEX-FR-22). |
 
 ## Acceptance criteria
 
@@ -345,6 +345,7 @@ A transition row holds the journey key and the entry id, `node_id`, `branch`, `n
 - Given two entries, then `user_campaign_state_transitions` holds a row per entry for the setup node, and `campaign_node_stats` counts 2. (JEX-FR-10, JEX-FR-11)
 - Given a completion of `n1_view` at 10:00 for an entry that started at 09:58, when a restore replays a different trigger for `n1_view` at 10:05, then the row is in the partition of 09:58, and the table still holds one row for that transition key. (JEX-FR-20)
 - Given an entry that started 95 days ago and is still live, when it completes an engagement node, then `transition_history` holds the row, no hot partition does, and the outbox publishes no request. (JEX-FR-22)
+- Given an entry whose start is 10 days after the current time, when it completes a node, then the row is in the partition of that start. (JEX-FR-22)
 - Given a partition older than the retention, when it leaves Postgres, then `transition_history` holds each of its rows. (JEX-FR-21)
 - Given a node with 3 entries in a partition that left Postgres and 2 in a hot partition, then its all-time Completed count is 5, read from both stores. (JEX-FR-23)
 - Given a partition whose whole range of entry starts is older than 90 days and no reader that needs it, then the partition leaves Postgres, and a partition with an entry start 89 days old stays. (JEX-NFR-12)
@@ -355,7 +356,6 @@ A transition row holds the journey key and the entry id, `node_id`, `branch`, `n
 ## Open questions
 
 - When does a check take its `no` branch? See the same question in [customer decision](customer-decision.md#open-questions). A condition split does not wait on this answer: it never takes `no`.
-- **Early transitions.** Where a transition goes when its entry start is newer than every partition created so far (JEX-FR-22). The owner decided the late case on 2026-11-17 (#128). See the same question in the [lakehouse sink](lakehouse.md#open-questions).
 - Should a campaign that starts on a person event allow more than one entry, for use cases such as "remind at most twice, 3 days apart" (UC-02)? Entries answer this for segment and business-event triggers ([decision 0033](../decisions/0033-a-journey-instance-is-one-entry.md)). A person-event trigger still allows one entry.
 
 ## Related

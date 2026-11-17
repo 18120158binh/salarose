@@ -31,7 +31,7 @@ Tracked in #106.
 - **Symptom.** Savepoints exist only from upgrades, which `upgradeMode: savepoint` takes on each deploy, and by hand. A job that runs for a week without a deploy has a savepoint a week old.
 - **Cause.** No manifest sets the operator's periodic savepoint interval or savepoint history settings.
 - **Evidence.** Read from `infra/k8s/apps/flink-*/` and `infra/k8s/platform/flink-operator.yaml` at `a29730c`.
-- **Fix direction.** Set a daily periodic savepoint and a history age of 7 days per job (REC-FR-04). The alert age is still open (REC-NFR-04).
+- **Fix direction.** Set a daily periodic savepoint and a history age of 7 days per job (REC-FR-04), and alert when a job has no new scheduled savepoint for more than 26 hours (REC-NFR-04).
 
 Tracked in #107.
 

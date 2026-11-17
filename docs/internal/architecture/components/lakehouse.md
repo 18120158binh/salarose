@@ -109,13 +109,13 @@ The owner decided on 2026-11-17 that a rebuild reads its Postgres inputs as they
 1. Once a day, delete from `raw_events` and `internal_events` every record whose topic timestamp is older than 13 months, and expire the snapshots that still reference it (LKH-FR-08).
 2. Delete from `change_history` every change older than 13 months, except the newest change of each row before that age, so that a rebuild can read every row as it was at the start of the window.
 
-No other deletion reaches `raw_events`. A person's deletion request does not (LKH-FR-16).
+No other deletion reaches these three tables. A person's deletion request does not (LKH-FR-16).
 
 ### Partition lifecycle
 
 The partitions are cut by entry start ([JEX-FR-20](journey-execution.md#functional-requirements)). A replay cannot change an entry's start, so every row of one transition key falls in one partition.
 
-1. Keep partitions of `user_campaign_state_transitions` created ahead of the newest entry start a transition can carry, so that an insert never finds its partition missing (LKH-FR-11). How far ahead is an [open question](#open-questions).
+1. Keep partitions of `user_campaign_state_transitions` created for the next 2 months of entry starts, so that an early transition, such as one from a device with a wrong clock, always finds its partition (LKH-FR-11).
 2. Move a hot partition only by [Move a hot partition](#move-a-hot-partition), and only when [journey execution](journey-execution.md#functional-requirements) allows it (JEX-FR-24).
 3. A transition whose entry start falls below the move boundary goes straight to `transition_history` (LKH-FR-12). It is never written to Postgres.
 
@@ -152,14 +152,16 @@ A move between steps 1 and 2 changes nothing. The moved rows are at or above the
 | LKH-FR-08 | When a row is deleted from a lakehouse table, the deletion must also expire every snapshot that still references the row, and remove the data files that only those snapshots reference. |
 | LKH-FR-09 | The sink must not be on the decision path. A sink that is down or behind must not delay any job that writes Postgres or Kafka. |
 | LKH-FR-10 | The sink must expose, per table, the newest committed position: the topic offsets for `raw_events`, and the newest event time for `transition_history`. |
-| LKH-FR-11 | The sink must create each partition of `user_campaign_state_transitions` before any transition can fall in it, and must be the only component that creates or removes one. |
+| LKH-FR-11 | The sink must create each partition of `user_campaign_state_transitions` before any transition can fall in it, and must be the only component that creates or removes one. At every moment, partitions must exist for every entry start up to 2 months after the current time. The owner decided the 2 months on 2026-11-17 (#128). |
 | LKH-FR-12 | A transition whose entry start falls below the move boundary must be written straight to `transition_history`, once per transition key, and never to Postgres. The owner decided this on 2026-11-17 (#128). |
 | LKH-FR-13 | The sink must write every record of every internal topic to `internal_events`, with the same columns and key as `raw_events`, unchanged and at most once per (`topic`, `partition`, `offset`). The owner decided this on 2026-11-17 (#119). |
 | LKH-FR-14 | The sink must write every change to `campaign_nodes`, `user_metric_definitions`, `segments`, `user_events`, and `user_event_fields` to `change_history`, through CDC, at most once per (`table_name`, `row_key`, `change_lsn`), so that a rebuild can read each table as it was at any commit time. The owner decided this on 2026-11-17 (#118). |
 | LKH-FR-15 | The sink must write every change to `customer_attributes` and `customer_profiles` to `change_history` by the same rules as LKH-FR-14. The owner decided this on 2026-11-17 (#119). |
-| LKH-FR-16 | A person's deletion must not reach `raw_events`. Raw events are kept as received, so that a rebuild stays exact. The owner decided this on 2026-11-17 (#127). |
+| LKH-FR-16 | A person's deletion must not reach `raw_events`, `internal_events`, or `change_history`. They are kept as received, so that a rebuild stays exact. The owner decided this for `raw_events` on 2026-11-17 (#127), and for the other two the same day, during the review of PR #173. |
 | LKH-FR-17 | Every reader that combines the hot table and `transition_history` must split them at the move boundary read in the same Postgres snapshot as its hot rows, by [Read across both stores](#read-across-both-stores), so that it reads each transition once. The owner decided on 2026-11-17 that the two read paths must agree (#111). |
 | LKH-FR-18 | Rows of simulator runs must stay in `transition_history`. Simulator clean-up must not delete from it. Analytics leave out `sim_` campaigns instead. The owner decided this on 2026-11-17 (#124). |
+| LKH-FR-19 | Every lakehouse table must be partitioned by day of its main time column: `raw_events` and `internal_events` by `topic_timestamp`, `change_history` by `committed_at`, `transition_history` by `entry_started_at`, and the import tables as the [import applier](import-applier.md#interfaces) names. The owner decided this on 2026-11-17, during the review of PR #173 (#115). |
+| LKH-FR-20 | A write that spans several lakehouse tables must commit them one table at a time, and write its completion marker last, to a marker table. A reader must trust only rows that a committed marker covers, and must skip the rest. The owner decided this on 2026-11-17, during the review of PR #173 (#115). |
 
 ## Non-functional requirements
 
@@ -168,12 +170,12 @@ A move between steps 1 and 2 changes nothing. The moved rows are at or above the
 | LKH-NFR-01 | `raw_events` and `internal_events` must keep every record for 13 months after its topic timestamp, and must then delete it by [Expire by age](#expire-by-age). The owner decided this on 2026-11-17 (#126). A rebuild is exact only for state whose inputs fall within the 13 months ([REC-NFR-06](state-recovery.md#non-functional-requirements)). |
 | LKH-NFR-02 | The sink must keep up with the target load of [platform capacity](../capacity.md#non-functional-requirements): 500 events per second sustained, 2,000 per second for 10 minutes, and 1,000 per second for 1 hour, with its consumer lag back to normal after each burst. |
 | LKH-NFR-03 | The sink must commit raw events at least once per checkpoint of its job. The lag from the topic to a committed row must stay under the commit interval plus one checkpoint duration. |
-| LKH-NFR-04 | The tables must be compacted so that a read of one day of one table opens a bounded number of files. The catalog's built-in maintenance compacts them (LKH-NFR-08). The bound follows the table layout, an [open question](#open-questions). |
+| LKH-NFR-04 | Every lakehouse table with a time column must be partitioned by day of its main time column (LKH-FR-19), and compacted by the catalog's built-in maintenance (LKH-NFR-08), so that a read of one day of one table opens only the files of that day's partition. |
 | LKH-NFR-05 | The lakehouse must write nothing to the main Postgres's WAL except the removal of a hot partition, which is a catalog change, not a row change. |
 | LKH-NFR-06 | Every object of every lakehouse table must be encrypted at rest on the server with a customer-managed KMS key, as [data import](../../features/data-import.md#non-functional-requirements) requires of imported data (DIM-NFR-08). The owner decided this on 2026-11-17. |
 | LKH-NFR-07 | `change_history` must keep every change for 13 months after its commit time, and older changes only as [Expire by age](#expire-by-age) says, so that a rebuild over the 13 months of LKH-NFR-01 reads every input as of each event. |
 | LKH-NFR-08 | Every lakehouse table, the import tables included, must be in one catalog, S3 Tables, which compacts tables with its built-in maintenance. The owner decided this on 2026-11-17 (#115). |
-| LKH-NFR-09 | Personal data in `raw_events` outlives a person's deletion request for up to 13 months, the retention of LKH-NFR-01. This is a stated limit, not a defect. [Data import](../../features/data-import.md#privacy) states the same limit (DIM-NFR-10). The owner decided this on 2026-11-17 (#126, #127). |
+| LKH-NFR-09 | Personal data in `raw_events`, `internal_events`, and `change_history` outlives a person's deletion request for up to 13 months, the retention of LKH-NFR-01 and LKH-NFR-07. This is a stated limit, not a defect. [Data import](../../features/data-import.md#privacy) states the same limit (DIM-NFR-10). The owner decided this on 2026-11-17 (#126, #127). |
 
 ## Interfaces
 
@@ -193,7 +195,7 @@ A move between steps 1 and 2 changes nothing. The moved rows are at or above the
 | Read by | [State recovery](state-recovery.md) | `raw_events`, `internal_events`, and `change_history`, for a rebuild |
 | Read by | [Home overview](../../features/home-overview.md), [journey builder](../../features/journey-builder.md#node-analytics), [customer lookup](../../features/customer-lookup.md) | `transition_history` below the move boundary, through Athena (LKH-FR-17) |
 
-The table names are the target names. Their namespace, and the partitioning of every table but the transitions, are open.
+The table names are the target names. Their namespace is chosen with the deployment. Each table is partitioned by day of its main time column (LKH-FR-19).
 
 ## Failure handling
 
@@ -228,6 +230,10 @@ The table names are the target names. Their namespace, and the partitioning of e
 - Given the sink has committed offset 88410 of (`snowplow-good`, 2), then its newest committed position for that partition reads 88410. (LKH-FR-10)
 - Given the clock reaches the start of a partition's range, then that partition already exists, and a transition with that time inserts without error. (LKH-FR-11)
 - Given a record in `raw_events` with a topic timestamp 12 months and 29 days old, then it is in the table. Given one 13 months and 2 days old, then neither the table nor a kept snapshot holds it. (LKH-NFR-01)
+- Given the clock at 2026-11-17, then partitions of `user_campaign_state_transitions` exist for every entry start up to 2027-01-17, and a transition with entry start 2026-12-20 inserts without error. (LKH-FR-11)
+- Given a deletion request for a person with rows in `internal_events` and `change_history`, when the deletion completes, then those rows are unchanged, and each is gone 13 months after its time. (LKH-FR-16, LKH-NFR-09)
+- Given `raw_events`, then each data file holds records of one day of `topic_timestamp`, and a read of 2026-11-17 opens no file of another day. (LKH-FR-19, LKH-NFR-04)
+- Given a write to two tables that has committed the first and not yet its marker, when a reader reads, then it returns none of the write's rows. Given the marker committed, then it returns all of them. (LKH-FR-20)
 - Given a `segments` row last changed 14 months ago, then `change_history` still holds that change. Given a change to it 15 months ago that a later change 14 months ago replaced, then that older change is gone. (LKH-NFR-07)
 - Given any lakehouse table, the import tables included, then the S3 Tables catalog lists it. (LKH-NFR-08)
 - Given a person's deletion request on 2026-11-17 and their raw events from 2026-11-01, then the raw events are in `raw_events` until 2027-12-01 and gone by 2027-12-03. (LKH-NFR-09)
@@ -239,11 +245,7 @@ The table names are the target names. Their namespace, and the partitioning of e
 
 ## Open questions
 
-The owner decided the storage questions on 2026-11-17: analytics freshness and the query engine (#111), the catalog (#115), the Postgres retention of transitions (#114), late transitions (#128), raw event retention (#126), simulator clean-up (#124), and personal data in raw events (#127). Three parts stay open:
-
-- **Table layout and partitioning.** How `raw_events`, `internal_events`, `change_history`, and the import tables are partitioned, and the compaction bound of LKH-NFR-04. `transition_history` is partitioned by entry start, as the hot table is (#117).
-- **Early transitions.** How far ahead of the clock partitions must exist (LKH-FR-11), and where a transition goes whose entry start is newer than every partition created, such as one from a device with a wrong clock. #128 decided only the late case.
-- **Deletion in the other rebuild histories.** #127 keeps raw events as received. Whether a person's deletion must reach `internal_events` and `change_history` is undecided. [Data import](../../features/data-import.md#privacy) deletes a person's `customer_attributes` rows, which `change_history` keeps (LKH-FR-15).
+None. The owner decided the storage questions on 2026-11-17 (#111, #114, #115, #124, #126, #127, #128), and answered the parts left open in PR #173 the same day: the partitioning of every table and the multi-table commit (LKH-FR-19, LKH-FR-20), how far ahead partitions exist (LKH-FR-11), and deletion in `internal_events` and `change_history` (LKH-FR-16).
 
 ## Related
 

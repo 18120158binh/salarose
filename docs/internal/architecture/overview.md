@@ -67,7 +67,7 @@ flowchart TB
 
 | Layer | Holds | Detail |
 |---|---|---|
-| Ingestion | The OpenSnowcat collector for tracker hits, and the HTTP API for server-side events. Today studio serves the API. It moves to its own service, planned ([decision 0057](decisions/0057-run-the-data-ingestion-api-as-its-own-service.md)). | [Event ingestion](components/event-ingestion.md), [data ingestion API](../features/data-ingestion-api.md) |
+| Ingestion | The OpenSnowcat collector for tracker hits, and the HTTP API for server-side events. Today studio serves the API and the import batch API. Both move to their own service, planned ([decision 0057](decisions/0057-run-the-data-ingestion-api-as-its-own-service.md)). | [Event ingestion](components/event-ingestion.md), [data ingestion API](../features/data-ingestion-api.md) |
 | Streaming | Kafka. Every hop between jobs is a topic | [Kafka topics](#kafka-topics) |
 | Processing | The five Flink jobs, which hold live state, and the planned nightly batch passes, which skip Flink | [Data flow](#data-flow), [components](#components) |
 | Storage | Two hot tiers and a planned lakehouse. Flink keyed state on RocksDB serves every read of per-person state on the decision path, and is the source of truth for metrics and profiles while the jobs run. Postgres holds configuration, read by the jobs through CDC, and a projection of the jobs' state, read on a state miss. The planned lakehouse holds raw events, internal topic records, the change history of the Postgres tables a rebuild reads, transition history, and imported records, as Iceberg tables on S3 in an S3 Tables catalog. Analytics read recent transitions from Postgres and older ones from the lakehouse through Athena. | [Data model](data-model.md), [decision 0052](decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md), [decision 0053](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md), [decision 0054](decisions/0054-recover-flink-state-in-four-layers.md) |
@@ -217,7 +217,7 @@ One event goes through these stages:
 | State machine | Flink | `StateMachineJob` | [Journey execution](components/journey-execution.md) |
 | Outbox and timers | Flink | `CampaignOutboxJob` | [Notification outbox](components/notification-outbox.md), [journey execution](components/journey-execution.md#watch-timers) |
 | Business event fan-out | Flink, planned | None yet | [Business event fan-out](components/business-event-fan-out.md) |
-| Data ingestion API service | Planned ([decision 0057](decisions/0057-run-the-data-ingestion-api-as-its-own-service.md)). Serves `/v1/events` and `/v1/business-events`, apart from studio. Today studio's route handlers serve them. | None yet | [Data ingestion API](../features/data-ingestion-api.md) |
+| Data ingestion API service | Planned ([decision 0057](decisions/0057-run-the-data-ingestion-api-as-its-own-service.md)). Serves every `/v1` route, the event routes and the data import's batch API, apart from studio, which keeps only the UI. Today studio's route handlers serve them. | None yet | [Data ingestion API](../features/data-ingestion-api.md) |
 | Lakehouse sink | Planned. Writes raw events, internal topic records, changes to the rebuild inputs, and transition history to the lakehouse, and moves old transition partitions out of Postgres. | None yet | [Lakehouse sink](components/lakehouse.md) |
 | State recovery | Checkpoints, savepoints, and a planned rebuild from raw events, for every job with state | Flink configuration, CI restore check | [State recovery](components/state-recovery.md) |
 | Import applier | Kubernetes CronJob, planned. No Flink. | None yet | [Import applier](components/import-applier.md) |
@@ -232,7 +232,7 @@ studio is one Next.js app. Its code is split into layers, and a layer imports on
 
 ```mermaid
 flowchart TB
-	routes[Routes and pages: /v2 screens, /v1 ingestion API until its service is built, /api/auth]
+	routes[Routes and pages: /v2 screens, /v1 ingestion and import API until their service is built, /api/auth]
 	widgets[Widgets: app shell, admin header]
 	features[Features: journey builder, journeys, segments, customers, data, platform, access, agent planned]
 	entities[Entities: journey, its saved format]
@@ -328,7 +328,7 @@ The component contracts define each message. [Configuration](../operations/confi
 | [0054. Recover Flink state in four layers](decisions/0054-recover-flink-state-in-four-layers.md) | Checkpoints, savepoints, the projection, and a rebuild from raw events. Trust goes raw events first, then Flink state, then the projection. |
 | [0055. Run the dev environment on one stoppable Spot node and pay-per-use services](decisions/0055-run-the-dev-environment-on-one-stoppable-spot-node.md) | One k3s node that stops when nobody uses it. Kafka, Postgres, and Flink stay self-hosted, because the managed versions bill by the hour. |
 | [0056. A read-only agent with no PII and a provider-agnostic tool-use model](decisions/0056-a-read-only-agent-with-no-pii-and-a-provider-agnostic-tool-use-model.md) | The agent explains and proposes drafts, never applies them. The model sees `canon_id` (an accepted risk), profile attributes, counts, flags, and keyed hashes, never contact data. Any model with tool use. |
-| [0057. Run the data ingestion API as its own service, outside studio](decisions/0057-run-the-data-ingestion-api-as-its-own-service.md) | Ingestion uptime and scaling no longer follow the admin app. Source keys stay in studio. |
+| [0057. Run the data ingestion API as its own service, outside studio](decisions/0057-run-the-data-ingestion-api-as-its-own-service.md) | Every `/v1` route, events and imports, leaves the admin app, so ingestion uptime and scaling no longer follow it. Source keys stay in studio. |
 | [0007. Staff sign in through OpenID Connect](decisions/0007-staff-sign-in-through-oidc.md) | No stored passwords. [0024](decisions/0024-create-staff-at-first-sign-in-with-the-providers-role.md) leaves who gets in, and with which role, to the identity provider. |
 
 ## Scaling limits

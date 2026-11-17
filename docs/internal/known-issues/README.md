@@ -36,7 +36,7 @@ Every issue has an id, a severity, and the requirement it breaks. Fix an issue a
 | [Home overview](features/home-overview.md) | 0 | 0 | 2 | 0 |
 | [Customer lookup](features/customer-lookup.md), not built | 0 | 0 | 2 | 1 |
 | [Data health](features/data-health.md), not built | 0 | 0 | 1 | 0 |
-| [Data import](features/data-import.md), not built | 0 | 0 | 0 | 0 |
+| [Data import](features/data-import.md), not built | 0 | 0 | 2 | 0 |
 | [CDP agent](features/cdp-agent.md), not built | 0 | 0 | 0 | 0 |
 | Total | 4 | 3 | 28 | 8 |
 

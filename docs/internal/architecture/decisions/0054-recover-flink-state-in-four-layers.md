@@ -70,19 +70,19 @@ The owner answered this record's open questions on 2026-11-17. Each answer is wr
 
 | Question | Answer | Where |
 |---|---|---|
-| N, the days a savepoint is kept | 7 days (#113). | [REC-FR-04](../components/state-recovery.md#functional-requirements) |
+| N, the days a savepoint is kept, and the savepoint age alert | 7 days. An alert fires when a job has had no new scheduled savepoint for more than 26 hours (#113). | [REC-FR-04](../components/state-recovery.md#functional-requirements), [REC-NFR-04](../components/state-recovery.md#non-functional-requirements) |
 | What triggers the restore test | Every change to `event-processor` (#123). | [REC-FR-06](../components/state-recovery.md#functional-requirements) |
-| A deploy whose savepoint fails, or whose job's last checkpoint is old | The deploy is refused (#133). | [REC-FR-03, REC-FR-12](../components/state-recovery.md#functional-requirements) |
+| A deploy whose savepoint fails, or whose job's last checkpoint is old | The deploy is refused. Old means the last completed checkpoint is more than 1 hour old (#133). | [REC-FR-03, REC-FR-12](../components/state-recovery.md#functional-requirements) |
 | Configuration as of each event | Every change to `campaign_nodes` with its `graph_version`, the metric definitions, the segments, and the event catalog is kept in the lakehouse through a CDC-to-lakehouse path (#118). | [LKH-FR-14](../components/lakehouse.md#functional-requirements) |
 | The other inputs | The history of `customer_attributes`, `customer_profiles`, and the internal topics is kept in the lakehouse (#119). | [LKH-FR-13, LKH-FR-15](../components/lakehouse.md#functional-requirements) |
 | Offsets of downstream jobs | The rebuild records the cut on the input topics and the matching positions downstream, and starts each job there (#120). | [REC-FR-13](../components/state-recovery.md#functional-requirements) |
 | The version guard | A rebuild epoch in the version. Rebuilt state wins over older rows, and normal writes catch up, with no bulk rewrite (#121). | [REC-FR-15](../components/state-recovery.md#functional-requirements), [PRW-FR-16](../components/profile-writer.md#functional-requirements) |
 | Watch timers and the outbox | The rebuild fires watch timers at their deadline in event time. The outbox sends nothing during a rebuild (#132). | [REC-FR-14](../components/state-recovery.md#functional-requirements), [OUT-FR-12](../components/notification-outbox.md#functional-requirements) |
-| How long raw events are kept, and deletion | 13 months, and a deletion does not reach them (#126, #127). | [REC-NFR-06, REC-NFR-07](../components/state-recovery.md#non-functional-requirements) |
+| How long raw events are kept, and deletion | 13 months, and a deletion does not reach them, nor the internal events and change history (#126, #127). | [REC-NFR-06, REC-NFR-07](../components/state-recovery.md#non-functional-requirements) |
 
 Layer 4 of the table above is therefore exact only within 13 months. State whose inputs are older, such as a segment flag that has not changed for 14 months, cannot be rebuilt from raw events. A rebuild inside the 13 months also restores the state of a person who asked for a deletion, from the raw events the deletion did not reach.
 
-The savepoint age that alerts, and the checkpoint age that refuses a deploy, stay open in [state recovery](../components/state-recovery.md#open-questions).
+The owner set the alert age and the checkpoint age during the review of PR #173 on 2026-11-17. No question of this record stays open.
 
 ## Related
 

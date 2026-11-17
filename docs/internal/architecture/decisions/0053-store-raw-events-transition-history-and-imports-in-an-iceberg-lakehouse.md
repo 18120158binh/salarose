@@ -79,17 +79,17 @@ The owner answered this record's open questions on 2026-11-17. Each answer is wr
 | Question | Answer | Where |
 |---|---|---|
 | Who reads lakehouse analytics, how fresh, and with which engine | A hot window from Postgres, seconds fresh, for recent ranges, and history from the lakehouse through Athena, a serverless engine. No engine runs between queries. The two read paths must agree at the boundary (#111). | [LKH-FR-17](../components/lakehouse.md#functional-requirements), [JEX-FR-23](../components/journey-execution.md#functional-requirements), HOM-NFR-04, JBD-NFR-04 |
-| The catalog | S3 Tables, with its built-in compaction, for every lakehouse table (#115). | [LKH-NFR-08](../components/lakehouse.md#non-functional-requirements) |
+| The catalog, layout, and partitioning | S3 Tables, with its built-in compaction, for every lakehouse table. Each table partitioned by day of its main time column. A write across tables commits table by table, with a completion marker written last, and readers trust only rows a marker covers (#115). | [LKH-NFR-08](../components/lakehouse.md#non-functional-requirements), [LKH-FR-19, LKH-FR-20](../components/lakehouse.md#functional-requirements), [IAP-FR-15](../components/import-applier.md#functional-requirements) |
 | How long transitions stay in Postgres | 90 days of entry starts (#114). | [JEX-NFR-12](../components/journey-execution.md#non-functional-requirements) |
 | How long `raw_events` keeps records | 13 months. A rebuild is exact only for state whose inputs fall within them (#126). | [LKH-NFR-01](../components/lakehouse.md#non-functional-requirements), [REC-NFR-06](../components/state-recovery.md#non-functional-requirements) |
-| Whether a person's deletion reaches `raw_events` | No. Raw events are kept as received, so rebuilds stay exact. Personal data in raw events outlives a deletion request for up to 13 months (#127). | [LKH-FR-16, LKH-NFR-09](../components/lakehouse.md#functional-requirements), [DIM-NFR-10](../../features/data-import.md#non-functional-requirements) |
+| Whether a person's deletion reaches `raw_events` | No. Raw events, and the internal events and change history kept for rebuilds, are kept as received, so rebuilds stay exact. Personal data in them outlives a deletion request for up to 13 months (#127). | [LKH-FR-16, LKH-NFR-09](../components/lakehouse.md#functional-requirements), [DIM-NFR-10](../../features/data-import.md#non-functional-requirements) |
 | Simulator rows in `transition_history` | Not deleted. Analytics leave out `sim_` campaigns (#124). | [LKH-FR-18](../components/lakehouse.md#functional-requirements), [SIM-FR-28](../../features/traffic-simulator.md#functional-requirements) |
 | Where customer lookup reads older transitions | From `transition_history` too, split at the same boundary as analytics (#125). | [CUS-FR-43](../../features/customer-lookup.md#functional-requirements) |
 | The import record cap | 100 million records per file. The metric pass must still meet its time bound (#131). | [IAP-NFR-03](../components/import-applier.md#non-functional-requirements), [IMP-NFR-01](../components/import-metric-pass.md#non-functional-requirements) |
 
 Two consequences differ from the text above. Analytics keep reading the hot table for recent ranges, so the analytics indexes stay on the hot partitions ([JEX-NFR-13](../components/journey-execution.md#non-functional-requirements)). The lakehouse also keeps the internal topics and the history of the Postgres tables a rebuild reads, by the answers in [decision 0054](0054-recover-flink-state-in-four-layers.md#amendments).
 
-The partitioning of the tables other than `transition_history`, and the compaction bound, stay open in the [lakehouse sink](../components/lakehouse.md#open-questions).
+The owner answered the parts the first answers left open during the review of PR #173 on 2026-11-17: the partitioning and multi-table commits above, partitions created 2 months ahead for early transitions ([LKH-FR-11](../components/lakehouse.md#functional-requirements)), and deletion in the other rebuild histories. No question of this record stays open.
 
 ## Related
 

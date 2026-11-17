@@ -75,7 +75,7 @@ flowchart LR
 
 ## Lakehouse
 
-Planned ([decision 0053](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)). Apache Iceberg tables on S3, encrypted with a customer-managed KMS key (LKH-NFR-06, DIM-NFR-08), every one in one S3 Tables catalog (LKH-NFR-08). Analytics and customer lookup read them through Athena. `transition_history` is partitioned by `entry_started_at`. The namespace and the other tables' partitioning are open ([lakehouse sink](components/lakehouse.md#open-questions)). A key below is the logical key the writer upserts on. Iceberg enforces none.
+Planned ([decision 0053](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)). Apache Iceberg tables on S3, encrypted with a customer-managed KMS key (LKH-NFR-06, DIM-NFR-08), every one in one S3 Tables catalog (LKH-NFR-08). Analytics and customer lookup read them through Athena. Every table is partitioned by day of its main time column, `transition_history` by `entry_started_at` (LKH-FR-19). A write across tables commits table by table and writes its completion marker last, and readers trust only rows a marker covers (LKH-FR-20). A key below is the logical key the writer upserts on. Iceberg enforces none.
 
 | Table | Purpose | Key | Written by | Read by |
 |---|---|---|---|---|

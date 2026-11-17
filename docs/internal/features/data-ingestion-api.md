@@ -38,7 +38,7 @@ Out of scope:
 
 The owner decided on 2026-11-05 that the API writes to topics of its own, whose format carries no Snowplow fields, that the body is plain JSON only, that backfill is out of scope, that a deployment has one tenant, and that an admin creates and revokes source keys in `studio`. [Decision 0049](../architecture/decisions/0049-the-ingestion-api-writes-plain-json-to-its-own-topic-and-leaves-history-to-import.md) records these choices and their reasons. History arrives through the [data import](data-import.md) instead.
 
-The API runs as its own service, deployed and scaled apart from `studio`, so that a `studio` deploy or outage does not stop ingestion. Source keys stay managed in `studio`. The owner decided this on 2026-11-17 (#12), and [decision 0057](../architecture/decisions/0057-run-the-data-ingestion-api-as-its-own-service.md) records it.
+The API runs as its own service, deployed and scaled apart from `studio`, so that a `studio` deploy or outage does not stop ingestion. The data import's `/v1` routes move with it, and `studio` keeps only the UI. Source keys stay managed in `studio`. The owner decided this on 2026-11-17 (#12), the import routes during the review of PR #173, and [decision 0057](../architecture/decisions/0057-run-the-data-ingestion-api-as-its-own-service.md) records it.
 
 ## Terms
 
@@ -197,7 +197,7 @@ A key can also be granted record types for [data import](data-import.md#writers-
 | DIA-FR-18 | An app id must hold at most two keys that are not revoked. Creating a third must fail and write nothing. |
 | DIA-FR-19 | Both routes must accept an event whatever its catalog entry's status. Status hides an event from the journey builder only. |
 | DIA-FR-40 | A source key must import only into the record types `import_source_scopes` grants it, and a revoked key must import nothing, by the rules of [data import](data-import.md#writers-and-scopes). |
-| DIA-FR-41 | `POST /v1/events` and `POST /v1/business-events` must be served by a service of their own, not by `studio`. A `studio` deploy, restart, or outage must not refuse or delay an event. The service must read source keys from `ingestion_source_keys` and must not create or revoke one. |
+| DIA-FR-41 | Every `/v1` route, `POST /v1/events`, `POST /v1/business-events`, and the [data import](data-import.md#batch-api)'s batch API (DIM-FR-30), must be served by a service of their own, not by `studio`. `studio` keeps only the UI. A `studio` deploy, restart, or outage must not refuse or delay an event. The service must read source keys from `ingestion_source_keys` and must not create or revoke one. |
 
 ## Non-functional requirements
 
