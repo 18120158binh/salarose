@@ -7,8 +7,8 @@ implementation: partial
 area: infra
 tags: [capacity, load-test, wal, cdc, kafka, disk]
 created: 2026-11-09
-updated: 2026-11-17
-version: 0.3
+updated: 2026-11-18
+version: 0.4
 known_issues: ../known-issues/platform.md
 ---
 
@@ -142,6 +142,8 @@ Bounds that need no measurement:
 A flush writes `D(r, T)` rows at once, every `T` seconds. The held WAL of step 3 uses the average over the confirm window, which is unchanged while `T` is no longer than the shortest confirm window, 330 s at the defaults. A window longer than that makes the hold depend on when the flush falls, and the sizing then uses the WAL of one flush plus the average.
 
 The transitions table is not coalesced. Each completed node is still one row. Analytics keep reading recent ranges from it, so its analytics indexes stay and its `w` does not drop ([JEX-NFR-13](components/journey-execution.md#non-functional-requirements)). Its data on disk stops growing with time. It holds at most its rows per second × bytes per row × the Postgres retention of transitions ([JEX-NFR-12](components/journey-execution.md#non-functional-requirements)), plus one partition. The retention is 90 days of entry starts (JEX-NFR-12).
+
+The refresh of `campaign_node_stats` is a read load on Postgres every minute ([JEX-NFR-14](components/journey-execution.md#non-functional-requirements)). Each refresh scans the index of the hot partitions for every campaign, so its duration grows with the rate times the retention, and is bounded, because the retention is fixed. The sizing measures one refresh on the deployed database at the target load. A refresh longer than the interval fails JEX-NFR-14.
 
 The lakehouse sink reads the rebuild inputs in Postgres through CDC ([LKH-FR-14 and LKH-FR-15](components/lakehouse.md#functional-requirements)). Its slots join the set of replication slots the sizing counts, by CAP-FR-07.
 

@@ -7,8 +7,8 @@ implementation: planned
 area: studio
 tags: [ui, llm, agent, journeys, privacy, data-health]
 created: 2026-11-17
-updated: 2026-11-17
-version: 0.2
+updated: 2026-11-18
+version: 0.3
 known_issues: ../known-issues/features/cdp-agent.md
 ---
 
@@ -180,7 +180,7 @@ Every conclusion carries its evidence: what the tool read, its arguments, the nu
 - A hypothesis the agent could not test, because a tool failed, its data does not exist yet, or the step limit ran out, stays `testing`. The answer lists it as not determined.
 - The answer states numbers only from tool results. It does not estimate a number the tools did not return.
 - An answer with no `confirmed` hypothesis says so in its first sentence.
-- Evidence names its source and the range that source covers. Once transitions move to the lakehouse, `campaign_node_stats` and the hot transitions table hold only recent partitions ([decision 0053](../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)), and `user_metrics` lags Flink state by up to one coalescing window ([decision 0052](../architecture/decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md)). The answer says so when it matters to a number.
+- Evidence names its source and the range that source covers. Once transitions move to the lakehouse, the hot transitions table holds only recent partitions ([decision 0053](../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)), `campaign_node_stats` counts the moved partitions through their moved counts but not late transitions ([decision 0059](../architecture/decisions/0059-compute-node-stats-as-a-materialized-view-over-hot-and-moved-counts.md)), and `user_metrics` lags Flink state by up to one coalescing window ([decision 0052](../architecture/decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md)). The answer says so when it matters to a number.
 
 ### Tools
 

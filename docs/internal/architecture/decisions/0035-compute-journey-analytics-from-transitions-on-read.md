@@ -10,7 +10,7 @@ superseded_by: []
 
 # 0035. Compute journey analytics from the transitions on read
 
-> Amended by [decision 0053](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md). The definitions and the compute-on-read approach stay. Analytics read the transition history in the lakehouse, not the hot table. [Decision 0058](0058-read-recent-analytics-from-postgres-and-history-from-the-lakehouse.md) then keeps recent ranges on the hot table, and only history comes from the lakehouse (#111).
+> Amended by [decision 0053](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md). The definitions and the compute-on-read approach stay. Analytics read the transition history in the lakehouse, not the hot table. [Decision 0058](0058-read-recent-analytics-from-postgres-and-history-from-the-lakehouse.md) then keeps recent ranges on the hot table, and only history comes from the lakehouse (#111). [Decision 0059](0059-compute-node-stats-as-a-materialized-view-over-hot-and-moved-counts.md) makes `campaign_node_stats` a materialized view over the hot partitions and the counts of the moved ones.
 
 ## Context
 

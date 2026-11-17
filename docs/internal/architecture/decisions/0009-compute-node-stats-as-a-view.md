@@ -5,10 +5,12 @@ status: accepted
 date: 2026-10-18
 tags: [postgres, journeys, concurrency, studio]
 supersedes: []
-superseded_by: []
+superseded_by: ["0059"]
 ---
 
 # 0009. Compute node stats as a view, not a trigger-maintained table
+
+> Superseded in part by [decision 0059](0059-compute-node-stats-as-a-materialized-view-over-hot-and-moved-counts.md): `campaign_node_stats` becomes a materialized view that adds its count over the hot partitions to the counts of the partitions that left Postgres, refreshed every minute. The rest stands, except that a moved count stays when its hot rows are deleted. No trigger maintains the counts, and the engine's write path takes no lock on a shared row. The text below is unchanged.
 
 ## Context
 

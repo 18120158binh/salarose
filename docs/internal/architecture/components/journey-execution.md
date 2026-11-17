@@ -7,8 +7,8 @@ implementation: partial
 area: event-processor
 tags: [journeys, state-machine, timers, flink]
 created: 2026-10-14
-updated: 2026-11-17
-version: 3.1
+updated: 2026-11-18
+version: 3.2
 known_issues: ../../known-issues/components/journey-execution.md
 ---
 
@@ -26,7 +26,7 @@ In scope:
 - Which trigger completes a node when triggers arrive out of order, including triggers that arrive before their parent.
 - Watch node timers.
 - Asking customer decision to check each segment a person reaches.
-- Recording completed nodes in `user_campaign_state_transitions`. The counts in `campaign_node_stats` are computed from those rows when read.
+- Recording completed nodes in `user_campaign_state_transitions`. The counts in `campaign_node_stats` are computed from those rows and from the moved counts of the partitions that left Postgres (JEX-FR-25).
 - Keeping that table in partitions by entry start, with only the recent ones in Postgres, and the rule that every transition reaches the transition history in the lakehouse. The move itself belongs to the [lakehouse sink](lakehouse.md).
 
 Out of scope:
@@ -56,6 +56,7 @@ Out of scope:
 | Entry start | The event time of the setup trigger that opened an entry. It never changes for the entry, and the engine writes it on every transition of the entry as `entry_started_at`. |
 | Late transition | A transition whose entry start falls in a partition that already left Postgres, or that a move has closed to inserts ([lakehouse sink](lakehouse.md#move-a-hot-partition)). |
 | Transition key | (`canon_id`, `campaign_id`, `entry_id`, `node_id`, `branch`). One completed node of one entry on one branch. |
+| Moved counts | The count of entries per node of a partition that left Postgres, kept in `campaign_node_moved_counts`, one row per (`campaign_id`, `node_id`) and partition. The move writes them before it removes the partition ([lakehouse sink](lakehouse.md#move-a-hot-partition)). |
 | Transition history | The lakehouse table `transition_history`, which holds every transition, including those whose partition left Postgres. See the [lakehouse sink](lakehouse.md). |
 | Watermark | The event time up to which the engine assumes it has seen every trigger. It trails the newest trigger by the allowed out-of-orderness. Campaign graph changes do not move it, and it holds while no trigger arrives. |
 
@@ -186,8 +187,8 @@ The engine applies a timeout trigger like any other, even when the watermark has
 1. The engine writes each completed node to `user_campaign_state_transitions`, in the partition of its entry start. The table holds at most one row per transition key across all partitions (JEX-FR-20). A completion replayed after a restore can carry a different trigger and event time than the first write, because the first trigger to arrive completes a node ([decision 0011](../decisions/0011-the-first-trigger-to-arrive-completes-a-node.md)). Today the primary key collapses such a replay. With partitions, the replay carries the same entry start, so it lands in the same partition, and the primary key, the transition key plus `entry_started_at`, still collapses it. The owner decided the partition column on 2026-11-17 (#117).
 2. The outbox and the timer flow read the inserts through their own publication ([notification outbox](notification-outbox.md#interfaces)).
 3. Every transition reaches `transition_history` in the lakehouse, by the move.
-4. The [lakehouse sink](lakehouse.md#partition-lifecycle) creates each partition before any transition can fall in it (LKH-FR-11). Once a partition's whole range is older than the Postgres retention of 90 days, and no reader of the hot table still needs it (JEX-FR-24), the sink checks that the history holds every row of it, and then removes it from Postgres as one unit.
-5. A late transition goes straight to `transition_history` (JEX-FR-22). The owner decided on 2026-11-17 that the outbox and the timer flow do not see it (#128). An entry lives at most 90 days from its start (JEX-NFR-03), so no live entry has a partition that left Postgres. A late transition comes only from a replay after a restore, or from an entry's last moments while a move has its partition closed.
+4. The [lakehouse sink](lakehouse.md#partition-lifecycle) creates each partition before any transition can fall in it (LKH-FR-11). Once a partition's whole range is older than the Postgres retention of 90 days, and no reader of the hot table still needs it (JEX-FR-24), the sink checks that the history holds every row of it, writes the partition's count per node to `campaign_node_moved_counts` ([LKH-FR-23](lakehouse.md#functional-requirements)), and then removes it from Postgres as one unit. From then on `campaign_node_stats` counts the partition from those rows (JEX-FR-25).
+5. A late transition goes straight to `transition_history` (JEX-FR-22). The owner decided on 2026-11-17 that the outbox and the timer flow do not see it (#128). An entry lives at most 90 days from its start (JEX-NFR-03), so no live entry has a partition that left Postgres. A late transition comes only from a replay after a restore, or from an entry that completes a node at the exact 90-day edge, in its last moments, while a move has its partition closed. A partition moves only once every entry in it has expired (JEX-NFR-12), so the second case is rare.
 
 The engine never reads `user_campaign_state_transitions` back ([decision 0005](../decisions/0005-keep-live-state-in-flink.md)), so removing a partition changes no journey.
 
@@ -219,7 +220,7 @@ A check sent twice, after a replay of either job, can produce two `yes` triggers
 | JEX-FR-08 | A watch timer must emit `timeout`, or `next` for a `DelayPath` watch, with event time equal to the deadline. |
 | JEX-FR-09 | A `success` trigger with an event time after the deadline must not complete the watch node. |
 | JEX-FR-10 | The engine must publish each completed node to `user_campaign_state_transitions` once, keyed by (`canon_id`, `campaign_id`, entry id, `node_id`, `branch`). |
-| JEX-FR-11 | `campaign_node_stats` must count the entries that completed each node, on every branch. A person with two entries counts twice. |
+| JEX-FR-11 | `campaign_node_stats` must count the entries that completed each node, on every branch, except the late transitions that JEX-FR-25 leaves out. A person with two entries counts twice. |
 | JEX-FR-12 | A change to a campaign's nodes must apply to the next trigger, without a restart. A deleted node no longer completes. This holds after a restore from a checkpoint or savepoint within the CDC restore window (JEX-NFR-10). |
 | JEX-FR-13 | Late, unreachable, and over-limit triggers must be counted by kind. A trigger dropped for a wrong branch must also be counted. |
 | JEX-FR-14 | A trigger that arrives before its campaign graph, or before its node in the graph, must wait for the node, even after the watermark passes it, and must then be applied in event-time order. The wait must end when the watermark passes the trigger's event time plus the graph-load allowance, but not before the allowance has run in real time since the engine started. A trigger whose node, or a node above it, is still missing then must be dropped as unreachable and counted. |
@@ -231,8 +232,10 @@ A check sent twice, after a replay of either job, can produce two `yes` triggers
 | JEX-FR-20 | `user_campaign_state_transitions` must be partitioned by entry start, `entry_started_at`, and must hold at most one row per transition key across all partitions, including after a restore that replays triggers in another order. The engine must carry the entry start on every transition. The owner decided this on 2026-11-17 (#117). |
 | JEX-FR-21 | Every transition must reach `transition_history` in the lakehouse. A partition must leave Postgres only after the history holds every row of it ([LKH-FR-06](lakehouse.md#functional-requirements)). |
 | JEX-FR-22 | A transition whose entry start falls before the oldest hot partition, or in a partition closed for its move, must be written straight to `transition_history` ([LKH-FR-12](lakehouse.md#functional-requirements)), not to Postgres. The outbox and the timer flow do not see it. The owner decided this on 2026-11-17 (#128). Partitions exist for entry starts up to 2 months after the current time ([LKH-FR-11](lakehouse.md#functional-requirements)), so a transition whose entry start is ahead of the clock still has its partition. The owner decided this on 2026-11-17, during the review of PR #173 (#128). |
-| JEX-FR-23 | Counts over all time, such as JEX-FR-11's, must include the transitions whose partition left Postgres. They must read the hot partitions from Postgres and the rest from `transition_history`, split at the move boundary ([LKH-FR-17](lakehouse.md#functional-requirements)), so each transition counts once. The owner decided on 2026-11-17 that analytics read both stores (#111). How `campaign_node_stats`, a Postgres view, does this is an [open question](#open-questions). Until it does, it holds partitions (JEX-FR-24). |
-| JEX-FR-24 | No partition may leave Postgres while a reader that reads only the hot table still needs its range: the home overview and journey analytics until they read both stores (HOM-NFR-04, JBD-NFR-04), customer lookup's messages and journeys until they read both stores (CUS-FR-43), campaign management's waiting count, and `campaign_node_stats`. Until each moves, the Postgres retention must cover the longest range it reads. |
+| JEX-FR-23 | Counts over all time, such as JEX-FR-11's, must include the transitions whose partition left Postgres. A reader that reads both stores must read the hot partitions from Postgres and the rest from `transition_history`, split at the move boundary ([LKH-FR-17](lakehouse.md#functional-requirements)), so each transition counts once. The owner decided on 2026-11-17 that analytics read both stores (#111). `campaign_node_stats` reads no lakehouse. It includes the moved partitions through the moved counts, and leaves out late transitions (JEX-FR-25). The owner decided on 2026-11-18, after the review of PR #173, that a materialized view unifies the counts. |
+| JEX-FR-24 | No partition may leave Postgres while a reader that reads only the hot table still needs its range: the home overview and journey analytics until they read both stores (HOM-NFR-04, JBD-NFR-04), customer lookup's messages and journeys until they read both stores (CUS-FR-43), and campaign management's waiting count. `campaign_node_stats` holds no partition, because the move writes its counts before the partition leaves (JEX-FR-25). Until each reader moves, the Postgres retention must cover the longest range it reads. |
+| JEX-FR-25 | `campaign_node_stats` must be a materialized view over the hot partitions and `campaign_node_moved_counts`. For each (`campaign_id`, `node_id`), `user_count` must be the number of distinct entries, (`canon_id`, `entry_id`), with a transition of the node in the hot partitions, each row's `canon_id` mapped to its current one through the merge records ([IMG-FR-17](identity/identity-merges.md#functional-requirements)), plus the sum of that node's `user_count` over `campaign_node_moved_counts`. The move writes one row to `campaign_node_moved_counts` per (`campaign_id`, `node_id`) of each partition it removes, keyed by the partition, with the number of distinct entries that completed the node in it ([LKH-FR-23](lakehouse.md#functional-requirements)). An entry has one start, so it is in one partition, and the sum counts it once. The view reads no lakehouse. It does not count a late transition, which never reaches Postgres (JEX-FR-22). A merge corrects the moved counts of the nodes it touches (JEX-FR-26). The owner chose the materialized view on 2026-11-18, after the review of PR #173, and confirmed the per-partition moved counts in the review of PR #174. |
+| JEX-FR-26 | When two people merge, the moved count of every node the retired `canon_id` completed in a partition that left Postgres must be recomputed within that partition, so that a person whose two ids both completed the node in one partition counts once there ([IMG-FR-13](identity/identity-merges.md#functional-requirements)). The [lakehouse sink](lakehouse.md#functional-requirements) recomputes them from `transition_history` (LKH-FR-24). The sum over partitions does not dedupe a person whose ids completed the node in different partitions: those are different entries, and JEX-FR-11 counts entries. The owner decided the correction, and accepted the per-partition count, on 2026-11-18, in the review of PR #174 ([decision 0059](../decisions/0059-compute-node-stats-as-a-materialized-view-over-hot-and-moved-counts.md#consequences)). |
 
 ## Non-functional requirements
 
@@ -252,7 +255,8 @@ The defaults are configurable. [Configuration](../../operations/configuration.md
 | JEX-NFR-10 | The CDC restore window. A job restored from a checkpoint or savepoint must read every change its CDC tables received after it, as long as no run of the job has completed more than 10 checkpoints after it. A stop with a savepoint counts as a checkpoint. A run restored after a failure counts from 0 again. At the default checkpoint interval of 30 seconds the window is about 5 minutes, and for the timer flow, at 60 seconds, about 10 minutes. The count is a setting with a default of 10. The window is short so that the WAL a running slot holds stays under the database's cap on slot WAL at peak writes ([decision 0039](../decisions/0039-shorten-the-cdc-restore-window.md)). Past the window, the restored job skips the changes made between its checkpoint and the newest position its slot still holds. After a start without saved state, the window holds only once 10 checkpoints have completed after the source finished reading its snapshot. A checkpoint taken during the snapshot holds no log position, so when its turn to be confirmed comes, the source confirms its current position instead. |
 | JEX-NFR-11 | A journey key holds at most 20 entries. Opening one more drops the oldest entry and counts it. Proposed. |
 | JEX-NFR-12 | Postgres keeps a partition until its whole range of entry starts is 90 days old, then moves it to the lakehouse. 90 days is the journey state TTL of JEX-NFR-03, which also runs from the entry's start, so a partition moves only once every entry in it has expired. The owner decided this on 2026-11-17 (#114). |
-| JEX-NFR-13 | `user_campaign_state_transitions` carries only the indexes its readers need: the engine, the outbox and the timer flow, the hot-window reads of journey analytics, the home overview, and customer lookup, and `campaign_node_stats` while it reads the hot table. The owner decided on 2026-11-17 that analytics read recent ranges from Postgres (#111), so the analytics indexes stay on the hot partitions. |
+| JEX-NFR-13 | `user_campaign_state_transitions` carries only the indexes its readers need: the engine, the outbox and the timer flow, the hot-window reads of journey analytics, the home overview, and customer lookup, and the refresh of `campaign_node_stats`, which reads the hot partitions (JEX-FR-25). The owner decided on 2026-11-17 that analytics read recent ranges from Postgres (#111), so the analytics indexes stay on the hot partitions. |
+| JEX-NFR-14 | `campaign_node_stats` is refreshed every minute, start to start, in place and without blocking its readers. A refresh finishes within the interval on the deployed database at the target load of [platform capacity](../capacity.md#coalesced-writes). A count lags its transition by at most one interval plus one refresh. The owner decided the interval on 2026-11-18, in the review of PR #174. |
 
 ## Interfaces
 
@@ -264,7 +268,7 @@ The defaults are configurable. [Configuration](../../operations/configuration.md
 | Out, through the [lakehouse sink](lakehouse.md) | Lakehouse `transition_history` | Every transition, with every column of the table, and every late transition. |
 | Out | Kafka `journey-engine-matched-events` | Timeout triggers from the timer flow, in the trigger format, with the `graph_version` that the transition listed for the watch. |
 | Out | Kafka `journey-engine-segment-checks` | Segment check, see [customer decision](customer-decision.md#interfaces). Key: `canon_id`. |
-| Read model | `campaign_node_stats` | Users per node, read by the builder. A view computed from `user_campaign_state_transitions` when it is read; the engine writes nothing to it. |
+| Read model | `campaign_node_stats` | Entries per node, read by the builder. A materialized view over the hot partitions of `user_campaign_state_transitions` and `campaign_node_moved_counts` (JEX-FR-25), refreshed every minute (JEX-NFR-14). The engine writes nothing to it. |
 
 A transition row holds the journey key and the entry id, `node_id`, `branch`, `node_type`, the event time, the merged context, the engagement action for an engagement node, the watch children, and the `event_id` of the trigger. Each watch child carries its watch limit, the branch its deadline completes it on, and the graph version. The timer flow starts the timer from these, so it does not read the watch's row. See [the data model](../data-model.md).
 
@@ -348,16 +352,20 @@ A transition row holds the journey key and the entry id, `node_id`, `branch`, `n
 - Given an entry that started 90 days ago and was written to yesterday, then its state has expired, and a trigger for it opens no node of that entry. (JEX-NFR-03)
 - Given an entry whose start is 10 days after the current time, when it completes a node, then the row is in the partition of that start. (JEX-FR-22)
 - Given a partition older than the retention, when it leaves Postgres, then `transition_history` holds each of its rows. (JEX-FR-21)
-- Given a node with 3 entries in a partition that left Postgres and 2 in a hot partition, then its all-time Completed count is 5, read from both stores. (JEX-FR-23)
+- Given a node with 3 entries in a partition that left Postgres and 2 in a hot partition, then its all-time Completed count in journey analytics is 5, read from both stores, and its `user_count` in `campaign_node_stats` is 5 after the next refresh, read from Postgres alone. (JEX-FR-23, JEX-FR-25)
 - Given a partition whose whole range of entry starts is older than 90 days and no reader that needs it, then the partition leaves Postgres, and a partition with an entry start 89 days old stays. (JEX-NFR-12)
 - Given journey analytics still reading the hot table and a partition older than the retention, then the partition stays in Postgres. (JEX-FR-24)
-- Given the indexes of `user_campaign_state_transitions`, then each serves the engine, the outbox, the timer flow, a hot-window read of analytics, the home overview, or customer lookup, or `campaign_node_stats`. (JEX-NFR-13)
+- Given every reader of JEX-FR-24 reads both stores, and a partition older than the retention in which 3 entries completed `n1_view`, when the move runs, then the partition leaves Postgres, `campaign_node_moved_counts` holds 3 for `n1_view` and that partition, and `campaign_node_stats` still counts those 3. (JEX-FR-24, JEX-FR-25)
+- Given a late transition of `n1_view` written straight to `transition_history`, then `campaign_node_stats` does not count it, and All time in journey analytics does. (JEX-FR-25, JEX-FR-23)
+- Given a transition written at 10:00:00 and a refresh that takes 10 seconds, then `campaign_node_stats` counts it by 10:01:10, and a read of the view during the refresh is not blocked. (JEX-NFR-14)
+- Given `n1_view` completed under `C1` and under `C2` in the same partition that left Postgres, when `C1` is retired into `C2`, then after the recompute and the next refresh `campaign_node_stats` counts the person once for `n1_view`. (JEX-FR-26, JEX-FR-25)
+- Given the indexes of `user_campaign_state_transitions`, then each serves the engine, the outbox, the timer flow, a hot-window read of analytics, the home overview, or customer lookup, or the refresh of `campaign_node_stats`. (JEX-NFR-13)
 
 
 ## Open questions
 
 - When does a check take its `no` branch? See the same question in [customer decision](customer-decision.md#open-questions). A condition split does not wait on this answer: it never takes `no`.
-- **All-time counts in `campaign_node_stats`.** The view reads the hot table, and the Journey tab reads it every 5 seconds (JBD-FR-09). Counting moved partitions means a read through Athena on that refresh, or a count kept another way. #111 decided analytics, not this view. Until it is answered, the view holds partitions in Postgres (JEX-FR-24), so no partition can move.
+- **Who refreshes `campaign_node_stats`.** The view is refreshed every minute (JEX-NFR-14). Whether a scheduler in Postgres or a component of the pipeline runs the refresh is not decided.
 - Should a campaign that starts on a person event allow more than one entry, for use cases such as "remind at most twice, 3 days apart" (UC-02)? Entries answer this for segment and business-event triggers ([decision 0033](../decisions/0033-a-journey-instance-is-one-entry.md)). A person-event trigger still allows one entry.
 
 ## Related
@@ -375,4 +383,5 @@ A transition row holds the journey key and the entry id, `node_id`, `branch`, `n
 - [0033. A journey instance is one entry](../decisions/0033-a-journey-instance-is-one-entry.md)
 - [0052. Keep hot state in Flink and a redesigned projection in Postgres](../decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md)
 - [0053. Store raw events, transition history, and imports in an Iceberg lakehouse](../decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)
+- [0059. Compute node stats as a materialized view over the hot and moved counts](../decisions/0059-compute-node-stats-as-a-materialized-view-over-hot-and-moved-counts.md)
 - [Lakehouse sink](lakehouse.md)

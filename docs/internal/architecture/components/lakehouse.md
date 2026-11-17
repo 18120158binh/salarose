@@ -7,8 +7,8 @@ implementation: planned
 area: event-processor
 tags: [lakehouse, object-storage, cold-storage, analytics, recovery]
 created: 2026-11-17
-updated: 2026-11-17
-version: 0.2
+updated: 2026-11-18
+version: 0.4
 known_issues: ../../known-issues/components/lakehouse.md
 ---
 
@@ -26,7 +26,7 @@ In scope:
 - The internal events table: every record of the internal topics the jobs with state read, unchanged.
 - The change history table: every change to the configuration and profile tables a rebuild reads.
 - The transitions history table: every row of `user_campaign_state_transitions`, including the rows of partitions that left Postgres, and the transitions written straight to it.
-- The partition lifecycle of `user_campaign_state_transitions`: creating partitions ahead of time, and removing one only after the lakehouse holds all of its rows.
+- The partition lifecycle of `user_campaign_state_transitions`: creating partitions ahead of time, and removing one only after the lakehouse holds all of its rows and Postgres holds its count per node.
 - Replay safety, completeness checks, retention, and table maintenance for these tables.
 - The boundary between the hot partitions and the history, which every reader that combines both stores uses.
 
@@ -52,7 +52,8 @@ Out of scope:
 | Entry start | The event time at which a journey entry opened. The engine carries it on every transition of the entry ([journey execution](journey-execution.md#store-transitions)). |
 | Hot partition | A partition of `user_campaign_state_transitions`, by entry start, that is still in Postgres. |
 | Transition key | (`canon_id`, `campaign_id`, `entry_id`, `node_id`, `branch`). See [journey execution](journey-execution.md#terms). |
-| Move | Copy a hot partition's rows to the transitions history table, check them, and then remove the partition from Postgres. |
+| Move | Copy a hot partition's rows to the transitions history table, check them, write the partition's count per node to Postgres, and then remove the partition. |
+| Moved counts | The count of entries per node of a partition that left Postgres, in `campaign_node_moved_counts`, one row per (`campaign_id`, `node_id`) and partition. `campaign_node_stats` adds them to its count over the hot partitions ([JEX-FR-25](journey-execution.md#functional-requirements)). |
 | Move boundary | The lower bound of the oldest hot partition. Every partition below it has left Postgres. |
 | Closed partition | A hot partition that a move has closed to inserts. It stays readable in Postgres until the move removes it. |
 | Late transition | A transition whose entry start falls below the move boundary or in a closed partition, so its partition left Postgres or is leaving. |
@@ -62,9 +63,9 @@ Out of scope:
 
 At 10:00:05 the collector writes a tracker hit to `snowplow-good` partition 2 at offset 88,410. Within one commit interval, the raw events table holds one row for (`snowplow-good`, 2, 88410) with the hit's bytes. If the sink restarts and reads the offset again, the table still holds one row.
 
-At 10:00:07 the state machine completes `n1_view` for an entry that opened at 09:58. The transition row is in `user_campaign_state_transitions`, in the partition of its entry start, 09:58. Analytics read it from Postgres. 90 days later the partition's whole range is older than the Postgres retention. The move copies the partition, finds the same row count and key set in the lakehouse, and only then removes the partition from Postgres. From then on analytics read the row from `transition_history`.
+At 10:00:07 the state machine completes `n1_view` for an entry that opened at 09:58. The transition row is in `user_campaign_state_transitions`, in the partition of its entry start, 09:58. Analytics read it from Postgres. 90 days later the partition's whole range is older than the Postgres retention. The move copies the partition, finds the same row count and key set in the lakehouse, writes the partition's count per node to `campaign_node_moved_counts`, and only then removes the partition from Postgres. From then on analytics read the row from `transition_history`, and `campaign_node_stats` counts it from the moved counts.
 
-An entry lives at most 90 days from its start, so no live entry has a transition after its partition moves. A late transition comes from a replay after a restore, or from an entry's last moments while a move has its partition closed. The state machine writes it straight to `transition_history`. The outbox and the timer flow never see it.
+An entry lives at most 90 days from its start, so no live entry has a transition after its partition moves. A late transition comes only from a replay after a restore, or from an entry that completes a node at the exact 90-day edge, in its last moments, while a move has its partition closed. A partition moves only once every entry in it has expired (JEX-NFR-12), so the second case is rare. The state machine writes it straight to `transition_history`. The outbox and the timer flow never see it.
 
 ```mermaid
 flowchart LR
@@ -73,7 +74,10 @@ flowchart LR
 	sm[State machine] --> hot[(user_campaign_state_transitions, hot partitions)]
 	sm -- late transition --> hist
 	hot --> move{Every row in the lakehouse?}
-	move -- yes --> drop[Remove the partition from Postgres]
+	move -- yes --> counts[(campaign_node_moved_counts)]
+	counts --> drop[Remove the partition from Postgres]
+	hot --> stats[campaign_node_stats, refreshed every minute]
+	counts --> stats
 	move -- no --> keep[Keep the partition, alert]
 	move --> hist[(transition_history)]
 	internal[(Internal topics)] --> rawsink
@@ -126,9 +130,10 @@ The partitions are cut by entry start ([JEX-FR-20](journey-execution.md#function
 2. Copy its rows to the transitions history table, keyed by the transition key alone. A row whose key the table already holds is not written again.
 3. Close the partition to inserts. From then on, a transition for its range is a late transition and goes straight to `transition_history` (LKH-FR-12).
 4. Copy again, for the rows written between steps 2 and 3. Then count the partition's rows and compare its set of transition keys with the history's. Every key of the partition must be in the history. No insert can land in the partition after this check, because step 3 closed it.
-5. If they match, remove the partition from Postgres as one unit, never row by row. If not, keep it closed, count the mismatch, and alert.
+5. If they match, write the partition's count per node to `campaign_node_moved_counts`: for each (`campaign_id`, `node_id`) with a transition in the partition, the number of distinct (`canon_id`, `entry_id`) pairs, keyed by `partition_start`, the lower bound of the partition's range of entry starts (LKH-FR-23). The partition is closed, so the counts are final. If they do not match, keep the partition closed, count the mismatch, and alert.
+6. If they match, remove the partition from Postgres as one unit, never row by row. Steps 5 and 6 commit together, so that no refresh of `campaign_node_stats` sees both the partition and its moved counts.
 
-A move run twice converges. Steps 2 and 4 write nothing new, and step 5 finds the partition gone. Removing the oldest partition raises the move boundary in the same step.
+A move run twice converges. Steps 2 and 4 write nothing new. Steps 5 and 6 commit together, so a rerun finds either the partition with no counts, and runs the move again, or no partition. The upsert keeps a rerun from writing a second count row. Removing the oldest partition raises the move boundary in the same step.
 
 ### Read across both stores
 
@@ -168,6 +173,8 @@ A move between steps 1 and 2 changes nothing. The moved rows are at or above the
 | LKH-FR-20 | A write that spans several lakehouse tables must commit them one table at a time, and write its completion marker last, to a marker table. A reader must trust only rows that a committed marker covers, and must skip the rest. The owner decided this on 2026-11-17, during the review of PR #173 (#115). |
 | LKH-FR-21 | A move must close its partition to inserts before its final check (step 3 of [Move a hot partition](#move-a-hot-partition)), so that no transition lands in the partition between the check and its removal. |
 | LKH-FR-22 | A range that starts no more than 90 days ago must read Postgres only, with no lakehouse query. It may leave out late transitions. A range that starts earlier must read both stores by LKH-FR-17. The owner decided this on 2026-11-18, in the review of PR #173. |
+| LKH-FR-23 | Before a partition leaves Postgres, the move must write to `campaign_node_moved_counts` one row per (`campaign_id`, `node_id`) with a transition in the partition, keyed by `partition_start`, the lower bound of the partition's range of entry starts, with the number of distinct (`canon_id`, `entry_id`) pairs with a transition of the node in it. The write must be an upsert, so that a move run twice writes the same rows. The counts and the removal must become visible together, so that no reader sees the partition and its moved counts at once. `campaign_node_stats` adds the rows to its count over the hot partitions ([JEX-FR-25](journey-execution.md#functional-requirements)). The owner decided on 2026-11-18, after the review of PR #173, that a materialized view unifies the hot and moved counts, and confirmed the per-partition moved counts in the review of PR #174. |
+| LKH-FR-24 | When the sink learns of a merge, it must recompute every row of `campaign_node_moved_counts` whose partition holds a transition of the retired `canon_id`: for each such (`campaign_id`, `node_id`, `partition_start`), the count of that partition's rows in `transition_history`, with each `canon_id` mapped to its current one through the merge records, by the count rule of [JEX-FR-25](journey-execution.md#functional-requirements). The recompute must be an upsert that a repeat leaves unchanged. The owner decided on 2026-11-18, in the review of PR #174, that merges correct the moved counts ([IMG-FR-19](identity/identity-merges.md#functional-requirements)). |
 
 ## Non-functional requirements
 
@@ -177,7 +184,7 @@ A move between steps 1 and 2 changes nothing. The moved rows are at or above the
 | LKH-NFR-02 | The sink must keep up with the target load of [platform capacity](../capacity.md#non-functional-requirements): 500 events per second sustained, 2,000 per second for 10 minutes, and 1,000 per second for 1 hour, with its consumer lag back to normal after each burst. |
 | LKH-NFR-03 | The sink must commit raw events at least once per checkpoint of its job. The lag from the topic to a committed row must stay under the commit interval plus one checkpoint duration. |
 | LKH-NFR-04 | Every lakehouse table with a time column must be partitioned by day of its main time column (LKH-FR-19), and compacted by the catalog's built-in maintenance (LKH-NFR-08), so that a read of one day of one table opens only the files of that day's partition. |
-| LKH-NFR-05 | The lakehouse must write nothing to the main Postgres's WAL except the removal of a hot partition, which is a catalog change, not a row change. |
+| LKH-NFR-05 | The lakehouse must write nothing to the main Postgres's WAL except the removal of a hot partition, which is a catalog change, not a row change, and the moved counts of a partition (LKH-FR-23) and their recompute on a merge (LKH-FR-24), one row per campaign and node in it, never proportional to its rows. |
 | LKH-NFR-06 | Every object of every lakehouse table must be encrypted at rest on the server with a customer-managed KMS key, as [data import](../../features/data-import.md#non-functional-requirements) requires of imported data (DIM-NFR-08). The owner decided this on 2026-11-17. |
 | LKH-NFR-07 | `change_history` must keep every change for 13 months after its commit time, and must then delete it by [Expire by age](#expire-by-age), the rule of LKH-NFR-01. The owner decided this on 2026-11-17, during the review of PR #173 (#127). A row's value from before its oldest kept change is not in the history, so a rebuild cannot read it from there ([REC-NFR-06](state-recovery.md#non-functional-requirements)). |
 | LKH-NFR-08 | Every lakehouse table, the import tables included, must be in one catalog, S3 Tables, which compacts tables with its built-in maintenance. The owner decided this on 2026-11-17 (#115). |
@@ -192,14 +199,17 @@ A move between steps 1 and 2 changes nothing. The moved rows are at or above the
 | In | Kafka internal topics | The records the jobs with state read. See [Terms](#terms) and the [overview's topic list](../overview.md#kafka-topics). |
 | In | CDC of the rebuild inputs in Postgres | Every change, through a publication of the sink's own. See [the data model](../data-model.md#publications-for-cdc). |
 | In | `user_campaign_state_transitions` | Completed nodes. See [journey execution](journey-execution.md#interfaces) and [the data model](../data-model.md). |
+| In | Kafka `identity-merges` | The merge records of the [identity graph](identity/identity-merges.md#interfaces): the retired and the current `canon_id` of each merge, for the recompute of moved counts (LKH-FR-24). |
 | In | Late transitions from the state machine | Transitions below the move boundary or in a closed partition, in the columns of `user_campaign_state_transitions` (LKH-FR-12). |
 | Out | Lakehouse `raw_events` | `topic`, `partition`, `offset`, `key`, `value` (bytes), `topic_timestamp`, `ingested_at`. Key (`topic`, `partition`, `offset`). |
 | Out | Lakehouse `internal_events` | The columns of `raw_events`, for the internal topics. Key (`topic`, `partition`, `offset`). |
 | Out | Lakehouse `change_history` | `table_name`, `row_key`, `operation`, `row` (the row after the change, none for a delete), `change_lsn`, `committed_at`. Key (`table_name`, `row_key`, `change_lsn`). |
 | Out | Lakehouse `transition_history` | Every column of `user_campaign_state_transitions`, `entry_started_at` included. Key: the transition key. |
 | Write | Partitions of `user_campaign_state_transitions` | Created ahead of time, and removed after a move (LKH-FR-11). |
+| Write | `campaign_node_moved_counts` | One row per (`campaign_id`, `node_id`) of each partition the move removes, keyed by `partition_start`, with its count of distinct (`canon_id`, `entry_id`) pairs (LKH-FR-23). Recomputed on a merge (LKH-FR-24). |
 | Read by | [State recovery](state-recovery.md) | `raw_events`, `internal_events`, and `change_history`, for a rebuild |
 | Read by | [Home overview](../../features/home-overview.md), [journey builder](../../features/journey-builder.md#node-analytics), [customer lookup](../../features/customer-lookup.md) | `transition_history` below the move boundary, through Athena (LKH-FR-17) |
+| Read by | `campaign_node_stats`, for the [journey builder](../../features/journey-builder.md#journey-pages) | `campaign_node_moved_counts`, added to the count over the hot partitions (JEX-FR-25) |
 
 The table names are the target names. Their namespace is chosen with the deployment. Each table is partitioned by day of its main time column (LKH-FR-19).
 
@@ -225,6 +235,9 @@ The table names are the target names. Their namespace is chosen with the deploym
 - Given a move run twice for the same partition, then `transition_history` holds each row once. (LKH-FR-05)
 - Given a move that has closed its partition, when a transition for that partition's range arrives before the removal, then `transition_history` holds it, the partition does not, and a reader during the move counts it once. (LKH-FR-21, LKH-FR-12, LKH-FR-17)
 - Given analytics for Last 30 days, then no Athena query runs, and a late transition in the range is not counted. Given All time, then both stores are read. (LKH-FR-22)
+- Given a partition in which 3 entries completed `n1_view` and 2 completed `n2_vip`, when the move runs twice, then `campaign_node_moved_counts` holds one row per node for that partition, with 3 and 2, and `campaign_node_stats` counts both after its next refresh. (LKH-FR-23)
+- Given a refresh of `campaign_node_stats` at any moment of a move, then it counts each entry of the partition once: from the partition before the removal, and from `campaign_node_moved_counts` after it. (LKH-FR-23)
+- Given a moved partition in which `C1` completed `n1_view`, when `C1` is retired into `C2`, which completed `n1_view` in the same partition, then after the recompute the row for `n1_view` and that partition counts the person once, and running the recompute again changes nothing. (LKH-FR-24)
 - Given a hot partition of 10,000 rows and a history range of 9,999, when the move runs, then the partition stays in Postgres and the mismatch is counted. (LKH-FR-06)
 - Given a partition that left Postgres, then no row change for it appeared on `outbox_transitions_pub`, and the WAL written by the removal is not proportional to its rows. (LKH-FR-07, LKH-NFR-05)
 - Given a row deleted from `transition_history`, when the deletion completes, then no kept snapshot references a file that holds it. (LKH-FR-08)
@@ -264,4 +277,5 @@ The owner decided the storage questions on 2026-11-17 (#111, #114, #115, #124, #
 - [0054. Recover Flink state in four layers](../decisions/0054-recover-flink-state-in-four-layers.md)
 - [State recovery](state-recovery.md)
 - [Journey execution](journey-execution.md)
+- [0059. Compute node stats as a materialized view over the hot and moved counts](../decisions/0059-compute-node-stats-as-a-materialized-view-over-hot-and-moved-counts.md)
 - [Known issues](../../known-issues/components/lakehouse.md)

@@ -1,7 +1,7 @@
 ---
 title: Journey builder known issues
 contract: ../../features/journey-builder.md
-updated: 2026-11-17
+updated: 2026-11-18
 verified_at: 49973e0
 ---
 
@@ -13,6 +13,7 @@ verified_at: 49973e0
 | JBD-KI-35 | Missing | The v2 journey list offers no move for drafts kept in this browser | JBD-FR-28 |
 | JBD-KI-36 | Departure | The Analytics tab's graph draws its own node cards, not the builder's | [Journey pages](../../features/journey-builder.md#journey-pages) |
 | JBD-KI-37 | Risk | Journey analytics read only the hot transitions table, not the lakehouse | JBD-NFR-03, JBD-NFR-04 |
+| JBD-KI-38 | Departure | The Journey tab refreshes its counts every 5 seconds, not every minute | JBD-FR-09, JBD-NFR-05 |
 
 ## JBD-KI-27. No segment entry or business event triggers, no segment conditions, and the condition split is still a segment node
 
@@ -46,3 +47,12 @@ Tracked in #223.
 - **Fix direction.** Once the lakehouse sink lands, read `transition_history` through Athena below the move boundary and combine it with the hot read, by [Read across both stores](../../architecture/components/lakehouse.md#read-across-both-stores). #66 tracks the latency on the current table.
 
 Tracked in #105.
+
+## JBD-KI-38. The Journey tab refreshes its counts every 5 seconds, not every minute
+
+- **Symptom.** The Journey tab of a published journey asks for `campaign_node_stats` every 5 seconds. The owner set the interval to 1 minute on 2026-11-18 (JBD-FR-09), so the tab polls twelve times more often than the contract says, and twelve times more often than the view changes once it is a materialized view refreshed every minute (JEX-NFR-14).
+- **Cause.** `REFRESH_MS` in `studio/src/features/journey-analytics/model/useNodeCompleted.ts` is `5000`, and the tests in `studio/src/features/journey-analytics/model/__tests__/server.test.ts` assert 5000.
+- **Evidence.** Read from the code at `fe1865a`. Not run.
+- **Fix direction.** Set the interval to 60,000 ms and update the tests and the criterion of JBD-FR-09.
+
+No issue tracks this.
