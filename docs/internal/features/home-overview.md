@@ -212,7 +212,7 @@ Worked example. Transitions with event times on 2026-11-09 local: 3 setup rows, 
 
 ## Open questions
 
-- **Freshness of the lakehouse numbers.** How old the KPIs may be once they read the transition history (HOM-NFR-04), and so which query engine studio uses. The same question is open in the [lakehouse sink](../architecture/components/lakehouse.md#open-questions).
+- **Freshness of the lakehouse numbers.** How old the KPIs may be once they read the transition history (HOM-NFR-04), and so which query engine studio uses. The same question is open in the [lakehouse sink](../architecture/components/lakehouse.md#open-questions). Tracked in #111.
 
 Two choices the design left open are the lead's defaults, marked where they apply: counting entries rather than people, and the health strip thresholds.
 

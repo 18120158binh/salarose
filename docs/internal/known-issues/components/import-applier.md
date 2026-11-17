@@ -41,3 +41,5 @@ Java paths are relative to `event-processor/src/main/java/com/cdp/platform/`. Th
 - **Cause.** `PostgresImportStore` in `jobs/importapplier/` writes `import_records`, `import_profiles`, `import_identifiers`, and `import_run_commits` in one Postgres transaction. The tables come from `infra/db/import-store/schema.sql`. The contract moved the store to the lakehouse on 2026-11-17 ([decision 0053](../../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)).
 - **Evidence.** Read from the code and `infra/db/import-store/` at `a29730c`.
 - **Fix direction.** An import store that commits to Iceberg tables, once the catalog is chosen, behind the applier's existing store interface. Delete the cluster, its DDL Job, and its secrets in the same change as IMP-KI-06.
+
+Tracked in #102.

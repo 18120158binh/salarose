@@ -58,3 +58,5 @@ The pass is built: the CronJob `import-metric-pass` in `infra/k8s/apps/import-me
 - **Cause.** `PostgresImportSnapshot` in `jobs/importmetricpass/` opens the transaction and runs `EventMetricQuery`'s grouped SQL there. The contract moved the store to the lakehouse on 2026-11-17 ([decision 0053](../../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)).
 - **Evidence.** Read from the code at `a29730c`.
 - **Fix direction.** A snapshot reader over the Iceberg tables, through the query engine the owner picks. Land it with IAP-KI-06.
+
+Tracked in #103.

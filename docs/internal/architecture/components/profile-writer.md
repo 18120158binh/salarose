@@ -182,9 +182,9 @@ The table has no event context JSON. Each row holds at most the buckets that cus
 
 ## Open questions
 
-- **The coalescing window.** Its length and default (PRW-NFR-07). Once per checkpoint is the example the owner gave, not a decision.
-- **Narrow rows.** Whether `user_metrics` splits a series into rows that a flush writes only when they change.
-- **The profile read model.** [Decision 0052](../decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) adds a per-person profile read model in `jsonb`. Its table name, its columns, its writer, whether this writer writes it, whether it joins a CDC publication, its replica identity, what the value holds, and which reader it serves are all undecided.
+- **The coalescing window.** Its length and default (PRW-NFR-07). Once per checkpoint is the example the owner gave, not a decision. Tracked in #112.
+- **Narrow rows.** Whether `user_metrics` splits a series into rows that a flush writes only when they change. Tracked in #129.
+- **The profile read model.** [Decision 0052](../decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) adds a per-person profile read model in `jsonb`. Its table name, its columns, its writer, whether this writer writes it, whether it joins a CDC publication, its replica identity, what the value holds, and which reader it serves are all undecided. Tracked in #130.
 
 ## Related
 

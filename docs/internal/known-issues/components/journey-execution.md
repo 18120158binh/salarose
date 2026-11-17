@@ -29,3 +29,5 @@ Tracked in #223 and #220.
 - **Cause.** `infra/db/schema.sql` creates the table with `CREATE TABLE IF NOT EXISTS user_campaign_state_transitions (...)` and no `PARTITION BY`, and creates `idx_ucst_node_reach`, `idx_ucst_type_event_time`, and `idx_ucst_type_written` on it. No lakehouse sink exists.
 - **Evidence.** Read from `infra/db/schema.sql` at `a29730c`.
 - **Fix direction.** A migration to a partitioned table, once the owner picks the partition column and the publication's handling of partitions, then the lakehouse sink's move. The lakehouse sink creates partitions ahead of time (LKH-FR-11). Move no partition, and drop no analytics index, while a reader still needs the hot table: HOM-KI-01 and JBD-KI-37 fixed first, and the other readers JEX-FR-24 names. Follows the `db-migration` skill.
+
+Tracked in #101.

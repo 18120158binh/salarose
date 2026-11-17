@@ -693,7 +693,7 @@ Worked example. A journey has setup `S`, a watch `W` under `S` on `next`, and En
 - Can a running journey be edited in place? Today the marketer duplicates it, publishes the copy, and pauses the original. Editing in place needs a runtime decision about people already waiting in steps that change. The default, which the builder follows, is duplicate to edit with the prompt to pause the original. Pending owner review.
 - May admins open other people's drafts? The default, which the builder follows, is no. A draft is private to its owner, and admins see published journeys only. Pending owner review.
 
-- How fresh must journey analytics be once they read the transition history (JBD-NFR-04)? Seconds for a dashboard, or minutes? The answer also picks the query engine. The same question is open in the [lakehouse sink](../architecture/components/lakehouse.md#open-questions).
+- How fresh must journey analytics be once they read the transition history (JBD-NFR-04)? Seconds for a dashboard, or minutes? The answer also picks the query engine. The same question is open in the [lakehouse sink](../architecture/components/lakehouse.md#open-questions). Tracked in #111.
 
 The question "should drafts be stored on the server" is answered. They are, in `journey_drafts` ([decision 0036](../architecture/decisions/0036-store-journey-drafts-on-the-server-outside-cdc.md)).
 

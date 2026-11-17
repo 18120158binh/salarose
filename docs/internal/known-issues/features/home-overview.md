@@ -25,3 +25,5 @@ Breaks HOM-FR-08. The contract renamed the health strip's third item to "Last jo
 - **Cause.** The KPI and journeys queries in `studio/src/features/home-overview/model/queries.ts` join `user_campaign_state_transitions` (line 26). No transition history exists in a lakehouse to read instead.
 - **Evidence.** Read from the code at `a29730c`.
 - **Fix direction.** Read `transition_history` once the lakehouse sink lands and the owner sets the freshness bound. The health strip's engine lag may keep reading the hot table.
+
+Tracked in #104.

@@ -151,16 +151,16 @@ Steps:
 
 ## Open questions
 
-- **Savepoint retention.** N, the days a savepoint is kept (REC-FR-04).
-- **Savepoint age alert.** Which savepoint age alerts (REC-NFR-04).
-- **A deploy whose savepoint fails.** Whether it stops the deploy, or rolls on and alerts (REC-FR-03). Whether a deploy refuses to roll when the job's last completed checkpoint is old.
-- **What triggers the restore test.** Every change to the jobs' code, or only changes to state types and job graphs (REC-FR-06). CI minutes are a budget.
-- **Configuration history for a rebuild.** Where the rebuild reads `campaign_nodes` with its `graph_version`, `user_metric_definitions`, `segments`, and the event catalog as they were at each event. Today CDC delivers only the current rows.
-- **Inputs that are not raw events.** How a rebuild reads `customer_attributes` and `customer_profiles` as they were at each event, and how it derives the internal topics again.
-- **Offsets of downstream jobs.** Which Kafka offsets a job that reads an internal topic, such as `snowplow-parsed` or `journey-engine-matched-events`, starts from after a rebuild.
-- **The version guard after a rebuild.** The profile writer ignores a series whose behavior version is not higher than the stored one (PRW-FR-03). A rebuild over a gap can produce a lower version, which never replaces the stored row, and a person with no new event keeps a stale row. How the projection catches up after a rebuild is undecided.
-- **Rebuild with processing-time logic.** Watch timers fire on wall-clock time ([journey execution](journey-execution.md#watch-timers)). Whether the rebuild fires a timer at its deadline in event time is undecided.
-- **Rebuild and the outbox.** The rebuild sends nothing (REC-FR-09). Whether the outbox's and the timer flow's state need a rebuild, or start empty after one, is undecided.
+- **Savepoint retention.** N, the days a savepoint is kept (REC-FR-04). Tracked in #113.
+- **Savepoint age alert.** Which savepoint age alerts (REC-NFR-04). Tracked in #113.
+- **A deploy whose savepoint fails.** Whether it stops the deploy, or rolls on and alerts (REC-FR-03). Whether a deploy refuses to roll when the job's last completed checkpoint is old. Tracked in #133.
+- **What triggers the restore test.** Every change to the jobs' code, or only changes to state types and job graphs (REC-FR-06). CI minutes are a budget. Tracked in #123.
+- **Configuration history for a rebuild.** Where the rebuild reads `campaign_nodes` with its `graph_version`, `user_metric_definitions`, `segments`, and the event catalog as they were at each event. Today CDC delivers only the current rows. Tracked in #118.
+- **Inputs that are not raw events.** How a rebuild reads `customer_attributes` and `customer_profiles` as they were at each event, and how it derives the internal topics again. Tracked in #119.
+- **Offsets of downstream jobs.** Which Kafka offsets a job that reads an internal topic, such as `snowplow-parsed` or `journey-engine-matched-events`, starts from after a rebuild. Tracked in #120.
+- **The version guard after a rebuild.** The profile writer ignores a series whose behavior version is not higher than the stored one (PRW-FR-03). A rebuild over a gap can produce a lower version, which never replaces the stored row, and a person with no new event keeps a stale row. How the projection catches up after a rebuild is undecided. Tracked in #121.
+- **Rebuild with processing-time logic.** Watch timers fire on wall-clock time ([journey execution](journey-execution.md#watch-timers)). Whether the rebuild fires a timer at its deadline in event time is undecided. Tracked in #132.
+- **Rebuild and the outbox.** The rebuild sends nothing (REC-FR-09). Whether the outbox's and the timer flow's state need a rebuild, or start empty after one, is undecided. Tracked in #132.
 
 ## Related
 

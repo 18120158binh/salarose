@@ -24,3 +24,5 @@ Java paths are relative to `event-processor/src/main/java/com/cdp/platform/`.
 - **Cause.** `UserMetricRepository.attach` in `shared/db/repositories/` keys the decoded metrics by `canon_id` and sinks them straight into `BatchingJdbcSink` with `JdbcSinkOptions.batches()`: up to 100 rows per batch, written at least every 500 ms. No operator holds a row for a window, and a batch holds every mutation it received, not the newest per row.
 - **Evidence.** Read from the code at `a29730c`. The WAL this costs per event is not measured ([CAP-FR-17](../../architecture/capacity.md#functional-requirements)).
 - **Fix direction.** Hold the newest series per (`canon_id`, `metric_id`) in keyed state and flush on the coalescing window, once the owner sets it. Measure `D(r, T)` and the WAL per event before and after.
+
+Tracked in #100.

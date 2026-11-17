@@ -44,3 +44,5 @@ Tracked in #223.
 - **Cause.** `nodeAnalyticsQuery` in `studio/src/features/journey-analytics/model/queries.ts` reads `user_campaign_state_transitions` (lines 72 to 81). No transition history exists in a lakehouse to read instead.
 - **Evidence.** Read from the code at `a29730c`. The time is from #66, measured on 2026-11-08.
 - **Fix direction.** Read `transition_history` once the lakehouse sink lands and the owner sets the freshness bound. #66 tracks the latency on the current table.
+
+Tracked in #105.

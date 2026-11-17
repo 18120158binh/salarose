@@ -382,8 +382,8 @@ When a file is gone at save time, studio creates no `rederive` run, and the new 
 
 ## Open questions
 
-- **One commit across tables.** IAP-FR-15 needs the records and the commit marker, and for a profile run the profiles and the identifiers, to become visible together. Whether the catalog commits several tables atomically decides the layout: tables committed together, or the marker and the identifiers carried inside one table. The catalog is open in the [lakehouse sink](lakehouse.md#open-questions).
-- **The record cap.** IAP-NFR-03's 5 million records was sized for the import store's 10 GiB volume ([decision 0040](../decisions/0040-import-through-a-batch-path-and-a-separate-store.md#why)). The lakehouse has no such volume. Whether the cap stays, and at what number, is undecided.
+- **One commit across tables.** IAP-FR-15 needs the records and the commit marker, and for a profile run the profiles and the identifiers, to become visible together. Whether the catalog commits several tables atomically decides the layout: tables committed together, or the marker and the identifiers carried inside one table. The catalog is open in the [lakehouse sink](lakehouse.md#open-questions). Tracked in #115.
+- **The record cap.** IAP-NFR-03's 5 million records was sized for the import store's 10 GiB volume ([decision 0040](../decisions/0040-import-through-a-batch-path-and-a-separate-store.md#why)). The lakehouse has no such volume. Whether the cap stays, and at what number, is undecided. Tracked in #131.
 
 ## Related
 
