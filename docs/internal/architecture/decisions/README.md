@@ -59,5 +59,6 @@ Each record explains one choice that shapes the architecture: the context, the d
 | [0053](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) | Store raw events, transition history, and imports in an Iceberg lakehouse | Accepted | 2026-11-17 |
 | [0054](0054-recover-flink-state-in-four-layers.md) | Recover Flink state in four layers | Accepted | 2026-11-17 |
 | [0055](0055-run-the-dev-environment-on-one-stoppable-spot-node.md) | Run the dev environment on one stoppable Spot node and pay-per-use services | Accepted | 2026-11-17 |
+| [0056](0056-a-read-only-agent-with-no-pii-and-a-provider-agnostic-tool-use-model.md) | A read-only agent with no PII and a provider-agnostic tool-use model | Accepted | 2026-11-17 |
 
 To add a decision, copy [the template](../../_templates/decision.md) to the next free number. Never edit an accepted record to reverse it. Write a new record and set `superseded_by` on the old one.
