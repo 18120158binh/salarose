@@ -18,11 +18,12 @@ superseded_by: []
 
 ## Decision
 
-The owner chose, on 2026-11-18, after the review of PR #173, a Postgres materialized view that unifies and computes the counts. This record carries the lead's reading of that choice, which the contracts state:
+The owner chose, on 2026-11-18, after the review of PR #173, a Postgres materialized view that unifies and computes the counts. The owner confirmed the lead's per-partition reading of that choice on 2026-11-18, in the review of PR #174. The contracts state it:
 
 - When a partition moves, the move writes its count per node to `campaign_node_moved_counts`, one row per (`campaign_id`, `node_id`) keyed by the partition, before it removes the partition ([LKH-FR-23](../components/lakehouse.md#functional-requirements)).
 - `campaign_node_stats` becomes a materialized view. For each (`campaign_id`, `node_id`), it adds the distinct entries in the hot partitions to the sum of the moved counts ([JEX-FR-25](../components/journey-execution.md#functional-requirements)). It keeps its name and columns, and it reads no lakehouse.
-- The view is refreshed every 5 seconds, in place and without blocking its readers ([JEX-NFR-14](../components/journey-execution.md#non-functional-requirements)). The Journey tab keeps its 5-second refresh. Both intervals are the lead's default, pending owner review.
+- The view is refreshed every minute, in place and without blocking its readers ([JEX-NFR-14](../components/journey-execution.md#non-functional-requirements)). The Journey tab keeps its 5-second refresh, so its counts are up to 1 minute old. The owner decided the interval on 2026-11-18, in the review of PR #174.
+- A merge corrects the moved counts. The sink recomputes the rows of every node the retired `canon_id` completed in a moved partition, from `transition_history` mapped through the merge records ([LKH-FR-24](../components/lakehouse.md#functional-requirements), [IMG-FR-19](../components/identity/identity-merges.md#functional-requirements)). The owner decided this on 2026-11-18, in the review of PR #174.
 
 This supersedes decision 0009 in part: the plain view, and its rejection of a materialized view. The rest of 0009 stands, except that a moved count stays when its hot rows are deleted. It also supersedes in part [decision 0053](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)'s consequence that the view must combine both stores or move to the lakehouse. No trigger maintains the counts, and the engine's write path takes no lock on a shared row.
 
@@ -49,10 +50,10 @@ This supersedes decision 0009 in part: the plain view, and its rejection of a ma
 
 - A count lags its transition by up to one refresh interval plus one refresh (JEX-NFR-14), and the Journey tab adds its own refresh on top ([JBD-NFR-05](../../features/journey-builder.md#non-functional-requirements)). Decision 0009's counts were exact at read time.
 - The view does not count a late transition, which goes straight to `transition_history` ([JEX-FR-22](../components/journey-execution.md#functional-requirements)). All time in journey analytics does count it. The two can differ by those rows.
-- A moved count is fixed at the move. Whether a later identity merge should change it is not decided. [Identity merges](../components/identity/identity-merges.md) counts a merged person once through the merge records, which the view can do for the hot partitions only. The conflict is an open question in [journey execution](../components/journey-execution.md#open-questions) and [identity merges](../components/identity/identity-merges.md#open-questions).
+- A merge after a move recomputes the moved counts it touches, which reads `transition_history` in the lakehouse. The cost is per merge, not per refresh. The hot count maps through the merge records on every refresh, as [identity merges](../components/identity/identity-merges.md) requires.
 - Simulator clean-up deletes hot rows only ([SIM-FR-28](../../features/traffic-simulator.md#functional-requirements)), so a `sim_` campaign's moved counts stay in the view after its hot rows are gone. Decision 0009's rule that a count disappears only with its transitions does not hold for moved counts.
 - The move commits the counts and the removal in one transaction, so the lock the removal takes on the parent table also covers the count write. That is a cost to measure with the move, not a contract rule.
-- The refresh rescans the hot partitions' index every interval, for every campaign, so its cost grows with the hot table, up to 90 days of transitions. That is why the interval is pending owner review. Measure a refresh on the deployed database before shortening the interval, and lengthen it if a refresh does not finish within it.
+- The refresh rescans the hot partitions' index every interval, for every campaign, so its cost grows with the hot table, up to 90 days of transitions. The owner set the interval at 1 minute. Measure a refresh on the deployed database at the target load before shortening it.
 - Who runs the refresh is an [open question in journey execution](../components/journey-execution.md#open-questions).
 - `campaign_node_stats` leaves the list of readers that hold partitions in Postgres (JEX-FR-24). A partition can move once the other readers read both stores.
 - The schema gains `campaign_node_moved_counts`, the materialized view with the unique index its refresh needs, and the move's write. [The data model](../data-model.md) lists them as planned.

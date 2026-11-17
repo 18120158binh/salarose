@@ -8,7 +8,7 @@ area: event-processor
 tags: [identity, merge, state, journeys, metrics]
 created: 2026-10-21
 updated: 2026-11-18
-version: 1.1
+version: 1.2
 known_issues: ../../../known-issues/components/identity/identity-merges.md
 ---
 
@@ -111,7 +111,7 @@ A watch timer of a moved instance keeps its deadline and fires for the winner. A
 
 ### Count nodes once
 
-`campaign_node_stats` counts each person once per node and branch, counting `user_campaign_state_transitions` rows under every `canon_id` the person had. Transition rows keep the `canon_id` they were written with. `campaign_node_stats` maps each row's `canon_id` to its current `canon_id` through the merge records, then counts.
+`campaign_node_stats` counts each person once per node and branch, counting `user_campaign_state_transitions` rows under every `canon_id` the person had. Transition rows keep the `canon_id` they were written with. `campaign_node_stats` maps each row's `canon_id` to its current `canon_id` through the merge records, then counts. A moved count, kept in Postgres when a partition left it, is recomputed when a merge touches its node (IMG-FR-19).
 
 ### The window before a fold
 
@@ -143,6 +143,7 @@ A fold makes no rule a candidate. A rule whose metric condition the fold made tr
 | IMG-FR-16 | A fold must not make a rule a candidate. |
 | IMG-FR-17 | A fold must not rewrite `user_campaign_state_transitions` rows. `campaign_node_stats` must map retired ids through the merge records. |
 | IMG-FR-18 | A node that completes a second time between a merge and its fold must be counted by campaign and node. |
+| IMG-FR-19 | A merge must correct the moved counts of `campaign_node_stats`: for every node the retired `canon_id` completed in a partition that left Postgres, the count is recomputed from `transition_history` mapped through the merge records ([LKH-FR-24](../lakehouse.md#functional-requirements)), so that IMG-FR-13 holds across moved partitions. The owner decided this on 2026-11-18, in the review of PR #174. |
 
 ## Non-functional requirements
 
@@ -213,13 +214,12 @@ The merge record:
 - Given a segment campaign with re-entry `never`, and an entry under each `canon_id`, when they merge, then only the earlier entry survives. (IMG-FR-15)
 - Given a rule `m_view_count COUNT >= 5` and 3 views under `C1` and 2 under `C2`, when the fold makes the count 5, then the rule does not fire until the next `view_product`. (IMG-FR-16)
 - Given transition rows under `C1`, when `C1` is retired into `C2`, then the rows still carry `C1`, and `campaign_node_stats` counts the person once. (IMG-FR-17, IMG-FR-13)
+- Given `n1_view` completed under `C1` in a partition that left Postgres and under `C2` in a hot partition, when `C1` is retired into `C2`, then the moved count of `n1_view` for that partition is recomputed, and `campaign_node_stats` counts the person once. (IMG-FR-19, IMG-FR-13)
 - Given `n1_view` completing under `C2` on another device 3 seconds after the merge and before the fold, then the second-completion count for `CAMP-0001` and `n1_view` rises by 1. (IMG-FR-18)
 
 ## Open questions
 
-[Decision 0051](../../decisions/0051-fold-to-the-earliest-instance-and-count-nodes-through-merge-history.md) answered two instances of one campaign, the window before a fold, rules that a fold satisfies, node counts, and two accounts in one person on 2026-11-14. Two accounts no longer reach one person, because the [identity graph](identity-graph.md#limits) holds one `user_id` per set. One question is open:
-
-- **Merges after a move.** [Journey execution](../journey-execution.md#functional-requirements) makes `campaign_node_stats` a materialized view whose hot count maps nothing through the merge records and whose moved counts are fixed when a partition leaves Postgres (JEX-FR-25). That conflicts with IMG-FR-13 and IMG-FR-17: a person merged after a move can count twice. Whether a merge changes a moved count, and whether the hot count maps through the merge records, is for the owner to decide. The question is stated in [journey execution](../journey-execution.md#open-questions) too.
+None. [Decision 0051](../../decisions/0051-fold-to-the-earliest-instance-and-count-nodes-through-merge-history.md) answered two instances of one campaign, the window before a fold, rules that a fold satisfies, node counts, and two accounts in one person on 2026-11-14. Two accounts no longer reach one person, because the [identity graph](identity-graph.md#limits) holds one `user_id` per set. The owner answered merges after a move on 2026-11-18, in the review of PR #174 (IMG-FR-19).
 
 ## Related
 
