@@ -8,7 +8,7 @@ area: studio
 tags: [ui, journeys, canvas, conditions, drafts, templates]
 created: 2026-10-14
 updated: 2026-11-18
-version: 3.5
+version: 3.6
 known_issues: ../known-issues/features/journey-builder.md
 ---
 
@@ -437,7 +437,7 @@ Each published row has an action menu with Open, Duplicate, Pause or Resume, and
 - **Header actions.** The owner or an admin sees **Pause** or **Resume**, **Duplicate to edit**, and **Delete**. Every other staff user sees **Duplicate to edit** only. No page links to the classic builder.
 - **Duplicate to edit** creates a draft named "Copy of" and the journey's name, with `origin` `duplicate:<id>`, owned by the viewer, and opens it in the builder. Any staff user may duplicate any published journey, because every staff user can already see every published journey under **All**.
 - **Delete** opens a dialog that names the journey and says how many people are waiting in it, as [CMP-FR-19](campaign-management.md#functional-requirements) says.
-- **Journey tab.** The read-only canvas, with each node's all-time Completed count from `campaign_node_stats`, the materialized view of [journey execution](../architecture/components/journey-execution.md#functional-requirements) (JEX-FR-25), which includes the partitions that left Postgres. It refreshes every 5 seconds, skips a refresh while the browser tab is hidden, and starts the next refresh only after the last one has finished. When a refresh fails, it keeps the last counts and says that they could not refresh (JBD-FR-09). Its counts are up to 1 minute old, the view's refresh interval, plus the tab's own refresh (JBD-NFR-05). The analytics graph and the builder canvas use the same node cards.
+- **Journey tab.** The read-only canvas, with each node's all-time Completed count from `campaign_node_stats`, the materialized view of [journey execution](../architecture/components/journey-execution.md#functional-requirements) (JEX-FR-25), which includes the partitions that left Postgres. It refreshes every minute, skips a refresh while the browser tab is hidden, and starts the next refresh only after the last one has finished. When a refresh fails, it keeps the last counts and says that they could not refresh (JBD-FR-09). Its counts are up to 2 minutes old, the view's refresh interval plus the tab's own (JBD-NFR-05). The analytics graph and the builder canvas use the same node cards.
 
 The Analytics tab has:
 
@@ -478,7 +478,7 @@ Until cutover, the classic builder at `/campaign/[id]` keeps its behavior, and c
 - Active and paused campaigns open read-only. **Clone to Edit** makes an editable draft copy, for the owner or an admin.
 - `/campaign/[id]` opens a published campaign for its owner or an admin, and a draft from this browser. Any other id shows one message for "not found" and "another user owns it", so that it does not reveal that another user's campaign exists.
 - **AI Generate** opens a modal that replaces the canvas with a generated journey.
-- While a campaign is open, the builder shows the number of users at each node to its owner or an admin, refreshed every 5 seconds, with the same refresh rules as the Journey tab.
+- While a campaign is open, the builder shows the number of users at each node to its owner or an admin, refreshed every 5 seconds, with the Journey tab's rules for a hidden tab and a failed refresh.
 
 ## Algorithm
 
@@ -514,7 +514,7 @@ Worked example. A journey has setup `S`, a watch `W` under `S` on `next`, and En
 | JBD-FR-06 | The condition editor must offer only operators that fit the attribute's type. |
 | JBD-FR-07 | Changing a path type must delete the subtrees of the removed branches. Deleting a node must follow JBD-FR-42. The setup node must not be deletable. |
 | JBD-FR-08 | Active and paused campaigns must open read-only. |
-| JBD-FR-09 | The Journey tab of a published journey must show each node's all-time Completed count from `campaign_node_stats`, the materialized view of [JEX-FR-25](../architecture/components/journey-execution.md#functional-requirements), refreshed every 5 seconds, skipping a refresh while the browser tab is hidden, and keeping the last counts when a refresh fails. |
+| JBD-FR-09 | The Journey tab of a published journey must show each node's all-time Completed count from `campaign_node_stats`, the materialized view of [JEX-FR-25](../architecture/components/journey-execution.md#functional-requirements), refreshed every minute, skipping a refresh while the browser tab is hidden, and keeping the last counts when a refresh fails. The owner decided the interval on 2026-11-18, in the review of PR #174. |
 | JBD-FR-10 | Each node type must open its own editor. |
 | JBD-FR-11 | The journey must stay a tree under the setup node: one parent for every other node, and no cycle. The builder must offer no free edge, and every insert must attach the new node to a parent. Saving or publishing a tree that breaks this must fail with a message that names the node. |
 | JBD-FR-13 | Filters and conditions must be saved as groups. Every group must pass, and a group passes when any of its conditions passes. A group must not be empty. |
@@ -552,7 +552,7 @@ Worked example. A journey has setup `S`, a watch `W` under `S` on `next`, and En
 | JBD-NFR-02 | A draft lives on the server, in `journey_drafts`, until it is published or deleted. Clearing browser data does not touch it. |
 | JBD-NFR-03 | Journey analytics must load within 2 seconds at the 95th percentile for Last 30 days on the deployed database. [Decision 0035](../architecture/decisions/0035-compute-journey-analytics-from-transitions-on-read.md) says what happens when it does not. |
 | JBD-NFR-04 | Journey analytics for a range that starts no more than 90 days ago must read `user_campaign_state_transitions` in Postgres only, seconds fresh, and may leave out late transitions ([LKH-FR-22](../architecture/components/lakehouse.md#functional-requirements)). A range that starts earlier, such as All time, must also read `transition_history` in the lakehouse through Athena, split at the move boundary so that each transition counts once ([LKH-FR-17](../architecture/components/lakehouse.md#functional-requirements)). The owner decided the two stores on 2026-11-17 (#111) and the recent-range rule on 2026-11-18, in the review of PR #173. The [Node analytics](#node-analytics) definitions do not change. The Journey tab's counts from `campaign_node_stats` (JBD-FR-09) read no lakehouse. That view includes the partitions that left Postgres through their moved counts ([JEX-FR-25](../architecture/components/journey-execution.md#functional-requirements)). |
-| JBD-NFR-05 | A node count on the Journey tab is up to 1 minute old, the refresh interval of `campaign_node_stats` ([JEX-NFR-14](../architecture/components/journey-execution.md#non-functional-requirements)), plus that refresh's own duration and the tab's refresh of 5 seconds (JBD-FR-09). It leaves out late transitions, which only `transition_history` holds. The owner decided the 1 minute on 2026-11-18, in the review of PR #174. |
+| JBD-NFR-05 | A node count on the Journey tab is up to 2 minutes old: the refresh interval of `campaign_node_stats` ([JEX-NFR-14](../architecture/components/journey-execution.md#non-functional-requirements)) plus the tab's own interval (JBD-FR-09), both 1 minute, plus the view refresh's own duration. It leaves out late transitions, which only `transition_history` holds. The owner decided both intervals on 2026-11-18, in the review of PR #174. |
 
 ## Interfaces
 
@@ -643,9 +643,9 @@ Worked example. A journey has setup `S`, a watch `W` under `S` on `next`, and En
 - Given a viewer who uses every control on the v2 journey pages, then rows change only in `journey_drafts` and in the tables campaign management's actions write. Until cutover, every classic builder test passes unchanged. (JBD-FR-24)
 - Given a deployed database with 30 days of transitions, then journey analytics for Last 30 days load within 2 seconds at the 95th percentile, or the result of decision 0035's check is recorded. (JBD-NFR-03)
 - Given a node with 3 completions in hot partitions and 2 in `transition_history` below the move boundary, then All time shows 5 completions, and Last 30 days reads no lakehouse row. (JBD-NFR-04)
-- Given a published journey open on its Journey tab, when `campaign_node_stats` changes, then the node counts update within 5 seconds. While the browser tab is hidden, no refresh runs. When a refresh fails, the last counts stay and the page says they could not refresh. (JBD-FR-09)
+- Given a published journey open on its Journey tab, when `campaign_node_stats` changes, then the node counts update within 1 minute. While the browser tab is hidden, no refresh runs. When a refresh fails, the last counts stay and the page says they could not refresh. (JBD-FR-09)
 - Given a node with 3 entries in a partition that left Postgres and 2 in a hot one, then the Journey tab shows 5, and no lakehouse query runs. (JBD-FR-09, JBD-NFR-04)
-- Given a transition written at 10:00:00, a refresh that takes 10 seconds, and the Journey tab open, then its node's count rises by 10:01:15. (JBD-NFR-05)
+- Given a transition written at 10:00:00, a refresh that takes 10 seconds, and the Journey tab open, then its node's count rises by 10:02:10. (JBD-NFR-05)
 - Given a draft with a watch that has no event and a check with an empty group, then the checklist lists both problems in tree order, each with its node and field, and the publish dialog's confirm button is disabled. **Go to** on the watch's problem opens its panel with the event field focused. (JBD-FR-25)
 - Given a draft whose only problem is a condition split's No branch saved by an older build, then the checklist shows a warning and publish is allowed. (JBD-FR-25)
 - Given the browser's validator and the server's validator on the same fixture trees, then both return the same problems. (JBD-FR-25)
