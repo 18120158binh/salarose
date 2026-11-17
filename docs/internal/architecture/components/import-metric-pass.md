@@ -205,7 +205,7 @@ A failed pass leaves some rows from itself and the rest from the pass before. Ea
 | IMP-FR-15 | The pass must be the only writer of `customer_attributes`. |
 | IMP-FR-16 | The pass must write nothing to the import store. |
 | IMP-FR-17 | The pass must publish no row for a customer key whose tombstone is in `person_tombstones` when publishing starts, and must delete that key's stored rows. |
-| IMP-FR-22 | The pass must read imported records only from the import store in the lakehouse. It must write to the main Postgres only `customer_attributes`, its own row in `import_metric_passes`, and `first_pass_id` on `import_runs`. |
+| IMP-FR-22 | The pass must read imported records only from the import store in the lakehouse. Its only result in the main Postgres must be `customer_attributes`. Its other writes there are bookkeeping: its own row in `import_metric_passes`, and `first_pass_id` on `import_runs`. |
 
 ## Non-functional requirements
 

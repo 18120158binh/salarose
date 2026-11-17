@@ -44,7 +44,7 @@ Out of scope:
 | Burst | 2,000 events per second for 10 minutes. The rate at the collector is 2,000 during the burst, not 500 plus 2,000. |
 | Workload profile | The mix of the test traffic: people, devices, event names, and the share that stitches a new device, updates a metric, or completes a journey node. [The traffic simulator's funnel](../features/traffic-simulator.md#funnel) and scenarios set it. Rows per event depend on it. |
 | Monthly volume | The events the platform must take in a month: 100 million to 500 million. |
-| Coalesced table | A table on the event path whose writer writes each row at most once per coalescing window, not once per event: `user_metrics` ([PRW-FR-13](components/profile-writer.md#functional-requirements)) and, once built, `person_profiles`. |
+| Coalesced table | A table on the event path whose writer writes each row at most once per coalescing window, not once per event: `user_metrics` ([PRW-FR-13](components/profile-writer.md#functional-requirements)) and, once built, the profile read model. |
 | Coalescing window | `T`, in seconds. The window of [PRW-NFR-07](components/profile-writer.md#non-functional-requirements). |
 | Coalescing gain | `g`, for a coalesced table: the row writes it would take per window uncoalesced, divided by the row writes it takes coalesced. 1 means no gain. |
 | Event path | Every table write and topic message that one event causes as it flows from the collector to the last journey transition, except the writes of a paced writer. |
@@ -136,7 +136,7 @@ Bounds that need no measurement:
 
 - `g` is 1 when no row changes twice in one window, such as when every person sends at most one event per window. Coalescing then saves nothing.
 - `D(r, T)` is at most `r × m × T`, and at most the people active in the window times the metrics each has.
-- At 190 events per second and `T` = 30 s, a window holds at most 5,700 events, so at most 5,700 × `m` rows.
+- At 190 events per second and, for example, `T` = 30 s, a window holds at most 5,700 events, so at most 5,700 × `m` rows.
 
 A flush writes `D(r, T)` rows at once, every `T` seconds. The held WAL of step 3 uses the average over the confirm window, which is unchanged while `T` is no longer than the shortest confirm window, 330 s at the defaults. A window longer than that makes the hold depend on when the flush falls, and the sizing then uses the WAL of one flush plus the average.
 
@@ -211,17 +211,17 @@ Ties and edge cases:
 | CAP-NFR-07 | After the burst ends, every consumer's lag must return to its normal lag within a bound. The bound is an [open question](#open-questions). |
 | CAP-NFR-08 | At the target load, each volume that holds Postgres or Kafka, and the disk under it, must keep at least 30% of its space free. This is the lead's default, pending owner review. A load run aborts above 70% full (SIM-FR-12 of [the traffic simulator](../features/traffic-simulator.md#functional-requirements)), so a finished run has shown it, and it keeps the disk clear of the WAL governor's pause under 20% free ([IMP-NFR-03](components/import-metric-pass.md#non-functional-requirements)). |
 | CAP-NFR-09 | The sizing must not meet the cap by lowering the confirm count of [JEX-NFR-10](components/journey-execution.md#non-functional-requirements). A shorter CDC restore window needs its own decision record. |
-| CAP-NFR-10 | `snowplow-good` must keep at least 72 hours of messages at the target load, and the volume that holds Kafka must be sized by CAP-FR-06 to hold that. A recovery that keeps Flink state relies on the raw events waiting there ([rollout known issues](../operations/rollout-known-issues.md#a-new-job-image-cannot-restore-its-savepoint)). From step 6 of the [algorithm](#algorithm), with one burst, the topic alone retains (500 × 259,200 s + 1,500 × 600 s) × its bytes per event, about 130.5 million events: about 13 GB for every 100 bytes per event, and about 65 GB at 500 bytes. The bytes per event come from measurement, so the bound is that product, not a fixed number. |
+| CAP-NFR-10 | `snowplow-good` must keep at least 72 hours of messages at the target load, and the volume that holds Kafka must be sized by CAP-FR-06 to hold that. A recovery that keeps Flink state relies on the raw events waiting there ([rollout known issues](../operations/rollout-known-issues.md#a-new-job-image-cannot-restore-its-savepoint)). Once the lakehouse keeps raw events ([LKH-FR-01](components/lakehouse.md#functional-requirements)), a recovery past 72 hours reads them there, and the 72 hours bound how long the lakehouse sink may be down without a gap. From step 6 of the [algorithm](#algorithm), with one burst, the topic alone retains (500 × 259,200 s + 1,500 × 600 s) × its bytes per event, about 130.5 million events: about 13 GB for every 100 bytes per event, and about 65 GB at 500 bytes. The bytes per event come from measurement, so the bound is that product, not a fixed number. |
 | CAP-NFR-11 | The platform must take a monthly volume of 100 million to 500 million events. Its average, 38 to 190 events per second, must stay under the sustained load of CAP-NFR-01, and its peaks, 5 to 10 times the average, under the burst. CAP-NFR-01 is not changed by this. |
 
 ## Interfaces
 
-The sizing and the load test read these. None of them is new.
+The sizing and the load test read these. All exist today except the lakehouse sink and the profile read model, which are planned.
 
 | Interface | What capacity work reads |
 |---|---|
 | The collector | The accepted event rate. |
-| Tables on the event path: `identity_graph`, `event_volume`, `user_metrics`, `user_campaign_state_transitions`, and, once built, `person_profiles` | Rows written per second, and WAL per row from the database's per-statement WAL statistics. For a coalesced table, also the distinct rows per window. [The data model](data-model.md) says which job writes each. |
+| Tables on the event path: `identity_graph`, `event_volume`, `user_metrics`, `user_campaign_state_transitions`, and, once built, the profile read model | Rows written per second, and WAL per row from the database's per-statement WAL statistics. For a coalesced table, also the distinct rows per window. [The data model](data-model.md) says which job writes each. |
 | `segment_members`, once built, and the tables of the governed passes | Nothing per event. The paced writers' budgets stand for them. |
 | The CDC publications and their replication slots | Which tables each publication covers, each slot's held WAL and status. [The data model](data-model.md#publications-for-cdc) lists them. |
 | The database | Its current WAL position, its cap on slot WAL, its maximum WAL size, and each table's replica identity. |
@@ -264,6 +264,9 @@ The sizing and the load test read these. None of them is new.
 - Given the run, when free space is read on each volume that holds Postgres or Kafka and on the disk under it, then no reading is under 30%. (CAP-NFR-08)
 - Given a sizing that does not fit the cap, when it is proposed, then it does not lower the confirm count below 10 without a decision record. (CAP-NFR-09)
 - Given a load run in load mode, when a slot's status becomes `unreserved` or `lost`, then the run stops at that reading and its report names the slot. Given a slot that is only `extended`, then the run goes on. (CAP-FR-16)
+- Given a coalesced table, when the sizing sheet is read, then it gives `T`, `m`, `w`, `D(r, T)`, and `g` at 500 and 2,000 events per second, each with where it was measured, and the table's rows and WAL per second derived from them. (CAP-FR-17)
+- Given a load test, when it ends, then the capacity report gives each coalesced table's distinct rows per window and row writes per second, and `g` beside the sizing sheet's. (CAP-FR-18)
+- Given a month of 500 million events, then its average of about 190 events per second is under the sustained load of 500, and its peaks of 950 to 1,900 are under the burst of 2,000. (CAP-NFR-11)
 - Given the measured bytes per event of `snowplow-good`, when the sizing sheet is read, then the topic's retained bytes for 72 hours at the target load fit the volume that holds Kafka, with CAP-NFR-08's free space left. (CAP-NFR-10, CAP-FR-06)
 
 ## Open questions

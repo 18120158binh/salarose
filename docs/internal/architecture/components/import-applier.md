@@ -16,7 +16,7 @@ known_issues: ../../known-issues/components/import-applier.md
 
 ## Purpose
 
-A shop delivers its orders and customer records as files: through the import API, as a batch of records, or as a spreadsheet an admin uploads in studio ([data import](../../features/data-import.md)). The import applier turns each delivery into stored records. It checks the file against the dataset's columns, rejects bad rows, refuses a file that looks broken, and upserts the rest into the import store, Iceberg tables in the lakehouse, so that a file applied twice or after a crash leaves the same rows. It also carries out per-person deletions. The [import metric pass](import-metric-pass.md) reads what it stores.
+A shop delivers its orders and customer records as files: through the import API, as a batch of records, or as a spreadsheet an admin uploads in studio ([data import](../../features/data-import.md)). The import applier turns each delivery into stored records. It checks the file against the dataset's columns, rejects bad rows, refuses a file that looks broken, and upserts the rest into the import store, tables in the lakehouse, so that a file applied twice or after a crash leaves the same rows. It also carries out per-person deletions. The [import metric pass](import-metric-pass.md) reads what it stores.
 
 ## Scope
 
@@ -51,7 +51,7 @@ Out of scope:
 | Writer | Who delivered a run: the source key id for the API, or `studio` for an upload. Stored on the run and on every row it last wrote. |
 | Applier lock | A session-level advisory lock on the main Postgres. The applier instance that holds it is the only one running. |
 | Drop zone | The `imports/` prefix of the deployment's S3 bucket, which holds files as delivered for 30 days. |
-| Import store | The import tables in the lakehouse: `import_records`, `import_profiles`, `import_identifiers`, and `import_run_commits`, Iceberg tables on object storage that hold accepted records. Only the applier writes them. Before [decision 0053](../decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md), a second Postgres cluster. |
+| Import store | The import tables in the lakehouse: `import_records`, `import_profiles`, `import_identifiers`, and `import_run_commits`, tables on object storage that hold accepted records. Only the applier writes them. Before [decision 0053](../decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md), a second Postgres cluster. |
 | Commit | One atomic change to the import store. Readers see all of it or none of it. |
 | Reject | A row the applier refused, with a reason. |
 | Quarantine | A run held before apply, until an admin approves or discards it. |
@@ -270,7 +270,7 @@ When a file is gone at save time, studio creates no `rederive` run, and the new 
 | IAP-FR-12 | Event records must upsert on (`record_type_id`, `record_id`), and profile records on (`record_type_id`, `customer_key`). When the type maps `updated_at`, a stored row with a later `updated_at` must stay. |
 | IAP-FR-13 | A snapshot run must remove exactly the stored rows of its type whose key no row of the file holds, valid or rejected, and whose `writer` is not `studio`. A studio upload to a snapshot type must apply as incremental. (the lead's default) |
 | IAP-FR-14 | In an incremental run, a row whose deleted flag is true must remove the stored row with its key, unless the type maps `updated_at` and the stored row's is later. |
-| IAP-FR-15 | A run's records and its commit marker, with its counts, must become visible in one commit to the import store, across every table the run writes. A run whose commit marker exists must end at `applied` with the marker's counts, and must not be applied again. |
+| IAP-FR-15 | A reader of the import store must see a run's records and its commit marker, with its counts, all or none. Where the catalog commits one table at a time, the layout must still give this, for example by keeping the marker in the records' own commit. The layout is an [open question](#open-questions). A run whose commit marker exists must end at `applied` with the marker's counts, and must not be applied again. |
 | IAP-FR-16 | A rejected row must never remove or change a stored row. |
 | IAP-FR-17 | The run report must hold every count in [Report](#6-report). The report in the drop zone and the run's `counts` must hold no row value. |
 | IAP-FR-18 | The applier must reject a row whose customer key's tombstone is in `person_tombstones` as `deleted_person`, in every run, replay, and re-derive. |
@@ -309,10 +309,10 @@ When a file is gone at save time, studio creates no `rederive` run, and the new 
 | Write | `pii_access_log` | Replaces a deleted person's key with the tombstone. Deletes rows older than 365 days. |
 | Write | S3 `imports/tombstones/<tombstone>` | One empty object per tombstone. No lifecycle rule. |
 | Read | `identity_graph` | `user_id`, for the match rate |
-| Write | Lakehouse `import_records` | `record_type_id`, `record_id`, `customer_key`, `event_time`, `updated_at`, `data` (`jsonb`), `writer`, `run_id`. Key (`record_type_id`, `record_id`). Index (`record_type_id`, `customer_key`, `event_time`). |
-| Write | Lakehouse `import_profiles` | `record_type_id`, `customer_key`, `data` (`jsonb`), `writer`, `run_id`. Key (`record_type_id`, `customer_key`). |
+| Write | Lakehouse `import_records` | `record_type_id`, `record_id`, `customer_key`, `event_time`, `updated_at`, `data` (a JSON object), `writer`, `run_id`. Logical key (`record_type_id`, `record_id`). Sort order and partitioning are part of the layout question. |
+| Write | Lakehouse `import_profiles` | `record_type_id`, `customer_key`, `data` (a JSON object), `writer`, `run_id`. Logical key (`record_type_id`, `customer_key`). |
 | Write | Lakehouse `import_identifiers` | `record_type_id`, `customer_key`, `type` (`email` or `phone`), `value`, normalized, `writer`, `run_id` |
-| Write | Lakehouse `import_run_commits` | `run_id`, `record_type_id`, `counts`, `committed_at`. Key `run_id`. |
+| Write | Lakehouse `import_run_commits` | `run_id`, `record_type_id`, `counts`, `committed_at`. Logical key `run_id`. |
 
 `sha256` is the file as delivered. `stored_sha256` is the file in the drop zone now, which differs after a deletion rewrites it. `source` is `drop` for a file through `POST /v1/imports`, `api` for a batch through `POST /v1/records/{record_type}`, `studio` for an upload, and `rederive` for a re-derive. The [data model](../data-model.md) lists the columns.
 
@@ -366,6 +366,7 @@ When a file is gone at save time, studio creates no `rederive` run, and the new 
 - Given any run, then `reports/<run_id>.json` and `counts` hold no customer key and no column value. (IAP-FR-17)
 - Given a tombstone for `0912345678`, when an old run that holds that key is applied again, then the row is rejected as `deleted_person`. (IAP-FR-18)
 - Given a tombstone at `requested` for a key in two runs of the last 30 days, then the key's rows are gone from all three tables, both files are rewritten without the key, both runs carry new `stored_sha256` values, `imports/tombstones/` holds the tombstone, and the tombstone is `done`. (IAP-FR-19)
+- Given a tombstone requested at 10:00, then by 10:00 the next day the person's rows are gone from every kept snapshot and data file of the import store (IAP-NFR-05).
 - Given a tombstone at `requested`, when it moves to `done`, then reading every kept snapshot of `import_records`, `import_profiles`, and `import_identifiers` finds no row of that key, and no data file holds one. (IAP-FR-27)
 - Given a run whose records span `import_records` and `import_run_commits`, when the metric pass reads during the commit, then it sees both or neither. (IAP-FR-15)
 - Given a main Postgres restored from before a `done` tombstone, when the applier starts, then `person_tombstones` holds the tombstone again, and no row of that key is in the import store. (IAP-FR-22)

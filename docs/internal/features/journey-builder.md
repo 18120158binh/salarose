@@ -551,7 +551,7 @@ Worked example. A journey has setup `S`, a watch `W` under `S` on `next`, and En
 | JBD-NFR-01 | Only a signed-in user can open the builder. See [admin authentication](admin-authentication.md). |
 | JBD-NFR-02 | A draft lives on the server, in `journey_drafts`, until it is published or deleted. Clearing browser data does not touch it. |
 | JBD-NFR-03 | Journey analytics must load within 2 seconds at the 95th percentile for Last 30 days on the deployed database. [Decision 0035](../architecture/decisions/0035-compute-journey-analytics-from-transitions-on-read.md) says what happens when it does not. |
-| JBD-NFR-04 | Journey analytics and the Journey tab's counts must read transitions from the transition history in the lakehouse, not from `user_campaign_state_transitions`, as [decision 0053](../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) says. The [Node analytics](#node-analytics) definitions do not change. How fresh the numbers must be is an [open question](#open-questions). |
+| JBD-NFR-04 | Journey analytics must read transitions from the transition history in the lakehouse, not from `user_campaign_state_transitions`, as [decision 0053](../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) says. The [Node analytics](#node-analytics) definitions do not change. How fresh the numbers must be is an [open question](#open-questions). The Journey tab's counts from `campaign_node_stats` (JBD-FR-09) are not covered: how they count over all time is open in [journey execution](../architecture/components/journey-execution.md#open-questions). |
 
 ## Interfaces
 

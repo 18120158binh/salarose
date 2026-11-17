@@ -5,12 +5,12 @@ status: accepted
 date: 2026-11-08
 tags: [flink, cdc, postgres, operations]
 supersedes: []
-superseded_by: []
+superseded_by: ["0052"]
 ---
 
 # 0039. Shorten the CDC restore window to keep slots under the WAL cap
 
-> Amended by [decision 0052](0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md). The second step, moving the busy tables to a second Postgres cluster, is replaced: the busy tables stay and write less WAL.
+> Superseded in part by [decision 0052](0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md). The second step, moving the busy tables to a second Postgres cluster, is replaced. The busy tables stay and write less WAL. The confirm count and the cap on slot WAL stay.
 
 ## Context
 

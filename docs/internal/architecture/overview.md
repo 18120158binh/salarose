@@ -1,6 +1,6 @@
 # About the architecture
 
-The platform turns shopper behavior into marketing messages within seconds. It is a chain of five Flink jobs connected by Kafka topics. Flink state is the source of truth for each person's state while the jobs run. Postgres is the system of record for campaigns and metric definitions, and holds a projection of the jobs' state. Planned, a lakehouse on S3 holds raw events, journey history, and imported records ([decision 0052](decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md), [decision 0053](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)). Marketers edit campaigns in `studio`, which writes Postgres, and the jobs pick up each change through change data capture (CDC), without a restart.
+The platform turns shopper behavior into marketing messages within seconds. It is a chain of Flink jobs connected by Kafka topics. Flink state is the source of truth for each person's metrics and profiles while the jobs run. Postgres is the system of record for campaigns and metric definitions, and holds a projection of the jobs' state. Planned, a lakehouse on S3 holds raw events, journey history, and imported records ([decision 0052](decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md), [decision 0053](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)). Marketers edit campaigns in `studio`, which writes Postgres, and the jobs pick up each change through change data capture (CDC), without a restart.
 
 This page is the map. Each component's and feature's contract holds its rules and algorithms, and each design decision holds its reasoning.
 
@@ -67,7 +67,7 @@ flowchart TB
 | Ingestion | The OpenSnowcat collector for tracker hits, and the HTTP API that studio serves for server-side events | [Event ingestion](components/event-ingestion.md), [data ingestion API](../features/data-ingestion-api.md) |
 | Streaming | Kafka. Every hop between jobs is a topic | [Kafka topics](#kafka-topics) |
 | Processing | The five Flink jobs, which hold live state, and the planned nightly batch passes, which skip Flink | [Data flow](#data-flow), [components](#components) |
-| Storage | Three tiers. Flink keyed state on RocksDB serves every decision and is the source of truth while the jobs run. Postgres holds configuration, read by the jobs through CDC, and a projection of the jobs' state, read on a state miss. The planned lakehouse holds raw events, transition history, and imported records as Iceberg tables on S3. | [Data model](data-model.md), [decision 0052](decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md), [decision 0053](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md), [decision 0054](decisions/0054-recover-flink-state-in-four-layers.md) |
+| Storage | Two hot tiers and a planned lakehouse. Flink keyed state on RocksDB serves every read of per-person state on the decision path, and is the source of truth for metrics and profiles while the jobs run. Postgres holds configuration, read by the jobs through CDC, and a projection of the jobs' state, read on a state miss. The planned lakehouse holds raw events, transition history, and imported records as Iceberg tables on S3. | [Data model](data-model.md), [decision 0052](decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md), [decision 0053](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md), [decision 0054](decisions/0054-recover-flink-state-in-four-layers.md) |
 | Experience | studio, where staff build journeys and manage data | [Admin app layers](#admin-app-layers) |
 | Delivery | The sender that turns notification requests into push, SMS, and email | [Notification outbox](components/notification-outbox.md) |
 
@@ -119,7 +119,7 @@ flowchart LR
 | | Flink Kafka, JDBC, and Postgres CDC connectors | | Read and write topics, write Postgres, read rule tables through CDC (Debezium) |
 | | RocksDB state backend, S3 checkpoints | | Keyed state that survives restarts and upgrades |
 | | Flink Kubernetes Operator | 1.16.1 | Runs each job as a `FlinkDeployment`, upgrades through savepoints |
-| Storage | PostgreSQL with logical replication | 16.15 | System of record, CDC source |
+| Storage | PostgreSQL with logical replication | 16.15 | System of record for configuration, CDC source, and the tier-2 projection |
 | | jOOQ | 3.20.18 | Typed SQL in the jobs |
 | | node-postgres (`pg`) | 8.11 | SQL in studio |
 | | CloudNativePG operator | chart 0.29.1 | Runs the Postgres cluster |
@@ -278,14 +278,14 @@ Each step's workflow and checks are in [the AWS Free Plan environment](../operat
 
 | Topic | Producer | Consumers | Key |
 |---|---|---|---|
-| `snowplow-good`, `snowplow-bad` | Collector | Event parse | None |
+| `snowplow-good`, `snowplow-bad` | Collector | Event parse, lakehouse sink (planned) | None |
 | `snowplow-parsed` | Event parse | Customer decision | `canon_id` |
 | `snowplow-parsed-dead-letters` | Event parse | Operators, by hand | None |
 | `customer-profile-mutations` | Customer decision | Profile writer | `canon_id` |
 | `journey-engine-matched-events` | Customer decision, outbox timers | State machine | `canon_id` + U+001F + `campaign_id` |
 | `journey-engine-segment-checks` | State machine | Customer decision | `canon_id` |
 | `journey-engine-outbound-noti` | Outbox | Sender, not in this repo | None |
-| `business-events`, planned | Data ingestion API | Business event fan-out | Event name + U+001F + item key |
+| `business-events`, planned | Data ingestion API | Business event fan-out, lakehouse sink (planned) | Event name + U+001F + item key |
 | `segment-membership-changes` | Customer decision | Profile writer, business event fan-out | `canon_id` |
 | `current-member-entries`, planned | Segment membership pass | Customer decision | `canon_id` |
 | `business-event-matches`, planned | Business event fan-out | Customer decision | `canon_id` |
@@ -318,7 +318,7 @@ The component contracts define each message. [Configuration](../operations/confi
 | [0040. Import through a batch path and a separate store](decisions/0040-import-through-a-batch-path-and-a-separate-store.md) | Imported records skip Flink. A nightly pass publishes only changed rows to the main Postgres, under a WAL governor. Its second Postgres cluster is superseded by 0053. |
 | [0052. Keep hot state in Flink and a redesigned projection in Postgres](decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) | Two hot tiers, no new database. Postgres writes less: metrics coalesced, transitions partitioned, a profile read model. |
 | [0053. Store raw events, transition history, and imports in an Iceberg lakehouse](decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) | Unbounded data goes to Iceberg on S3. Analytics leave the hot table. Supersedes 0040's import store. |
-| [0054. Recover Flink state in four layers](decisions/0054-recover-flink-state-in-four-layers.md) | Checkpoints, savepoints, the projection, and a rebuild from raw events, trusted in the reverse order. |
+| [0054. Recover Flink state in four layers](decisions/0054-recover-flink-state-in-four-layers.md) | Checkpoints, savepoints, the projection, and a rebuild from raw events. Trust goes raw events first, then Flink state, then the projection. |
 | [0007. Staff sign in through OpenID Connect](decisions/0007-staff-sign-in-through-oidc.md) | No stored passwords. [0024](decisions/0024-create-staff-at-first-sign-in-with-the-providers-role.md) leaves who gets in, and with which role, to the identity provider. |
 
 ## Scaling limits

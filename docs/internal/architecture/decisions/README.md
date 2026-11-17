@@ -42,7 +42,7 @@ Each record explains one choice that shapes the architecture: the context, the d
 | [0036](0036-store-journey-drafts-on-the-server-outside-cdc.md) | Store journey drafts on the server, outside CDC | Accepted | 2026-11-08 |
 | [0037](0037-one-studio-retire-the-classic-studio.md) | One studio: retire the classic studio | Accepted | 2026-11-08 |
 | [0038](0038-store-segment-membership-and-evaluate-every-segment.md) | Store segment membership and evaluate every segment | Accepted | 2026-11-08 |
-| [0039](0039-shorten-the-cdc-restore-window.md) | Shorten the CDC restore window to keep slots under the WAL cap | Accepted. Amended by [0052](0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) | 2026-11-08 |
+| [0039](0039-shorten-the-cdc-restore-window.md) | Shorten the CDC restore window to keep slots under the WAL cap | Accepted. Superseded in part by [0052](0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) | 2026-11-08 |
 | [0040](0040-import-through-a-batch-path-and-a-separate-store.md) | Import through a batch path and a separate store | Accepted. Superseded in part by [0053](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) | 2026-11-08 |
 | [0041](0041-imported-data-reaches-conditions-as-profile-attributes.md) | Imported data reaches conditions as profile attributes | Accepted | 2026-11-08 |
 | [0042](0042-keep-imported-contact-details-plain-behind-masking-and-tombstones.md) | Keep imported contact details in plain form behind masking and tombstones | Accepted | 2026-11-08 |

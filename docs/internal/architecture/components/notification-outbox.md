@@ -97,7 +97,7 @@ Example. `n5_sms` completes for `canon_id` `7e9d...` in `CAMP-0001`. The outbox 
 | OUT-FR-06 | `generated_at` must be the transition's event time, in ISO 8601 UTC. |
 | OUT-FR-07 | Null fields must be left out of the request. |
 | OUT-FR-08 | A failed profile lookup must not stop the outbox. The request is published without contact fields. Its `profile` keeps the transition's `user_id` and `domain_user_id`, so that a `web_push` sender can still reach the browser. This was chosen while fixing the code, and is pending owner review. |
-| OUT-FR-09 | The outbox must read transitions through its own publication, `outbox_transitions_pub`, which covers `user_campaign_state_transitions` and the heartbeat table and nothing else. Once the table is partitioned, the publication must publish each partition's changes as changes to `user_campaign_state_transitions`, so that a new partition needs no change to the publication or the outbox. |
+| OUT-FR-09 | The outbox must read transitions through its own publication, `outbox_transitions_pub`, which covers `user_campaign_state_transitions` and the heartbeat table, as it does today. Once the table is partitioned, the outbox must still receive every partition's inserts. How the publication delivers them is an [open question](#open-questions). |
 | OUT-FR-10 | A partition that leaves Postgres ([LKH-FR-07](lakehouse.md#functional-requirements)) must publish no change on `outbox_transitions_pub`, and must make the outbox publish nothing. |
 
 ## Non-functional requirements
@@ -167,11 +167,12 @@ The request's `context` is the transition's context, as a JSON object.
 - Given the job starts without its saved log position, then a request is published again for every past engagement transition, each with the `execution_id` it had before. (OUT-NFR-01)
 - Given the profile database is down, then a request is published without contact fields: its `profile` holds only `user_id` and `domain_user_id`. (OUT-FR-08)
 - Given a transition with context `{"product.price": "12990000"}`, then the request's `context` holds it. (OUT-FR-04)
-- Given the publication `outbox_transitions_pub`, when its tables are listed, then it covers `user_campaign_state_transitions` and the heartbeat table only. Given a new time partition, when an engagement transition is written to it, then the outbox publishes its request with no change to the publication. (OUT-FR-09)
+- Given the publication `outbox_transitions_pub`, when its tables are listed, then it covers `user_campaign_state_transitions` and the heartbeat table only. Given a new time partition, when an engagement transition is written to it, then the outbox publishes its request. (OUT-FR-09)
 - Given a partition that leaves Postgres, then the outbox reads no change for it and publishes nothing. (OUT-FR-10)
 
 ## Open questions
 
+- Does the outbox need more than today's publication? `outbox_transitions_pub` already covers only the transitions table and the heartbeat table, and [decision 0052](../decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) records it as the current state. Once the table is partitioned, how the publication delivers each partition's inserts, for example under the parent table's name, is undecided too.
 - Should a request whose profile lookup failed keep the transition's `user_id` and `domain_user_id`? OUT-FR-08 says yes, so that `web_push` stays deliverable. The alternative is to leave out `profile`. This was chosen while fixing the code, and is pending owner review.
 - Should `generated_at` be the event time of the transition or the time the request is published?
 - Which content fields does each channel require, and should the outbox reject an action that lacks them?

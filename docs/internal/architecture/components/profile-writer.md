@@ -18,7 +18,7 @@ known_issues: ../../known-issues/components/profile-writer.md
 
 [Customer decision](customer-decision.md) keeps each person's metric series in Flink state, which expires and is lost on a fresh start. The profile writer copies the changes into the `user_metrics` table, coalesced per person: it writes each row at most once per coalescing window, not once per event. The decision job reads the table when its state has no entry for a series, and analysts query it with SQL. The table may lag the live state by up to one coalescing window. It is not on the decision path. See [decision 0005](../decisions/0005-keep-live-state-in-flink.md) and [decision 0052](../decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md).
 
-The writer also stores the current members of each segment in `segment_members`, from the membership changes customer decision publishes, so that studio can show a segment's size. See [Segment membership](#segment-membership). Planned, it keeps one profile read model row per person in `person_profiles`. See [Profile read model](#profile-read-model).
+The writer also stores the current members of each segment in `segment_members`, from the membership changes customer decision publishes, so that studio can show a segment's size. See [Segment membership](#segment-membership).
 
 ## Scope
 
@@ -26,7 +26,6 @@ In scope:
 
 - Reading mutations from `customer-profile-mutations`.
 - Replacing each stored series with the one in the mutation, in order, coalesced per coalescing window.
-- Writing the profile read model, `person_profiles`. Planned.
 - Reading membership changes from `segment-membership-changes`, and keeping `segment_members` equal to the current tracked members.
 
 Out of scope:
@@ -47,7 +46,6 @@ Out of scope:
 | Member row | One `segment_members` row per `segment_id` and `canon_id`, for a person who is in the segment. |
 | Coalescing window | The time over which the writer gathers the mutations of a row before it writes the row once. Its length is an [open question](#open-questions). |
 | Flush | The write of every row whose window ended. |
-| Profile read model | One `person_profiles` row per `canon_id`, with the person's profile in one `jsonb` value. Planned. |
 
 ## Behavior
 
@@ -80,9 +78,6 @@ The held rows are keyed state, so a checkpoint holds them. A restart restores th
 
 Writing only the buckets that changed, in narrow rows, is an option the owner left open. Until it is decided, a flush writes the whole series.
 
-### Profile read model
-
-Planned, [decision 0052](../decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md). The writer keeps one row per person in `person_profiles`, keyed by `canon_id`, with the person's profile in one `jsonb` value, coalesced by the same window. What the value holds, and who reads it, are [open questions](#open-questions).
 
 ### Segment membership
 
@@ -118,7 +113,6 @@ The writer reads the changes no faster than the cap of PRW-NFR-06, so a backlog,
 | PRW-FR-13 | The writer must write each `user_metrics` row at most once per coalescing window. |
 | PRW-FR-14 | A flush must leave the row that applying every mutation of the window one after the other would leave: the series with the highest behavior version the writer read for that row. |
 | PRW-FR-15 | Mutations read but not yet flushed must be in the writer's checkpointed state. A restart must neither lose them nor write an older series over a newer one. |
-| PRW-FR-16 | Planned. The writer must keep one `person_profiles` row per `canon_id`, must be its only writer, and must write each row at most once per coalescing window. |
 
 ## Non-functional requirements
 
@@ -128,10 +122,9 @@ The writer reads the changes no faster than the cap of PRW-NFR-06, so a backlog,
 | PRW-NFR-02 | `user_metrics` rows lag the mutations by at most one coalescing window plus one flush. Before coalescing, the bound was one flush: 100 rows or 500 ms, whichever comes first. |
 | PRW-NFR-03 | A failed batch is retried 3 times. |
 | PRW-NFR-04 | The `customer-profile-mutations` topic is transport, not storage. Its retention can be short. |
-| PRW-NFR-05 | `segment_members` joins no CDC publication. Rows lag the membership changes by at most one flush, as PRW-NFR-02 says for `user_metrics`, except while PRW-NFR-06 holds a backlog back. |
+| PRW-NFR-05 | `segment_members` joins no CDC publication. Rows lag the membership changes by at most one flush, 100 rows or 500 ms, whichever comes first, except while PRW-NFR-06 holds a backlog back. |
 | PRW-NFR-06 | The membership sink writes at most 1,000 rows a second, about 1 MB/s of WAL, and the limit is configurable. It paces the backlog after the first rollout of flags. This is the lead's default, pending owner review. See [decision 0038](../decisions/0038-store-segment-membership-and-evaluate-every-segment.md#why). |
 | PRW-NFR-07 | The coalescing window is configurable. Its default is an [open question](#open-questions). It bounds how much a start without state loses when it reads `user_metrics` on a miss ([state recovery](state-recovery.md), layer 3). |
-| PRW-NFR-08 | `person_profiles` joins no CDC publication and has the default replica identity. |
 
 ## Interfaces
 
@@ -141,7 +134,6 @@ The writer reads the changes no faster than the cap of PRW-NFR-06, so a backlog,
 | Out | `user_metrics` | One row per (`canon_id`, `metric_id`): `series_clock`, `buckets` as JSON in the mutation's shape, `last_behavior_version`, `updated_at`. See [the data model](../data-model.md). |
 | In | Kafka `segment-membership-changes` | Membership change: `canon_id`, `segment_id`, `entered` or `exited`, the `event_id` that caused it, and the event time. Key `canon_id`. See [customer decision](customer-decision.md#interfaces). |
 | Out | `segment_members` | One row per current member: `segment_id`, `canon_id`, and `since`, the event time of the `entered` change. Primary key (`segment_id`, `canon_id`). See [the data model](../data-model.md). |
-| Out, planned | `person_profiles` | One row per `canon_id`: `profile` (`jsonb`), `last_behavior_version`, `updated_at`. See [the data model](../data-model.md). |
 
 The writer ignores mutation fields it does not know, so customer decision can add a field before the writer is upgraded.
 
@@ -185,12 +177,14 @@ The table has no event context JSON. Each row holds at most the buckets that cus
 - Given versions 20 and 19 for one row in one window, in that order, then the flush writes version 20. (PRW-FR-14)
 - Given mutations held for a row when the writer takes a checkpoint and then crashes, when it restores, then the next flush writes the newest of them, and the stored row never goes back to an older version. (PRW-FR-15)
 - Given a mutation for a row whose stored version is 25, when the writer holds version 22 and flushes, then the stored row keeps version 25. (PRW-FR-03, PRW-FR-14)
+- Given a mutation read at 10:00:00 and a coalescing window `T`, then its row is in `user_metrics` by 10:00:00 plus `T` plus one flush. (PRW-NFR-02)
+- Given the coalescing window set to 10 s, then the writer writes each row at most once per 10 s. Given no setting, then the default the owner sets holds. (PRW-NFR-07)
 
 ## Open questions
 
 - **The coalescing window.** Its length and default (PRW-NFR-07). Once per checkpoint is the example the owner gave, not a decision.
 - **Narrow rows.** Whether `user_metrics` splits a series into rows that a flush writes only when they change.
-- **The profile read model.** What `person_profiles` holds, such as metric values, segment memberships, and identities, and which reader it serves.
+- **The profile read model.** [Decision 0052](../decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md) adds a per-person profile read model in `jsonb`. Its table name, its columns, its writer, whether this writer writes it, whether it joins a CDC publication, its replica identity, what the value holds, and which reader it serves are all undecided.
 
 ## Related
 

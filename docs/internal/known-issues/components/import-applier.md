@@ -14,7 +14,7 @@ Java paths are relative to `event-processor/src/main/java/com/cdp/platform/`. Th
 | IAP-KI-02 | Blocking | Tombstones and the 365-day `pii_access_log` deletion are not run | IAP-FR-19, IAP-FR-22 |
 | IAP-KI-04 | Risk | An error while validating retries at every start instead of failing the run | IAP-FR-02 |
 | IAP-KI-05 | Minor | The applier's SQL has no test against Postgres | IAP-FR-03, IAP-FR-04, IAP-FR-23, IAP-FR-24 |
-| IAP-KI-06 | Risk | The import store is a Postgres cluster, not the lakehouse | IAP-FR-15, IAP-FR-26, IAP-FR-27, IAP-NFR-06 |
+| IAP-KI-06 | Risk | The import store is a Postgres cluster, not the lakehouse | IAP-FR-26, IAP-FR-27, IAP-NFR-06 |
 
 ## IAP-KI-02. Tombstones and the 365-day `pii_access_log` deletion are not run
 

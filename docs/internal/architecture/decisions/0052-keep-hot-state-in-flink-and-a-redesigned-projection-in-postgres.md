@@ -4,7 +4,7 @@ id: "0052"
 status: accepted
 date: 2026-11-17
 tags: [storage, postgres, flink, state, wal, cdc]
-supersedes: []
+supersedes: ["0039"]
 superseded_by: []
 ---
 
@@ -22,27 +22,27 @@ Decision 0039 named a second step, moving the busy tables to a second Postgres c
 
 Hot storage has two tiers, and both stay on technology the platform already runs. No MongoDB, no third database.
 
-**Tier 1 is Flink keyed state, on RocksDB.** It serves every read on the decision path. While the jobs run, it is the source of truth for metrics, identity, segment flags, and journey progress. [Decision 0054](0054-recover-flink-state-in-four-layers.md) says how it survives loss.
+**Tier 1 is Flink keyed state, on RocksDB.** It serves every read of per-person state on the decision path. Customer decision still reads `customer_profiles` and `customer_attributes` from Postgres (DEC-FR-40, DEC-FR-41), and this decision does not change that. While the jobs run, Flink state is the source of truth for metrics and profiles, in the owner's words. Identity keeps the arrangement of [decision 0012](0012-resolve-events-without-a-device-from-the-durable-copy.md) and the identity contracts, unchanged. Journey progress and segment flags keep the arrangement of decision 0005 and [decision 0038](0038-store-segment-membership-and-evaluate-every-segment.md). [Decision 0054](0054-recover-flink-state-in-four-layers.md) says how it survives loss.
 
 **Tier 2 is Postgres, redesigned as a projection.** Postgres keeps the configuration role unchanged and stays the CDC source for the jobs. The projection changes in five ways:
 
 | Part | Today | Target |
 |---|---|---|
 | Metrics, `user_metrics` | One upsert per changed series per event | Coalesced per person: each row written at most once per coalescing window, such as once per checkpoint. Narrow rows that write only the changed buckets are an option, not a decision. |
-| Journey progress, `user_campaign_state_transitions` | One table that grows forever | Partitioned by event time. Only recent partitions stay in Postgres. Older ones move to the lakehouse ([decision 0053](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)). |
-| Notification outbox CDC | Publication `outbox_transitions_pub` on the transitions table | The outbox keeps its own publication, and it covers only the transitions table. Moving a partition out publishes no change to it. |
+| Journey progress, `user_campaign_state_transitions` | One table that grows forever | Partitioned by time. Which time column is open. Only recent partitions stay in Postgres. Older ones move to the lakehouse ([decision 0053](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)). |
+| Notification outbox CDC | Publication `outbox_transitions_pub` on the transitions table and the heartbeat table | The outbox keeps its own publication, which today already covers only those two tables. Moving a partition out publishes no change to it. Whether the owner meant more than today's publication is an [open question](../components/notification-outbox.md#open-questions). |
 | Identity graph, `identity_graph` | Device to person rows | Unchanged. |
-| Profile read model | None. `studio` assembles a person from several tables | One row per person in a `jsonb` read model, written by the profile writer. |
+| Profile read model | None. `studio` assembles a person from several tables | One row per person in a `jsonb` read model. Its name, columns, writer, publication, and replica identity are open ([profile writer](../components/profile-writer.md#open-questions)). |
 
 The coalescing window and the Postgres retention of transitions are open. The owner left both undecided on 2026-11-17. The contracts list them under "Open questions".
 
-This decision replaces the second step of decision 0039. The busy tables stay in the main Postgres, and their WAL falls because they write less, not because they move. It amends [decision 0005](0005-keep-live-state-in-flink.md). Flink state is the source of truth, and the Postgres copy is a projection that may lag by one coalescing window.
+This decision supersedes in part [decision 0039](0039-shorten-the-cdc-restore-window.md). It replaces 0039's second step. The busy tables stay in the main Postgres, and their WAL falls because they write less, not because they move. It amends [decision 0005](0005-keep-live-state-in-flink.md). For metrics and profiles, Flink state is the source of truth, and the Postgres copy is a projection that may lag by one coalescing window plus one flush.
 
 ## Why
 
-**The decision path already avoids Postgres.** Every decision reads Flink state. Postgres is read only on a state miss (decision 0005). A faster or larger database would not speed a decision. It would only hold the projection, and the projection's cost is its write rate, not its read rate.
+**The decision path already avoids Postgres for per-person state.** Every decision reads metrics and journey state from Flink. Per-person state is read from Postgres only on a state miss (decision 0005). The profile and attribute lookups of DEC-FR-40 and DEC-FR-41 are reads of other systems' tables, which this decision leaves as they are. A faster or larger database would not speed a decision. It would only hold the projection, and the projection's cost is its write rate, not its read rate.
 
-**The WAL comes from the write pattern, not from Postgres.** The three tables wrote about 2 KB of WAL per event in the run of 2026-11-07 (decision 0039, measured over the whole database). `user_metrics` rewrites a person's whole series on every event that changes it, and with full replica identity it also logs the old row ([PLT-KI-18](../../known-issues/platform.md#plt-ki-18-user_metrics-has-full-replica-identity-but-no-publication-covers-it)). A person who sends 20 events in a 30-second window writes their series 20 times. Coalesced, they write it once. The transitions table carries four indexes for analytics ([decision 0035](0035-compute-journey-analytics-from-transitions-on-read.md)) and never shrinks. Both are fixable in place. [Platform capacity](../capacity.md#coalesced-writes) gives the formulas.
+**The WAL comes from the write pattern, not from Postgres.** The run of 2026-11-07 wrote about 2 KB of WAL per event over the whole database, mostly to these three tables (decision 0039, measured). `user_metrics` rewrites a person's whole series on every event that changes it, and with full replica identity it also logs the old row ([PLT-KI-18](../../known-issues/platform.md#plt-ki-18-user_metrics-has-full-replica-identity-but-no-publication-covers-it)). A person who sends 20 events in a 30-second window writes their series 20 times. Coalesced, they write it once. The transitions table carries three indexes for analytics ([decision 0035](0035-compute-journey-analytics-from-transitions-on-read.md)), plus one for `campaign_node_stats`, and never shrinks. Both are fixable in place. [Platform capacity](../capacity.md#coalesced-writes) gives the formulas.
 
 **A second cluster for the busy tables moves the WAL but does not reduce it.** The busy tables need CDC, at least for the outbox, so a second cluster needs its own slots, its own cap on slot WAL, and its own disk. It doubles the Postgres operations work and leaves every write as large as it was.
 
@@ -63,18 +63,19 @@ This decision replaces the second step of decision 0039. The busy tables stay in
 
 ## Consequences
 
-- The [profile writer](../components/profile-writer.md) coalesces metric writes per person and writes the profile read model. Its rows lag the live state by up to one coalescing window.
-- [Journey execution](../components/journey-execution.md) writes transitions into time partitions keyed by the transition's event time, so a replay lands in the same partition and writes nothing new.
+- The [profile writer](../components/profile-writer.md) coalesces metric writes per person. Its rows lag the live state by up to one coalescing window plus one flush.
+- [Journey execution](../components/journey-execution.md) writes transitions into time partitions and must still keep one row per transition key across all of them, including after a restore that replays triggers in another order. The partition column is open.
 - The [notification outbox](../components/notification-outbox.md) reads its own publication. A start without its saved position reads only the partitions still in Postgres.
 - [Platform capacity](../capacity.md) sizes `user_metrics` by distinct rows per window, not by events.
-- A state miss after a fresh start reads values up to one coalescing window old. [Decision 0054](0054-recover-flink-state-in-four-layers.md) accepts that loss for layer 3 and gives the exact path, a rebuild from raw events.
+- A state miss after a fresh start reads metric values up to one coalescing window plus one flush old. [Decision 0054](0054-recover-flink-state-in-four-layers.md) accepts that loss for layer 3 and gives the exact path, a rebuild from raw events.
 - [PLT-KI-16](../../known-issues/platform.md#plt-ki-16-the-event-path-tables-share-the-database-whose-wal-every-cdc-slot-holds) is fixed by writing less WAL, not by moving tables.
 - Decision 0039's caps and restore window stay. The sizing in [platform capacity](../capacity.md) checks them again once coalescing is measured.
 
 ## Related
 
 - [0005. Keep live state in Flink and a durable copy in Postgres](0005-keep-live-state-in-flink.md), amended
-- [0039. Shorten the CDC restore window](0039-shorten-the-cdc-restore-window.md), its second step replaced
+- [0039. Shorten the CDC restore window](0039-shorten-the-cdc-restore-window.md), superseded in part: its second step
+- [0012. Resolve events without a device from the durable copy](0012-resolve-events-without-a-device-from-the-durable-copy.md), unchanged
 - [0053. Store raw events, transition history, and imports in an Iceberg lakehouse](0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)
 - [0054. Recover Flink state in four layers](0054-recover-flink-state-in-four-layers.md)
 - [Platform capacity](../capacity.md)
