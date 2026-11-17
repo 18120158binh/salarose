@@ -248,6 +248,7 @@ One choice the design left open is the lead's default: hiding `MEDIAN` and `DIST
 - Which catalog event counts as an order for the timeline's **Orders** chip?
 - Where does the timeline read a person's events? No table holds tracked events per person today.
 - Where is the sender's delivery report stored, so that a message can read "Delivered" or "Failed"?
+- Where do **Messages received** and **Journeys** read a person's older transitions once partitions leave Postgres ([decision 0052](../architecture/decisions/0052-keep-hot-state-in-flink-and-a-redesigned-projection-in-postgres.md))? They read the hot table today, so under [JEX-FR-24](../architecture/components/journey-execution.md#functional-requirements) no partition can leave while they do. The options are reading `transition_history` in the lakehouse as well, or showing only the recent rows with a note.
 
 ## Related
 
