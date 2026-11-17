@@ -168,7 +168,7 @@ The identity graph stores email addresses and phone numbers in clear text, in th
 
 ## Open questions
 
-None. [Decision 0047](../../decisions/0047-email-and-phone-are-guarded-match-keys-from-import-and-the-api.md) answered the sources of email and phone, email and phone as match keys, the default country, and customer-defined types on 2026-11-14. The owner answered hashing and existing `canon_id` values on 2026-11-17 (#4).
+None. [Decision 0047](../../decisions/0047-email-and-phone-are-guarded-match-keys-from-import-and-the-api.md) answered the sources of email and phone, email and phone as match keys, the default country, and customer-defined types on 2026-11-14. The owner answered hashing and existing `canon_id` values on 2026-11-17 (#4), and accepted the contract on 2026-11-18.
 
 ## Related
 

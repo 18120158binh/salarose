@@ -197,7 +197,7 @@ A key can also be granted record types for [data import](data-import.md#writers-
 | DIA-FR-18 | An app id must hold at most two keys that are not revoked. Creating a third must fail and write nothing. |
 | DIA-FR-19 | Both routes must accept an event whatever its catalog entry's status. Status hides an event from the journey builder only. |
 | DIA-FR-40 | A source key must import only into the record types `import_source_scopes` grants it, and a revoked key must import nothing, by the rules of [data import](data-import.md#writers-and-scopes). |
-| DIA-FR-41 | Every `/v1` route, `POST /v1/events`, `POST /v1/business-events`, and the [data import](data-import.md#batch-api)'s batch API (DIM-FR-30), must be served by a service of their own, not by `studio`. `studio` keeps only the UI. A `studio` deploy, restart, or outage must not refuse or delay an event. The service must read source keys from `ingestion_source_keys` and must not create or revoke one. |
+| DIA-FR-41 | Every `/v1` route, `POST /v1/events`, `POST /v1/business-events`, and the [data import](data-import.md#batch-api)'s batch API (DIM-FR-30), must be served by a service of their own, not by `studio`. `studio` keeps only the UI. A `studio` deploy, restart, or outage must not refuse or delay an event. The service must read source keys from `ingestion_source_keys` and must not create or revoke one, because source keys stay managed in `studio`. The owner confirmed the key rule on 2026-11-18. |
 
 ## Non-functional requirements
 

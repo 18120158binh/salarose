@@ -1,7 +1,7 @@
 ---
 title: Journey execution known issues
 contract: ../../architecture/components/journey-execution.md
-updated: 2026-11-17
+updated: 2026-11-18
 verified_at: 0db371f8
 ---
 
@@ -13,6 +13,7 @@ Java paths are relative to `event-processor/src/main/java/com/cdp/platform/`.
 |---|---|---|---|
 | JEX-KI-37 | Minor | A setup trigger opens an entry for every new entry id, with no re-entry check and no refusal count | JEX-FR-18 |
 | JEX-KI-38 | Risk | `user_campaign_state_transitions` is one unpartitioned table that keeps every row | JEX-FR-20, JEX-FR-21, JEX-FR-22, JEX-FR-23, JEX-NFR-12 |
+| JEX-KI-39 | Risk | Journey state TTL resets on every read and write, not from the entry's start | JEX-NFR-03 |
 
 ## JEX-KI-37. A setup trigger opens an entry for every new entry id, with no re-entry check and no refusal count
 
@@ -31,3 +32,10 @@ Tracked in #223 and #220.
 - **Fix direction.** The engine carries each entry's start on every transition. A migration partitions the table by `entry_started_at`, adds it to the primary key, and sets `publish_via_partition_root` on `outbox_transitions_pub` (OUT-FR-09). Then the lakehouse sink's move at 90 days, and the write of late transitions straight to `transition_history`. The analytics indexes stay (JEX-NFR-13). Move no partition while a reader still needs the hot table: HOM-KI-01, JBD-KI-37, and CUS-KI-11 fixed first, and the other readers JEX-FR-24 names. Follows the `db-migration` skill.
 
 Tracked in #101.
+
+## JEX-KI-39. Journey state TTL resets on every read and write, not from the entry's start
+
+- **Symptom.** A journey key that keeps receiving triggers keeps its state past 90 days from its entries' starts, so an entry can outlive its partition's move and its later nodes become late transitions.
+- **Cause.** `JourneyStateMachineFunction` in `jobs/statemachine/transforms/` builds its `StateTtlConfig` with `UpdateType.OnReadAndWrite`, one TTL for the whole journey key's state, read from `STATE_MACHINE_JOURNEY_STATE_TTL_MS` in `StateMachineJob`.
+- **Evidence.** Read from the code at `218536f`.
+- **Fix direction.** Expire each entry 90 days after its start: keep the entry start with the entry and drop entries past it on access and on a timer, and stop refreshing the TTL on read and write.

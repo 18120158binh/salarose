@@ -156,7 +156,7 @@ Worked example. Transitions with event times on 2026-11-09 local: 3 setup rows, 
 | HOM-NFR-01 | Each data region must load within 2 seconds at the 95th percentile for Last 30 days, measured on the deployed database. [Decision 0035](../architecture/decisions/0035-compute-journey-analytics-from-transitions-on-read.md) says what happens when it does not. |
 | HOM-NFR-02 | The page must not change any row or produce a record to any topic, except through the browser-draft move of [JBD-FR-28](journey-builder.md#functional-requirements) when the viewer chooses it. It reads `user_campaign_state_transitions`, `campaigns`, `journey_drafts`, and `system_users`, and the offsets of the dead-letter topic without a consumer group, so the broker records no group for it either. |
 | HOM-NFR-03 | Studio must read the dead-letter topic's offsets at most once every 15 seconds, however many viewers open the page. |
-| HOM-NFR-04 | The KPI row and the journeys table must read the hot partitions of `user_campaign_state_transitions` from Postgres, seconds fresh, and older transitions from `transition_history` in the lakehouse through Athena, split at the move boundary so that each transition counts once ([LKH-FR-17](../architecture/components/lakehouse.md#functional-requirements)). The health strip's engine lag and newest step read the hot table only, because they need the newest rows. The owner decided this on 2026-11-17 (#111). |
+| HOM-NFR-04 | The KPI row and the journeys table must read their ranges, which all start within 90 days, from `user_campaign_state_transitions` in Postgres only, seconds fresh, with no lakehouse query ([LKH-FR-22](../architecture/components/lakehouse.md#functional-requirements)). They may leave out late transitions, which are rare because an entry lives at most 90 days from its start. The owner decided this on 2026-11-18, in the review of PR #173. The health strip's engine lag and newest step read the hot table only, because they need the newest rows. The owner decided this on 2026-11-17 (#111). |
 
 ## Interfaces
 
@@ -208,7 +208,7 @@ Worked example. Transitions with event times on 2026-11-09 local: 3 setup rows, 
 - Given cutover has happened, then no link on the page opens `/campaign`, `/segments`, `/admin`, or `/platform`. (HOM-FR-11)
 - Given a viewer who uses every control on the page, then no row of any table changes. (HOM-NFR-02)
 - Given 20 viewers who load `/v2` within 15 seconds, then studio reads the dead-letter topic's offsets once. (HOM-NFR-03)
-- Given 4 entries in hot partitions and 1 entry in a partition that moved to `transition_history`, all with their setup transition in the range, then Entries is 5. Given a move of a partition while the page loads, then no entry counts twice or not at all. (HOM-NFR-04)
+- Given Last 30 days, then the KPI and journeys queries read only Postgres, and no Athena query runs. Given a move of a partition while the page loads, then no entry in the range counts twice or not at all. (HOM-NFR-04)
 - Given a campaign `sim_purchase_60s` with 10 entries in the range and a campaign `welcome` with 3, then Entries is 3, and the journeys table does not list `sim_purchase_60s`. (HOM-FR-12)
 - Given a deployed database with 30 days of transitions, when Last 30 days loads, then each region answers within 2 seconds at the 95th percentile, or the result of decision 0035's check is recorded. (HOM-NFR-01)
 

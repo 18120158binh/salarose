@@ -105,7 +105,7 @@ The job keeps its state in RocksDB and sets that itself.
 | `STATE_MACHINE_SOURCE_IDLE_TIMEOUT_MS` | `60000` | Idle source timeout. A trigger partition with no trigger for this long stops holding back the watermark. When every partition is idle, the watermark holds. |
 | `STATE_MACHINE_MAX_PENDING_MATCHES_PER_JOURNEY` | `1000` | Buffer limit by count, for each entry. Triggers that name no entry share one more limit. |
 | `STATE_MACHINE_MAX_PENDING_BYTES_PER_JOURNEY` | 4 MiB | Buffer limit by size, counted the same way |
-| `STATE_MACHINE_JOURNEY_STATE_TTL_MS` | 90 days | State TTL, reset on read and write |
+| `STATE_MACHINE_JOURNEY_STATE_TTL_MS` | 90 days | Each entry's lifetime from its start ([JEX-NFR-03](../architecture/components/journey-execution.md#non-functional-requirements)). The code still resets it on read and write ([JEX-KI-39](../known-issues/components/journey-execution.md#jex-ki-39-journey-state-ttl-resets-on-every-read-and-write-not-from-the-entrys-start)) |
 | `STATE_MACHINE_GRAPH_LOAD_ALLOWANCE_MS` | 5 minutes | How long, in event time, a trigger whose node or a node above it is missing keeps waiting for its campaign's rows after the watermark passes it. Then it is dropped as unreachable. After a start, the trigger also waits until the allowance has run in real time since the first record, because a trigger backlog moves the watermark faster than real time while the `campaign_nodes` snapshot loads. A campaign save reaches the engine in seconds, and live triggers already wait the out-of-orderness before the allowance starts, so 5 minutes leaves a wide margin. Raise it if the snapshot takes longer than that. |
 | `CHECKPOINT_MIN_PAUSE` | `10s` | Minimum pause between checkpoints |
 

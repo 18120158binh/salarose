@@ -64,7 +64,7 @@ At 10:00:05 the collector writes a tracker hit to `snowplow-good` partition 2 at
 
 At 10:00:07 the state machine completes `n1_view` for an entry that opened at 09:58. The transition row is in `user_campaign_state_transitions`, in the partition of its entry start, 09:58. Analytics read it from Postgres. 90 days later the partition's whole range is older than the Postgres retention. The move copies the partition, finds the same row count and key set in the lakehouse, and only then removes the partition from Postgres. From then on analytics read the row from `transition_history`.
 
-Five days after the move, the same entry, still live, completes a watch on `timeout`. Its partition left Postgres, so the row is a late transition. The state machine writes it straight to `transition_history`. The outbox and the timer flow never see it.
+An entry lives at most 90 days from its start, so no live entry has a transition after its partition moves. A late transition comes from a replay after a restore, or from an entry's last moments while a move has its partition closed. The state machine writes it straight to `transition_history`. The outbox and the timer flow never see it.
 
 ```mermaid
 flowchart LR
@@ -132,7 +132,9 @@ A move run twice converges. Steps 2 and 4 write nothing new, and step 5 finds th
 
 ### Read across both stores
 
-The owner decided on 2026-11-17 that analytics read recent ranges from Postgres, seconds fresh, and history from the lakehouse through a serverless query engine, Athena, with no engine running between queries (#111). Customer lookup reads a person's transitions the same way (#125). The two paths must agree at the boundary.
+The owner decided on 2026-11-17 that analytics read recent ranges from Postgres, seconds fresh, and history from the lakehouse through a serverless query engine, Athena, with no engine running between queries (#111). [Decision 0058](../decisions/0058-read-recent-analytics-from-postgres-and-history-from-the-lakehouse.md) records it. Customer lookup reads a person's transitions the same way (#125). The two paths must agree at the boundary.
+
+A recent range, one that starts no more than 90 days ago, reads Postgres only and never the lakehouse. It may leave out a late transition, which is rare because an entry lives at most 90 days from its start. The owner decided this on 2026-11-18, in the review of PR #173 (LKH-FR-22). A range that starts earlier, such as All time, and a person's whole history read both stores:
 
 1. Read the hot rows from `user_campaign_state_transitions`, and the move boundary from the hot partitions, in one Postgres snapshot.
 2. Read from `transition_history` the rows whose entry start is below that boundary, and the rows of the partitions that step 1 saw closed.
@@ -147,7 +149,7 @@ A move between steps 1 and 2 changes nothing. The moved rows are at or above the
 | LKH-FR-01 | The sink must write every record of every ingestion topic to `raw_events`, with its topic, partition, offset, key, value, and topic timestamp, unchanged. |
 | LKH-FR-02 | `raw_events` must hold at most one row per (`topic`, `partition`, `offset`). A replay after a restart must write no second row. The sink must not generate ids. |
 | LKH-FR-03 | A commit to a lakehouse table must make a whole set of rows visible at once. A reader must never see part of a commit. |
-| LKH-FR-04 | Every row written to `user_campaign_state_transitions` must reach `transition_history`, with every column the transitions table holds. A row reaches it by the move, so the history holds a partition's rows once the partition moves. |
+| LKH-FR-04 | Every row written to `user_campaign_state_transitions` must reach `transition_history`, with every column the transitions table holds. A row reaches it only by the move, so the history lags the hot table by up to 90 days. The owner confirmed this on 2026-11-18, in the review of PR #173. |
 | LKH-FR-05 | `transition_history` must hold at most one row per transition key: (`canon_id`, `campaign_id`, `entry_id`, `node_id`, `branch`). A replay or a second move must write no second row. |
 | LKH-FR-06 | A hot partition must leave Postgres only after `transition_history` holds every row of it, checked by row count and key set. A partition that fails the check must stay in Postgres. |
 | LKH-FR-07 | A partition must leave Postgres as one unit. Removing it must not delete rows one by one, so that it writes no per-row WAL and publishes no row change on any CDC publication. |
@@ -157,7 +159,7 @@ A move between steps 1 and 2 changes nothing. The moved rows are at or above the
 | LKH-FR-11 | The sink must create each partition of `user_campaign_state_transitions` before any transition can fall in it, and must be the only component that creates or removes one. At every moment, partitions must exist for every entry start up to 2 months after the current time. The owner decided the 2 months on 2026-11-17 (#128). |
 | LKH-FR-12 | A transition whose entry start falls below the move boundary, or in a closed partition, must be written straight to `transition_history`, once per transition key, and never to Postgres. The owner decided this on 2026-11-17 (#128). |
 | LKH-FR-13 | The sink must write every record of every internal topic to `internal_events`, with the same columns and key as `raw_events`, unchanged and at most once per (`topic`, `partition`, `offset`). The owner decided this on 2026-11-17 (#119). |
-| LKH-FR-14 | The sink must write every change to `campaign_nodes`, `user_metric_definitions`, `segments`, `user_events`, and `user_event_fields` to `change_history`, through CDC, at most once per (`table_name`, `row_key`, `change_lsn`), so that a rebuild can read each table as it was at any commit time. The owner decided this on 2026-11-17 (#118). |
+| LKH-FR-14 | The sink must write every change to `campaign_nodes`, `user_metric_definitions`, `segments`, `user_events`, and `user_event_fields` to `change_history`, through CDC, at most once per (`table_name`, `row_key`, `change_lsn`), so that a rebuild can read each table as it was at any commit time. The owner decided this on 2026-11-17 (#118), and confirmed the event catalog tables on 2026-11-18. |
 | LKH-FR-15 | The sink must write every change to `customer_attributes` and `customer_profiles` to `change_history` by the same rules as LKH-FR-14. The owner decided this on 2026-11-17 (#119). |
 | LKH-FR-16 | A person's deletion must not reach `raw_events`, `internal_events`, or `change_history`. They are kept as received, so that a rebuild stays exact. The owner decided this for `raw_events` on 2026-11-17 (#127), and for the other two the same day, during the review of PR #173. |
 | LKH-FR-17 | Every reader that combines the hot table and `transition_history` must split them at the move boundary and the closed partitions read in the same Postgres snapshot as its hot rows, by [Read across both stores](#read-across-both-stores), so that it reads each transition once. The owner decided on 2026-11-17 that the two read paths must agree (#111). |
@@ -165,6 +167,7 @@ A move between steps 1 and 2 changes nothing. The moved rows are at or above the
 | LKH-FR-19 | Every lakehouse table must be partitioned by day of its main time column: `raw_events` and `internal_events` by `topic_timestamp`, `change_history` by `committed_at`, `transition_history` by `entry_started_at`, and the import tables as the [import applier](import-applier.md#interfaces) names. The owner decided this on 2026-11-17, during the review of PR #173 (#115). |
 | LKH-FR-20 | A write that spans several lakehouse tables must commit them one table at a time, and write its completion marker last, to a marker table. A reader must trust only rows that a committed marker covers, and must skip the rest. The owner decided this on 2026-11-17, during the review of PR #173 (#115). |
 | LKH-FR-21 | A move must close its partition to inserts before its final check (step 3 of [Move a hot partition](#move-a-hot-partition)), so that no transition lands in the partition between the check and its removal. |
+| LKH-FR-22 | A range that starts no more than 90 days ago must read Postgres only, with no lakehouse query. It may leave out late transitions. A range that starts earlier must read both stores by LKH-FR-17. The owner decided this on 2026-11-18, in the review of PR #173. |
 
 ## Non-functional requirements
 
@@ -221,6 +224,7 @@ The table names are the target names. Their namespace is chosen with the deploym
 - Given a transition row written to `user_campaign_state_transitions`, then `transition_history` holds a row with the same key and the same column values. (LKH-FR-04)
 - Given a move run twice for the same partition, then `transition_history` holds each row once. (LKH-FR-05)
 - Given a move that has closed its partition, when a transition for that partition's range arrives before the removal, then `transition_history` holds it, the partition does not, and a reader during the move counts it once. (LKH-FR-21, LKH-FR-12, LKH-FR-17)
+- Given analytics for Last 30 days, then no Athena query runs, and a late transition in the range is not counted. Given All time, then both stores are read. (LKH-FR-22)
 - Given a hot partition of 10,000 rows and a history range of 9,999, when the move runs, then the partition stays in Postgres and the mismatch is counted. (LKH-FR-06)
 - Given a partition that left Postgres, then no row change for it appeared on `outbox_transitions_pub`, and the WAL written by the removal is not proportional to its rows. (LKH-FR-07, LKH-NFR-05)
 - Given a row deleted from `transition_history`, when the deletion completes, then no kept snapshot references a file that holds it. (LKH-FR-08)

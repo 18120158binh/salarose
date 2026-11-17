@@ -21,7 +21,7 @@ The [data ingestion API](../../features/data-ingestion-api.md) accepts a custome
 The data ingestion API runs as its own service, deployed and scaled apart from `studio`. The owner decided this on 2026-11-17 (#12).
 
 - The service serves every `/v1` route: `POST /v1/events`, `POST /v1/business-events`, and the data import's batch API. The routes, the request and response bodies, the topics, the drop zone, and the key and scope rules of the contracts do not change.
-- Source keys stay managed in `studio` ([decision 0049](0049-the-ingestion-api-writes-plain-json-to-its-own-topic-and-leaves-history-to-import.md)). An admin creates and revokes them at `/data/sources`. The service reads `ingestion_source_keys` to check a key and writes no key.
+- Source keys stay managed in `studio` ([decision 0049](0049-the-ingestion-api-writes-plain-json-to-its-own-topic-and-leaves-history-to-import.md)). An admin creates and revokes them at `/data/sources`. The service reads `ingestion_source_keys` to check a key and writes no key. The owner confirmed this on 2026-11-18.
 - The rate limit stays per replica ([decision 0048](0048-ingestion-keeps-tracker-parity-a-per-replica-limit-and-two-keys-for-rotation.md)). It now counts the service's replicas, not `studio`'s.
 - Once the service serves the routes, `studio` stops serving them. One deployment owns each route. `studio` keeps only the UI: the source keys page, the import screens, and the rest of the admin app.
 

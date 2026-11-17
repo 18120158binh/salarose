@@ -314,7 +314,7 @@ When a file is gone at save time, studio creates no `rederive` run, and the new 
 | Write | Lakehouse `import_identifiers` | `record_type_id`, `customer_key`, `type` (`email` or `phone`), `value`, normalized, `writer`, `run_id` |
 | Write | Lakehouse `import_run_commits` | `run_id`, `record_type_id`, `counts`, `committed_at`. Logical key `run_id`. |
 
-Partitioning follows [LKH-FR-19](lakehouse.md#functional-requirements), by day of each table's main time column: `import_records` by `event_time`, and `import_run_commits` by `committed_at`. `import_profiles` and `import_identifiers` hold one current row per customer key and have no time column, so they have no day partition.
+Partitioning follows [LKH-FR-19](lakehouse.md#functional-requirements), by day of each table's main time column: `import_records` by `event_time`, and `import_run_commits` by `committed_at`. `import_profiles` and `import_identifiers` hold one current row per customer key and have no time column, so they stay unpartitioned. The owner confirmed this on 2026-11-18.
 
 `sha256` is the file as delivered. `stored_sha256` is the file in the drop zone now, which differs after a deletion rewrites it. `source` is `drop` for a file through `POST /v1/imports`, `api` for a batch through `POST /v1/records/{record_type}`, `studio` for an upload, and `rederive` for a re-derive. The [data model](../data-model.md) lists the columns.
 
