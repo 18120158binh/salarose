@@ -233,7 +233,7 @@ The design estimated $15 to $30. Either way it is far below the six-node cluster
 - [ ] For one month, the EC2 instance hours in the Cost and Usage Report match the hours between the node's start and stop events in CloudTrail, and the other line items are only those DEV-NFR-06 names (DEV-NFR-06).
 - [ ] With the idle stop killed after a start, the node still stops by 12 hours 15 minutes after the start (DEV-FR-14).
 - [ ] On the node, `df` and the mount table show the Kafka, Postgres, and k3s data directories on the persistent volume, and a node replaced from the launch template comes up with the same topics and rows (DEV-FR-05).
-- [ ] For each signal of DEV-FR-09 alone (a studio request, a Grafana request, an Argo CD request, a Flink UI request, a collector event, a Session Manager session, a Kubernetes API connection), the node is still running 35 minutes after the last other use (DEV-FR-09).
+- [ ] For each signal of DEV-FR-09 alone (a studio request, a Grafana request, an Argo CD request, a Flink UI request, a collector event, a Session Manager session, a Kubernetes API connection), the node is still running 45 minutes after the last other use, and no stop savepoint was taken (DEV-FR-09).
 - [ ] A search of the repo, the launch template's user data, the resource tags, and the images finds no secret value (DEV-FR-20).
 - [ ] A push to the deploy branch that changes only `studio/` moves only the studio tag in the overlay, and CI holds no AWS access key (DEV-FR-21).
 - [ ] Pods pull from ECR with no image pull secret (DEV-FR-22).
