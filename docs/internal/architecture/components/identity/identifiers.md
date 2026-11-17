@@ -2,13 +2,13 @@
 title: Identifiers
 slug: identifiers
 purpose: Define the ids that point at a person, the form each is compared in, and which ones may link two identity sets.
-status: draft
+status: accepted
 implementation: planned
 area: event-processor
 tags: [identity, identifiers, normalization]
 created: 2026-10-21
-updated: 2026-11-14
-version: 0.3
+updated: 2026-11-17
+version: 1.0
 known_issues: ../../../known-issues/components/identity/identifiers.md
 ---
 
@@ -98,7 +98,11 @@ flowchart LR
     K -- "no, phone" --> PH["canon-phone:+84912345678"]
 ```
 
-The `user_id` form is the one used before types were part of an identifier, so every `user_id` keeps its `canon_id`. The platform has never run in production, so no stored `canon_id` of a `domain_userid` had to be kept.
+The `user_id` form is the one used before types were part of an identifier, so every `user_id` keeps its `canon_id`. No stored `canon_id` is rewritten when typed identifiers are built (IDN-FR-12). The platform has never run in production, and a new account starts empty, so no stored `canon_id` of a `domain_userid` has to be kept. The owner confirmed this on 2026-11-17 (#4).
+
+### Stored form
+
+The identity graph stores email addresses and phone numbers in clear text, in their normalized form, as the import keeps contact details ([decision 0042](../../decisions/0042-keep-imported-contact-details-plain-behind-masking-and-tombstones.md)). The outbox can then address a message to them. The owner decided this on 2026-11-17 (#4).
 
 ## Functional requirements
 
@@ -114,6 +118,8 @@ The `user_id` form is the one used before types were part of an identifier, so e
 | IDN-FR-08 | A link through `email` or `phone` must never join two identity sets that each hold a `user_id`. Identity resolution must refuse it, keep both sets, and count the conflict by type. |
 | IDN-FR-09 | A phone number without a country must be read in the deployment's default phone country. With none set, it does not fit its type. |
 | IDN-FR-10 | Identity resolution must accept only the types in the [type table](#identifier-types). |
+| IDN-FR-11 | The identity graph must store `email` and `phone` identifiers in clear text, in their normalized form, not as hashes. The owner decided this on 2026-11-17 (#4). |
+| IDN-FR-12 | Building typed identifiers must not rewrite any stored `canon_id`. The owner decided this on 2026-11-17 (#4). |
 
 ## Non-functional requirements
 
@@ -157,13 +163,12 @@ The `user_id` form is the one used before types were part of an identifier, so e
 - Given the default phone country `VN`, then `0912345678` normalizes to `+84912345678`. (IDN-FR-09)
 - Given no default phone country, then `0912345678` is absent and the phone drop count rises by 1. (IDN-FR-09)
 - Given an event with an identifier of type `cardcode`, then identity resolution ignores it. (IDN-FR-10)
+- Given the email `Ann@Example.com` linked to a person, then the identity graph holds `ann@example.com`, not a hash of it. (IDN-FR-11)
+- Given a `user_id` `abc` stored with `canon_id` `canon:abc` before typed identifiers, when typed identifiers ship, then its `canon_id` is still `canon:abc`. (IDN-FR-12)
 
 ## Open questions
 
-[Decision 0047](../../decisions/0047-email-and-phone-are-guarded-match-keys-from-import-and-the-api.md) answered the sources of email and phone, email and phone as match keys, the default country, and customer-defined types on 2026-11-14. Two questions are the owner's:
-
-- **Hashing.** Should the graph store email addresses and phone numbers in clear text, or as hashes? Clear text puts personal data in one more table. The outbox cannot send a message to a hash. [Decision 0042](../../decisions/0042-keep-imported-contact-details-plain-behind-masking-and-tombstones.md) keeps imported contact details plain. Until the owner answers, the graph keeps them plain too.
-- **Existing `canon_id` values.** [Derived roots](#derived-roots) keeps every `user_id` root as it is, so no stored `canon_id` is rewritten. The contract records that the platform has never run in production. Does the owner confirm that no existing `canon_id` is rewritten, or should a rewrite be planned?
+None. [Decision 0047](../../decisions/0047-email-and-phone-are-guarded-match-keys-from-import-and-the-api.md) answered the sources of email and phone, email and phone as match keys, the default country, and customer-defined types on 2026-11-14. The owner answered hashing and existing `canon_id` values on 2026-11-17 (#4).
 
 ## Related
 

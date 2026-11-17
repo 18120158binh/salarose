@@ -24,7 +24,7 @@ A component is a part of the pipeline that no person uses directly: a Flink job 
 | Component | Area | Contract | Implementation | Known issues |
 |---|---|---|---|---|
 | [Event ingestion](architecture/components/event-ingestion.md) | `event-processor` | Accepted | Shipped | [List](known-issues/components/event-ingestion.md) |
-| [Identifiers](architecture/components/identity/identifiers.md) | `event-processor` | Draft | Planned | [List](known-issues/components/identity/identifiers.md) |
+| [Identifiers](architecture/components/identity/identifiers.md) | `event-processor` | Accepted | Planned | [List](known-issues/components/identity/identifiers.md) |
 | [Identity stitching](architecture/components/identity/identity-stitching.md) | `event-processor` | Accepted | Partial | [List](known-issues/components/identity/identity-stitching.md) |
 | [Identity graph](architecture/components/identity/identity-graph.md) | `event-processor` | Draft | Planned | [List](known-issues/components/identity/identity-graph.md) |
 | [Identity merges](architecture/components/identity/identity-merges.md) | `event-processor` | Draft | Planned | [List](known-issues/components/identity/identity-merges.md) |

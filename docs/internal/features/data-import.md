@@ -8,7 +8,7 @@ area: studio
 tags: [data-import, api, studio, privacy, metrics]
 created: 2026-11-08
 updated: 2026-11-17
-version: 1.2
+version: 1.3
 known_issues: ../known-issues/features/data-import.md
 ---
 
@@ -226,6 +226,7 @@ Emails and phones are stored in plain form, so a sender can use them later. [Dec
 Every row also holds `id`, `staff_id`, `at`, and `route`. There is no unmasked export in this version.
 
 - **Delete a person.** An admin enters a customer key at `/data/privacy` and confirms. Studio stores the key's tombstone in `person_tombstones` at state `requested`, and writes a `deletion_request` row. Neither row holds the key. The [applier](../architecture/components/import-applier.md#7-delete-a-person) deletes the person's imported rows, rewrites the drop-zone files that hold them, and replaces the key with its tombstone in every earlier `reveal` row. The next nightly pass removes their `customer_attributes` rows, and skips the tombstone from then on. The page shows the request's state. Deletion covers imported data only.
+- **Raw events outlive a deletion.** A deletion does not reach the lakehouse's `raw_events`, which keeps every tracked and API event as received for 13 months, so that a rebuild of Flink state stays exact. Personal data in raw events, such as a `user_id`, an email or phone sent to the data ingestion API, or an attribute, outlives a deletion request for up to 13 months, and then expires by age ([LKH-NFR-09](../architecture/components/lakehouse.md#non-functional-requirements), DIM-NFR-10). The owner decided this on 2026-11-17 (#126, #127).
 - **Backups.** No backup or point-in-time recovery runs for the main Postgres or the import store's cluster today. If one is added for the main Postgres, it keeps at most 30 days. The import store moves to the lakehouse ([decision 0053](../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)), where a deletion also expires every snapshot that holds the person ([IAP-FR-27](../architecture/components/import-applier.md#functional-requirements)). A restore re-applies every tombstone and records each drop-zone file's checksum again, because a file rewritten after the backup no longer matches the restored `stored_sha256`. Both happen before the applier takes a run or the pass starts. The applier also writes each tombstone to the drop zone, so a restore of the main Postgres from before a deletion gets the tombstone back.
 
 ### Identity
@@ -309,6 +310,7 @@ Customer lookup shows imported attributes by source, masked, with **Reveal** for
 | DIM-NFR-07 | The import applier and the import metric pass must not run against a production main Postgres until #320 part 1 is merged and live (CDC window shortened, cap 8 GB). Until then their production schedules stay suspended, and they run only against a staging copy. |
 | DIM-NFR-08 | The disk under each Postgres cluster that holds imported data must be encrypted at rest. The drop zone's bucket must encrypt every object on the server, and must keep no noncurrent object version under `imports/`. The lakehouse's bucket must encrypt every object on the server with a customer-managed KMS key (SSE-KMS), the owner's decision of 2026-11-17. The import must accept no production delivery until this holds. (The Postgres and drop-zone parts are the lead's default.) |
 | DIM-NFR-09 | A backup or point-in-time recovery of the main Postgres, if one is added, must keep at most 30 days. Before [decision 0053](../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) this covered the import store's Postgres cluster as well. The import store in the lakehouse keeps no snapshot that holds a deleted person's rows ([IAP-FR-27](../architecture/components/import-applier.md#functional-requirements)). A restore must re-apply every tombstone, and record each drop-zone file's SHA-256 again in its run's `stored_sha256`, before the applier takes a run or the metric pass starts. (the lead's default) |
+| DIM-NFR-10 | A deletion request must not reach the lakehouse's `raw_events`. Personal data there outlives the request for up to 13 months ([LKH-NFR-09](../architecture/components/lakehouse.md#non-functional-requirements)). The owner decided this on 2026-11-17 (#126, #127). |
 
 ## Interfaces
 
@@ -390,6 +392,7 @@ Customer lookup shows imported attributes by source, masked, with **Reveal** for
 - Given the main Postgres with `max_slot_wal_keep_size` 3 GB and the CDC commit delay at 120 checkpoints, then the production schedules of the applier and the metric pass are suspended. (DIM-NFR-07)
 - Given the production deployment, then each node volume that holds a Postgres volume reports encryption on, the lakehouse's bucket reports SSE-KMS with a customer-managed key, the bucket reports default server-side encryption, and no noncurrent version of an `imports/` object exists one day after a rewrite. (DIM-NFR-08)
 - Given a backup policy added for the main Postgres, then it keeps at most 30 days. Given a restore of the main Postgres from before a deletion, or a rollback of the import store to an earlier snapshot, when the applier next starts, then every tombstone is applied again before any run is taken. (DIM-NFR-09)
+- Given a deletion `done` for a person with raw events 2 months old, then those records are still in `raw_events`, and they are gone 13 months after their topic timestamp. (DIM-NFR-10)
 
 ## Open questions
 
@@ -397,7 +400,7 @@ Each has a default this contract follows. The owner can change it later without 
 
 - Retire the agreed profile feed into `customer_profiles`? Default: keep it, offer the import to new shops, and decide once one shop runs on the import.
 - Full deletion before launch? Default: import-only deletion. Tracked behavior, journeys, and identity rows wait for the consent and deletion contract.
-- History depth. Default: 3 years, and 5 million records on a Free Plan-sized store.
+- History depth. Default: 3 years. The record cap is 100 million records per file, the owner's decision of 2026-11-17 (#131, [IAP-NFR-03](../architecture/components/import-applier.md#non-functional-requirements)).
 - Raw file retention. Default: 30 days, so re-derives and replays work.
 - Email and phone as match keys, and per-type limits, stay open in #228 and #229. Only phase 3 needs their answers.
 

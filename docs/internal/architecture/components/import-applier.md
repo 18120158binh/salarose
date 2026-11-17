@@ -8,7 +8,7 @@ area: event-processor
 tags: [data-import, batch, validation, idempotency, privacy]
 created: 2026-11-08
 updated: 2026-11-17
-version: 2.0
+version: 2.1
 known_issues: ../../known-issues/components/import-applier.md
 ---
 
@@ -174,7 +174,7 @@ A run at `approved` skips this step. Otherwise the applier quarantines the run, 
 
 1. **Reject threshold.** More than 5% of the file's rows are rejected.
 2. **Snapshot shrink guard.** The dataset is a snapshot, the run's writer is a source key, and the file holds fewer valid rows than 80% of the valid rows of the type's last applied snapshot from any source key. A type with no applied snapshot from a source key has no guard. A change of source key keeps the guard, so a new key's first truncated file is still caught.
-3. **Record cap.** `import_records` would hold more than the record cap after the run's new records, 5 million by default.
+3. **Record cap.** The run's file holds more records than the record cap, 100 million by default. The owner raised the cap and made it per file on 2026-11-17 (#131).
 
 The run report names each condition that held. A [re-derive](#8-re-derive) skips the threshold and the shrink guard, and keeps the cap.
 
@@ -237,9 +237,9 @@ A new version that changes a role mapping, the delivery mode, or the time zone t
 1. Check each applied run's file against its `stored_sha256` before reading it.
 2. In one commit to the import store, delete every row of the type, then apply each applied run of the type again, in its original `confirmed_at` order, with the new version and each run's own writer. Tombstoned keys are rejected. Write one commit marker, for the `rederive` run.
 3. Count rejected rows. They do not quarantine the run. The threshold and the shrink guard do not apply, because each run passed them once.
-4. Apply the record cap to the result.
+4. Check each run's file against the record cap again.
 
-When a file fails at file level under the new version, nothing commits. An example is `role_missing:<role>`, when an old file lacks a newly mapped header. A result that breaks the cap commits nothing either. The stored rows stay as the old version derived them, and the `rederive` run is quarantined with the failing run and its reason. Studio offers only **Discard**. After a discard, the new version applies to new deliveries only, and the dataset's page says that stored rows predate it.
+When a file fails at file level under the new version, nothing commits. An example is `role_missing:<role>`, when an old file lacks a newly mapped header. A file over the cap commits nothing either. The stored rows stay as the old version derived them, and the `rederive` run is quarantined with the failing run and its reason. Studio offers only **Discard**. After a discard, the new version applies to new deliveries only, and the dataset's page says that stored rows predate it.
 
 When a file is gone at save time, studio creates no `rederive` run, and the new version applies only to new deliveries. Studio says which before the admin saves the version ([data import](../../features/data-import.md#versions)). A file gone when the run starts is a file-level failure, handled as above.
 
@@ -290,7 +290,7 @@ When a file is gone at save time, studio creates no `rederive` run, and the new 
 |---|---|
 | IAP-NFR-01 | A file of up to 512 MiB, compressed or not, must apply with 1 vCPU and 2 GiB of memory. The applier must stream the file and must not hold it whole in memory. |
 | IAP-NFR-02 | A queued run must start within 10 minutes when no earlier run of its type holds the queue. The interval is configurable, default 10 minutes. |
-| IAP-NFR-03 | The reject threshold, the shrink guard ratio, the record cap, the history limit, and the future limit must be configurable. Defaults: 5%, 80%, 5,000,000 records, 3 years, and 1 day. |
+| IAP-NFR-03 | The reject threshold, the shrink guard ratio, the record cap, the history limit, and the future limit must be configurable. Defaults: 5%, 80%, 100,000,000 records per file, 3 years, and 1 day. The owner set the record cap on 2026-11-17 (#131), on the condition that the [import metric pass](import-metric-pass.md#non-functional-requirements) still meets its time bound (IMP-NFR-01). |
 | IAP-NFR-04 | The applier's logs must carry run ids, counts, and reasons, and must never carry a row value or a customer key. |
 | IAP-NFR-05 | A tombstone must reach `done` within 24 hours of its request. |
 | IAP-NFR-06 | The import store must write no WAL to any Postgres cluster. Before decision 0053 this read: the import store must hold no replication slot. |
@@ -382,8 +382,7 @@ When a file is gone at save time, studio creates no `rederive` run, and the new 
 
 ## Open questions
 
-- **One commit across tables.** IAP-FR-15 needs the records and the commit marker, and for a profile run the profiles and the identifiers, to become visible together. Whether the catalog commits several tables atomically decides the layout: tables committed together, or the marker and the identifiers carried inside one table. The catalog is open in the [lakehouse sink](lakehouse.md#open-questions). Tracked in #115.
-- **The record cap.** IAP-NFR-03's 5 million records was sized for the import store's 10 GiB volume ([decision 0040](../decisions/0040-import-through-a-batch-path-and-a-separate-store.md#why)). The lakehouse has no such volume. Whether the cap stays, and at what number, is undecided. Tracked in #131.
+- **One commit across tables.** IAP-FR-15 needs the records and the commit marker, and for a profile run the profiles and the identifiers, to become visible together. Whether the catalog commits several tables atomically decides the layout: tables committed together, or the marker and the identifiers carried inside one table. The owner chose S3 Tables as the catalog on 2026-11-17 (#115, [LKH-NFR-08](lakehouse.md#non-functional-requirements)). Whether S3 Tables commits several tables in one atomic commit is not checked yet, so the layout is still open.
 
 ## Related
 

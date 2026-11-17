@@ -1,19 +1,20 @@
 ---
 title: Data ingestion API known issues
 contract: ../../features/data-ingestion-api.md
-updated: 2026-11-14
+updated: 2026-11-17
 verified_at: 6c15fc1d
 ---
 
 # Data ingestion API known issues
 
-`POST /v1/events`, `POST /v1/business-events`, and source keys are built in `studio`. Paths are relative to `studio/` unless they start with `shared/` or `infra/`.
+`POST /v1/events`, `POST /v1/business-events`, and source keys are built in `studio`. The two routes move to a service of their own ([decision 0057](../../architecture/decisions/0057-run-the-data-ingestion-api-as-its-own-service.md)). Paths are relative to `studio/` unless they start with `shared/` or `infra/`.
 
 | Id | Severity | Issue | Breaks |
 |---|---|---|---|
 | DIA-KI-02 | Risk | The app does not refuse plain HTTP | DIA-NFR-06 |
 | DIA-KI-04 | Risk | Event writes queue behind one Kafka transaction per process | DIA-NFR-02 |
 | DIA-KI-05 | Risk | An app id can hold only one key | DIA-FR-18 |
+| DIA-KI-06 | Risk | The API runs inside studio | DIA-FR-41 |
 | [CAT-KI-04](event-catalog.md#cat-ki-04-catalog-rows-and-senders-use-bare-event-names-with-no-vendor-prefix) | Blocking | Senders and catalog rows use bare event names. Tracked in the event catalog's page. | DIA-FR-10 |
 
 ## DIA-KI-02. The app does not refuse plain HTTP
@@ -33,3 +34,10 @@ verified_at: 6c15fc1d
 - **Symptom.** Creating a second key for an app id fails while the first is not revoked, so rotating a key leaves the sender with `401` until it has the new key.
 - **Cause.** The partial unique index `ingestion_source_keys_active_app_id_key` on `ingestion_source_keys (app_id) WHERE revoked_at IS NULL` in `infra/db/schema.sql` allows one key that is not revoked. The create in `shared/lib/db.ts` turns the index's unique violation into a refusal. [Decision 0048](../../architecture/decisions/0048-ingestion-keeps-tracker-parity-a-per-replica-limit-and-two-keys-for-rotation.md) allows two.
 - **Evidence.** Read from the schema and the code. The fix drops the index in a migration, and the create action counts the app id's keys that are not revoked and inserts in one transaction that holds `pg_advisory_xact_lock` on the app id. The lock serializes concurrent creates for one app id, so two of them cannot both see one key and leave three.
+
+## DIA-KI-06. The API runs inside studio
+
+- **Symptom.** A `studio` deploy, restart, or outage refuses or delays events on `POST /v1/events` and `POST /v1/business-events`. The API scales with `studio`'s replicas.
+- **Cause.** The routes are Next route handlers in `app/v1/events/route.ts` and `app/v1/business-events/route.ts`, built into the `studio` image.
+- **Evidence.** Read from the code at `fe53fe6`.
+- **Fix direction.** Build the service of [decision 0057](../../architecture/decisions/0057-run-the-data-ingestion-api-as-its-own-service.md) with the same routes and checks, give it read access to `ingestion_source_keys` and write access to the two topics, then remove the two route handlers from `studio`. DIA-KI-02 and DIA-KI-04 move with the code.

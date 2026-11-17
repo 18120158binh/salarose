@@ -1,7 +1,7 @@
 ---
 title: Customer lookup known issues
 contract: ../../features/customer-lookup.md
-updated: 2026-11-14
+updated: 2026-11-17
 verified_at: 8de15919
 ---
 
@@ -20,6 +20,7 @@ Studio paths are relative to `studio/`.
 | CUS-KI-07 | Missing | The title shows no name | CUS-FR-04 |
 | CUS-KI-08 | Missing | The profile shows no identifiers by type and no merge history | CUS-FR-42 |
 | CUS-KI-10 | Missing | The profile shows no imported attributes, and an imported-only customer has no profile | CUS-FR-40, CUS-FR-41 |
+| CUS-KI-11 | Risk | Messages received and Journeys read only the hot transitions table | CUS-FR-43 |
 
 ## CUS-KI-01. No command palette entry starts a search
 
@@ -83,3 +84,10 @@ Studio paths are relative to `studio/`.
 - **Cause.** The identity graph is not built. Typed identifiers and merge records do not exist, and `identity_graph` holds one row per `domain_userid`. The contract added the view on 2026-11-14 ([decision 0050](../../architecture/decisions/0050-one-account-per-person-no-unmerge-and-a-5-second-merge-bound.md)).
 - **Evidence.** Read from the contract of the [identity graph](../../architecture/components/identity/identity-graph.md) and its known issues.
 - **Fix direction.** Build the view when the identity graph stores typed identifiers and merge records.
+
+## CUS-KI-11. Messages received and Journeys read only the hot transitions table
+
+- **Symptom.** None yet, because no partition has moved. Once partitions move, a person's older messages and entries drop off the profile.
+- **Cause.** `src/features/customer-lookup/model/queries.ts` and `messages.ts` read `user_campaign_state_transitions` only. No lakehouse exists to read.
+- **Evidence.** Read from the code at `fe53fe6`.
+- **Fix direction.** Once the lakehouse sink lands, read the person's rows in `transition_history` below the move boundary through Athena, and combine them with the hot read, by [Read across both stores](../../architecture/components/lakehouse.md#read-across-both-stores).

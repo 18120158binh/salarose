@@ -7,8 +7,8 @@ implementation: shipped
 area: event-processor
 tags: [ingestion, api, onboarding, identity]
 created: 2026-10-18
-updated: 2026-11-14
-version: 1.5
+updated: 2026-11-17
+version: 1.6
 known_issues: ../known-issues/features/data-ingestion-api.md
 ---
 
@@ -37,6 +37,8 @@ Out of scope:
 - More than one customer on a deployment. A deployment serves one tenant, so a source key names a source, not a customer. See [decision 0027](../architecture/decisions/0027-multi-tenancy.md).
 
 The owner decided on 2026-11-05 that the API writes to topics of its own, whose format carries no Snowplow fields, that the body is plain JSON only, that backfill is out of scope, that a deployment has one tenant, and that an admin creates and revokes source keys in `studio`. [Decision 0049](../architecture/decisions/0049-the-ingestion-api-writes-plain-json-to-its-own-topic-and-leaves-history-to-import.md) records these choices and their reasons. History arrives through the [data import](data-import.md) instead.
+
+The API runs as its own service, deployed and scaled apart from `studio`, so that a `studio` deploy or outage does not stop ingestion. Source keys stay managed in `studio`. The owner decided this on 2026-11-17 (#12), and [decision 0057](../architecture/decisions/0057-run-the-data-ingestion-api-as-its-own-service.md) records it.
 
 ## Terms
 
@@ -195,13 +197,14 @@ A key can also be granted record types for [data import](data-import.md#writers-
 | DIA-FR-18 | An app id must hold at most two keys that are not revoked. Creating a third must fail and write nothing. |
 | DIA-FR-19 | Both routes must accept an event whatever its catalog entry's status. Status hides an event from the journey builder only. |
 | DIA-FR-40 | A source key must import only into the record types `import_source_scopes` grants it, and a revoked key must import nothing, by the rules of [data import](data-import.md#writers-and-scopes). |
+| DIA-FR-41 | `POST /v1/events` and `POST /v1/business-events` must be served by a service of their own, not by `studio`. A `studio` deploy, restart, or outage must not refuse or delay an event. The service must read source keys from `ingestion_source_keys` and must not create or revoke one. |
 
 ## Non-functional requirements
 
 | Id | Requirement |
 |---|---|
 | DIA-NFR-01 | A batch holds at most 500 events and 1 MiB. A larger request gets `413` and stores nothing. |
-| DIA-NFR-02 | Each source key has a rate limit, default 100 requests per second and configurable. Each app replica counts it on its own, so a deployment with N replicas accepts up to N times the limit and sets the limit to its intended total divided by N ([decision 0048](../architecture/decisions/0048-ingestion-keeps-tracker-parity-a-per-replica-limit-and-two-keys-for-rotation.md)). Over the limit, the API returns `429` with `Retry-After`. |
+| DIA-NFR-02 | Each source key has a rate limit, default 100 requests per second and configurable. Each replica of the API's service counts it on its own, so a deployment with N replicas accepts up to N times the limit and sets the limit to its intended total divided by N ([decision 0048](../architecture/decisions/0048-ingestion-keeps-tracker-parity-a-per-replica-limit-and-two-keys-for-rotation.md)). Over the limit, the API returns `429` with `Retry-After`. |
 | DIA-NFR-03 | An accepted event reaches `snowplow-parsed` within 5 seconds at the 99th percentile. |
 | DIA-NFR-04 | `200` means every accepted event is durably stored. A client that gets a timeout or a `5xx` may resend the whole batch. DIA-FR-08 makes that safe. |
 | DIA-NFR-05 | Source keys are stored hashed, can be revoked, and never appear in logs. |
@@ -262,14 +265,13 @@ Event fields:
 - Given a key with no import scopes, when it posts `POST /v1/imports` for `orders`, then the response is `403`, and its `POST /v1/events` still works. Given the key revoked, then both return `401`. (DIA-FR-40)
 - Given a key that an admin revoked, when a batch is posted with it, then the response is `401` and nothing reaches `business-events`. (DIA-FR-17)
 - Given a key posting more requests in one second than its rate limit, then the next request gets `429` with `Retry-After`. (DIA-NFR-02)
+- Given `studio` scaled to 0 replicas, when a source posts a valid batch to `POST /v1/events`, then the response is `200` and the events reach `ingestion-api-events`. (DIA-FR-41)
 - Given an app id with one active key, when an admin creates a second, then both keys are accepted until one is revoked. When the admin tries a third, then the create fails and writes nothing. (DIA-FR-18)
 - Given a business event whose catalog entry is `inactive`, when it is posted with a valid item key, then it is accepted and reaches `business-events`. (DIA-FR-19)
 
 ## Open questions
 
-[Decision 0048](../architecture/decisions/0048-ingestion-keeps-tracker-parity-a-per-replica-limit-and-two-keys-for-rotation.md) settled catalog status, the rate limit, and key rotation on 2026-11-14. One question is the owner's:
-
-- **Where the API runs.** The API runs inside `studio`, so ingestion uptime and scaling follow `studio`. Keep it there, or move it to its own service? The answer decides where `POST /v1/events` and the rate limit live, and sets infrastructure cost.
+None. [Decision 0048](../architecture/decisions/0048-ingestion-keeps-tracker-parity-a-per-replica-limit-and-two-keys-for-rotation.md) settled catalog status, the rate limit, and key rotation on 2026-11-14. [Decision 0057](../architecture/decisions/0057-run-the-data-ingestion-api-as-its-own-service.md) settled where the API runs on 2026-11-17 (#12).
 
 ## Related
 
@@ -279,6 +281,7 @@ Event fields:
 - [0032. Fan out business events to interested people](../architecture/decisions/0032-fan-out-business-events-to-interested-people.md)
 - [Event catalog](event-catalog.md)
 - [0049. The ingestion API writes plain JSON to its own topic, and leaves history to the import](../architecture/decisions/0049-the-ingestion-api-writes-plain-json-to-its-own-topic-and-leaves-history-to-import.md)
+- [0057. Run the data ingestion API as its own service, outside studio](../architecture/decisions/0057-run-the-data-ingestion-api-as-its-own-service.md)
 - [Onboard a customer](../operations/onboard-a-customer.md)
 - [Tracking integration guide](../integration/tracking-guide.md)
 - [Data import](data-import.md)

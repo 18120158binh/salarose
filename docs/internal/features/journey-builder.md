@@ -8,7 +8,7 @@ area: studio
 tags: [ui, journeys, canvas, conditions, drafts, templates]
 created: 2026-10-14
 updated: 2026-11-17
-version: 3.2
+version: 3.3
 known_issues: ../known-issues/features/journey-builder.md
 ---
 
@@ -551,7 +551,7 @@ Worked example. A journey has setup `S`, a watch `W` under `S` on `next`, and En
 | JBD-NFR-01 | Only a signed-in user can open the builder. See [admin authentication](admin-authentication.md). |
 | JBD-NFR-02 | A draft lives on the server, in `journey_drafts`, until it is published or deleted. Clearing browser data does not touch it. |
 | JBD-NFR-03 | Journey analytics must load within 2 seconds at the 95th percentile for Last 30 days on the deployed database. [Decision 0035](../architecture/decisions/0035-compute-journey-analytics-from-transitions-on-read.md) says what happens when it does not. |
-| JBD-NFR-04 | Journey analytics must read transitions from the transition history in the lakehouse, not from `user_campaign_state_transitions`, as [decision 0053](../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) says. The [Node analytics](#node-analytics) definitions do not change. How fresh the numbers must be is an [open question](#open-questions). The Journey tab's counts from `campaign_node_stats` (JBD-FR-09) are not covered: how they count over all time is open in [journey execution](../architecture/components/journey-execution.md#open-questions). |
+| JBD-NFR-04 | Journey analytics must read the hot partitions of `user_campaign_state_transitions` from Postgres, seconds fresh, and older transitions from `transition_history` in the lakehouse through Athena, split at the move boundary so that each transition counts once ([LKH-FR-17](../architecture/components/lakehouse.md#functional-requirements)). The [Node analytics](#node-analytics) definitions do not change. The Journey tab's counts from `campaign_node_stats` (JBD-FR-09) count over all time the same way ([JEX-FR-23](../architecture/components/journey-execution.md#functional-requirements)). The owner decided this on 2026-11-17 (#111). |
 
 ## Interfaces
 
@@ -564,8 +564,8 @@ Worked example. A journey has setup `S`, a watch `W` under `S` on `next`, and En
 | UI | `/campaign/[id]` | The classic canvas, until cutover |
 | In | `POST /api/generate-journey` | The describe-it start. [AI journey generation](ai-journey-generation.md#interfaces) defines it. |
 | Read | `journey_drafts` | The viewer's drafts |
-| Read | `user_campaign_state_transitions` | Node analytics: `campaign_id`, `canon_id`, `entry_id`, `node_id`, `branch`, `event_timestamp`. Until JBD-NFR-04 lands. |
-| Read, planned | Lakehouse `transition_history` | Node analytics, the same columns ([lakehouse sink](../architecture/components/lakehouse.md#interfaces)) |
+| Read | `user_campaign_state_transitions` | Node analytics: `campaign_id`, `canon_id`, `entry_id`, `node_id`, `branch`, `event_timestamp`, and the move boundary. The hot window of JBD-NFR-04. |
+| Read, planned | Lakehouse `transition_history`, through Athena | Node analytics, the same columns, below the move boundary ([lakehouse sink](../architecture/components/lakehouse.md#read-across-both-stores)) |
 | Read | `campaign_nodes` | The current nodes, their parents and branches, and their labels |
 | Read | `campaigns` | The tree of a published campaign, for the Journey tab and for duplicates |
 | Read | `campaign_node_stats` | Completed counts on the Journey tab |
@@ -641,7 +641,7 @@ Worked example. A journey has setup `S`, a watch `W` under `S` on `next`, and En
 - Given **Create journey** on `/journeys`, then it opens `/journeys/new`. (JBD-FR-23)
 - Given a viewer who uses every control on the v2 journey pages, then rows change only in `journey_drafts` and in the tables campaign management's actions write. Until cutover, every classic builder test passes unchanged. (JBD-FR-24)
 - Given a deployed database with 30 days of transitions, then journey analytics for Last 30 days load within 2 seconds at the 95th percentile, or the result of decision 0035's check is recorded. (JBD-NFR-03)
-- Given journey analytics for any range, then its queries read no row of `user_campaign_state_transitions`. (JBD-NFR-04)
+- Given a node with 3 completions in hot partitions and 2 in `transition_history` below the move boundary, all in the range, then journey analytics show 5 completions. (JBD-NFR-04)
 - Given a published journey open on its Journey tab, when `campaign_node_stats` changes, then the node counts update within 5 seconds. While the browser tab is hidden, no refresh runs. When a refresh fails, the last counts stay and the page says they could not refresh. (JBD-FR-09)
 - Given a draft with a watch that has no event and a check with an empty group, then the checklist lists both problems in tree order, each with its node and field, and the publish dialog's confirm button is disabled. **Go to** on the watch's problem opens its panel with the event field focused. (JBD-FR-25)
 - Given a draft whose only problem is a condition split's No branch saved by an older build, then the checklist shows a warning and publish is allowed. (JBD-FR-25)
@@ -692,8 +692,6 @@ Worked example. A journey has setup `S`, a watch `W` under `S` on `next`, and En
 - Should an End node have settings, such as a goal? Today its editor has none, and every End saves `goal_default` unless the stored tree names another goal. The alternative is a goal field. Pending owner review.
 - Can a running journey be edited in place? Today the marketer duplicates it, publishes the copy, and pauses the original. Editing in place needs a runtime decision about people already waiting in steps that change. The default, which the builder follows, is duplicate to edit with the prompt to pause the original. Pending owner review.
 - May admins open other people's drafts? The default, which the builder follows, is no. A draft is private to its owner, and admins see published journeys only. Pending owner review.
-
-- How fresh must journey analytics be once they read the transition history (JBD-NFR-04)? Seconds for a dashboard, or minutes? The answer also picks the query engine. The same question is open in the [lakehouse sink](../architecture/components/lakehouse.md#open-questions). Tracked in #111.
 
 The question "should drafts be stored on the server" is answered. They are, in `journey_drafts` ([decision 0036](../architecture/decisions/0036-store-journey-drafts-on-the-server-outside-cdc.md)).
 

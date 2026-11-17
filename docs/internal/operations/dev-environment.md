@@ -49,7 +49,7 @@ Out of scope:
 | Stop | The node stops running and stops billing for compute. Whether the instance is stopped or terminated is left to the builder. The persistent volume, the Elastic IP, and S3 stay. |
 | Idle stop | The task on the node that stops the environment when nobody has used it for 30 minutes, or 12 hours after the start. |
 | In use | At least one of the signals in DEV-FR-09 within the last check window. |
-| Stop savepoint | The savepoint of every Flink job that the idle stop takes before it stops the node. |
+| Stop savepoint | The savepoint of every Flink job that the idle stop takes before it stops the node. It is kept 7 days, like every savepoint ([REC-FR-04](../architecture/components/state-recovery.md#functional-requirements)). |
 | Spot reclaim | AWS takes the Spot capacity back. The node goes away with two minutes' notice and no stop savepoint. |
 | Public hostname | A name under `sslip.io` that resolves to the Elastic IP, such as `studio.3-90-12-7.sslip.io`. `<ip>` below stands for the dashed address. |
 
@@ -129,7 +129,7 @@ All resources are in `us-east-1` (DEV-FR-27) and in one availability zone, becau
 | Permissions for the start command | Start or create the node, attach the persistent volume, and associate the Elastic IP. |
 | S3 bucket | Private and versioned. Flink checkpoints, savepoints, and HA metadata under `flink/`, the lakehouse, and the Terraform state. Every lakehouse object is encrypted with SSE-KMS under the lakehouse key (LKH-NFR-06). |
 | KMS key | One customer-managed key for the lakehouse objects, as [LKH-NFR-06](../architecture/components/lakehouse.md#non-functional-requirements) and [decision 0053](../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md) require. The node role and the catalog may encrypt and decrypt with it. |
-| Iceberg catalog and query | Glue Data Catalog or S3 Tables, and Athena, as the lakehouse sink contract chooses (#115). |
+| Iceberg catalog and query | S3 Tables and Athena, as the [lakehouse sink](../architecture/components/lakehouse.md#non-functional-requirements) requires (LKH-NFR-08, #115, #111). |
 | ECR repositories | The Flink jobs image and the studio image, scan on push. |
 | Secrets Manager or SSM Parameter Store | The logins and the secrets the node cannot generate. |
 | Cognito user pool | The managed login pages, the groups `studio-admin` and `studio-editor`, and one confidential app client per tool, as in the [Free Plan contract](aws-free-plan.md#aws-resources). |
@@ -202,7 +202,7 @@ This is an estimate from list prices in `us-east-1`, not a measurement. Check it
 | Root volume | 30 GB gp3, only if the node is stopped rather than terminated | $0 to $2.40 |
 | Snapshots | 4 weekly, incremental, at $0.05 a GB-month | $1 to $3 |
 | Elastic IP | $0.005 an hour, all month | $3.60 |
-| S3, ECR, Secrets Manager, Athena, Glue | A few GB stored, few queries | $1 to $3 |
+| S3, S3 Tables, ECR, Secrets Manager, Athena | A few GB stored, few queries | $1 to $3 |
 | KMS key for the lakehouse | $1 a key-month plus requests | about $1 |
 | Total | | about $21 to $38 |
 
@@ -268,4 +268,4 @@ The design leaves these to whoever builds the environment. The build issues carr
 
 ## Open questions
 
-- **Stop savepoint retention.** A stop savepoint lands on every working day. How long they are kept follows the savepoint retention of [state recovery](../architecture/components/state-recovery.md#open-questions), tracked in #113.
+None. The owner set the stop savepoint retention with every savepoint's, 7 days ([REC-FR-04](../architecture/components/state-recovery.md#functional-requirements), #113).

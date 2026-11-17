@@ -8,7 +8,7 @@ area: infra
 tags: [capacity, load-test, wal, cdc, kafka, disk]
 created: 2026-11-09
 updated: 2026-11-17
-version: 0.2
+version: 0.3
 known_issues: ../known-issues/platform.md
 ---
 
@@ -42,9 +42,10 @@ Out of scope:
 | Target load | The events per second the platform must carry, counted where the collector accepts them. It has two parts, the sustained load and the burst. |
 | Sustained load | 500 events per second, held for as long as the platform runs. |
 | Burst | 2,000 events per second for 10 minutes. The rate at the collector is 2,000 during the burst, not 500 plus 2,000. |
+| Long burst | 1,000 events per second for 1 hour, a second burst shape for a peak that lasts longer than the burst. The rate at the collector is 1,000 during it. |
 | Workload profile | The mix of the test traffic: people, devices, event names, and the share that stitches a new device, updates a metric, or completes a journey node. [The traffic simulator's funnel](../features/traffic-simulator.md#funnel) and scenarios set it. Rows per event depend on it. |
 | Monthly volume | The events the platform must take in a month: 100 million to 500 million. |
-| Coalesced table | A table on the event path whose writer writes each row at most once per coalescing window, not once per event: `user_metrics` ([PRW-FR-13](components/profile-writer.md#functional-requirements)) and, once built, the profile read model. |
+| Coalesced table | A table on the event path whose writer writes each row at most once per coalescing window, not once per event: `user_metrics` ([PRW-FR-13](components/profile-writer.md#functional-requirements)). The profile read model of decision 0052 is deferred (#130). |
 | Coalescing window | `T`, in seconds. The window of [PRW-NFR-07](components/profile-writer.md#non-functional-requirements). |
 | Coalescing gain | `g`, for a coalesced table: the row writes it would take per window uncoalesced, divided by the row writes it takes coalesced. 1 means no gain. |
 | Event path | Every table write and topic message that one event causes as it flows from the collector to the last journey transition, except the writes of a paced writer. |
@@ -80,7 +81,7 @@ flowchart TD
   rules -- no --> fail[Capacity report: fail, with the failed ids]
 ```
 
-1. **Fix the target load.** The load is 500 events per second sustained and 2,000 for 10 minutes, at the collector. From the workload profile, write the rows each event writes to each table on the event path, and the messages and bytes it writes to each topic. Multiply by both rates.
+1. **Fix the target load.** The load is 500 events per second sustained, 2,000 for 10 minutes, and 1,000 for 1 hour, at the collector. From the workload profile, write the rows each event writes to each table on the event path, and the messages and bytes it writes to each topic. Multiply by the sustained and the burst rates. The long burst's rate lies between them, so it sets no higher rate. It sets Kafka's retained bytes in step 6, because it holds above the sustained load six times as long as the burst.
 2. **Size.** Turn the rows into a WAL rate, add the paced writers, turn the WAL rate into the WAL each slot holds, and the hold into the cap on slot WAL. Size each disk for the data on it, and size Kafka's retention against its disk. The [algorithm](#algorithm) gives the formulas.
 3. **Load test.** Run the target load through the collector and measure what the sizing predicted, and what the pass rules bound.
 4. **Find the root cause.** If the measured WAL rate or held WAL is above the sizing sheet, find why before any cap, disk, or retention goes up. Raising a cap to fit WAL nobody needs moves the incident of 2026-11-07 to a larger number.
@@ -115,7 +116,7 @@ The design must hold 100 million to 500 million events a month. [Decision 0052](
 A month here is 30.44 days, 2,629,800 seconds. A 30-day month gives 39 and 193 events per second.
 
 - The sustained load of 500 events per second is above both averages and above every peak at 100 million.
-- At 500 million, a peak of 950 or 1,900 events per second is above the sustained load and under the burst of 2,000. The target covers such a peak for 10 minutes. A longer peak is an [open question](#open-questions).
+- At 500 million, a peak of 950 or 1,900 events per second is above the sustained load and under the burst of 2,000. The target covers such a peak for 10 minutes, and a peak up to 1,000 for 1 hour (CAP-NFR-12). The owner added the long burst on 2026-11-17 (#116).
 
 ### Coalesced writes
 
@@ -136,11 +137,13 @@ Bounds that need no measurement:
 
 - `g` is 1 when no row changes twice in one window, such as when every person sends at most one event per window. Coalescing then saves nothing.
 - `D(r, T)` is at most `r × m × T`, and at most the people active in the window times the metrics each has.
-- At 190 events per second and, for example, `T` = 30 s, a window holds at most 5,700 events, so at most 5,700 × `m` rows.
+- At 190 events per second and the default `T` of 30 s, once per checkpoint ([PRW-NFR-07](components/profile-writer.md#non-functional-requirements)), a window holds at most 5,700 events, so at most 5,700 × `m` rows.
 
 A flush writes `D(r, T)` rows at once, every `T` seconds. The held WAL of step 3 uses the average over the confirm window, which is unchanged while `T` is no longer than the shortest confirm window, 330 s at the defaults. A window longer than that makes the hold depend on when the flush falls, and the sizing then uses the WAL of one flush plus the average.
 
-The transitions table is not coalesced. Each completed node is still one row. With analytics moved to the lakehouse ([JEX-NFR-13](components/journey-execution.md#non-functional-requirements)), its `w` drops by the WAL of the indexes it no longer carries, measured before and after. Its data on disk stops growing with time: it holds at most its rows per second × bytes per row × the Postgres retention of transitions ([JEX-NFR-12](components/journey-execution.md#non-functional-requirements)), plus one partition.
+The transitions table is not coalesced. Each completed node is still one row. Analytics keep reading recent ranges from it, so its analytics indexes stay and its `w` does not drop ([JEX-NFR-13](components/journey-execution.md#non-functional-requirements)). Its data on disk stops growing with time. It holds at most its rows per second × bytes per row × the Postgres retention of transitions ([JEX-NFR-12](components/journey-execution.md#non-functional-requirements)), plus one partition. The retention is 90 days of entry starts, the journey state TTL.
+
+The lakehouse sink reads the rebuild inputs in Postgres through CDC ([LKH-FR-14 and LKH-FR-15](components/lakehouse.md#functional-requirements)). Its slots join the set of replication slots the sizing counts, by CAP-FR-07.
 
 ## Algorithm
 
@@ -150,7 +153,7 @@ Inputs:
 - For each table on the event path, the rows per event. For each topic on the event path, the messages per event, the bytes per event, and its partitions. All from a measured run of the workload profile.
 - The WAL per event, from a measured run.
 - For each coalesced table, its coalescing window `T`, `m`, `w`, and `D(r, T)` at both rates, from a measured run.
-- The Postgres retention of transitions.
+- The Postgres retention of transitions: 90 days of entry starts ([JEX-NFR-12](components/journey-execution.md#non-functional-requirements)).
 - The budget of each paced writer: its rate cap, and for a governed pass its pause threshold.
 - For each CDC job, its confirm count and checkpoint interval.
 - The margin.
@@ -164,7 +167,7 @@ Steps:
 3. **Held WAL.** For each slot `s` and rate `r`, `H(s, r)` = `W(r)` × (confirm count + 1) × the checkpoint interval of its job. For the cap, use `H(s, burst)`, with the burst rate for the whole confirm window, even where the window is longer than the burst. This holds while checkpoints complete on schedule and the CDC source keeps up with the WAL. A long checkpoint or a source behind the WAL adds to the hold, so the load test measures the hold itself (CAP-FR-09).
 4. **Cap.** The cap on slot WAL must be at least the margin × the largest `H(s, burst)`.
 5. **Stopped slot.** A stopped job confirms nothing, and its slot already holds `H(s, r)` when the job stops. Time to the cap = (cap − `H(s, r)`) ÷ `W(r)`, for each slot, at both rates.
-6. **Kafka.** For each topic, retained bytes = the topic's sustained bytes per second × its time retention + bursts per retention period × (burst rate − sustained rate) × 600 s × the topic's bytes per event. Multiply by the topic's replicas for the bytes on disk. A byte limit applies to each partition, so a topic's byte limit must be at least its retained bytes divided by its partitions, assuming its messages spread evenly over them.
+6. **Kafka.** For each topic, retained bytes = the topic's sustained bytes per second × its time retention + bursts per retention period × (burst rate − sustained rate) × 600 s × the topic's bytes per event + long bursts per retention period × (1,000 − sustained rate) × 3,600 s × the topic's bytes per event. At 500 events per second, one long burst adds 1.8 million events, twice the burst's 0.9 million. Multiply by the topic's replicas for the bytes on disk. A byte limit applies to each partition, so a topic's byte limit must be at least its retained bytes divided by its partitions, assuming its messages spread evenly over them.
 7. **Disk.** For each disk, used space at the target = the Postgres data on it, grown at the sustained rate over the period the sizing sheet states, with `user_campaign_state_transitions` capped by its retention as [Coalesced writes](#coalesced-writes) says + the cap on slot WAL + every topic's retained bytes on it + everything else it holds. Postgres and Kafka sum when they share a disk.
 
 Output: the sizing sheet. Each result sits next to the setting it sets, and each input says where it was measured.
@@ -186,7 +189,7 @@ Ties and edge cases:
 | CAP-FR-05 | The sizing sheet must give, for each slot at both rates, the time a stopped job's slot takes to reach the cap from the hold it had when the job stopped. |
 | CAP-FR-06 | The sizing sheet must give each topic's retained bytes at the target load, its byte limit per partition where one is set, and each disk's used space with every store on it. |
 | CAP-FR-07 | A change to the target load, the confirm count, a checkpoint interval, the cap on slot WAL, a disk, a topic's retention, the set of replication slots, a paced writer's budget, or the tables on the event path must check the sizing sheet again in the same change. |
-| CAP-FR-08 | The load test must send its traffic through the collector, with the workload profile the sizing used, and count the rate at the collector. It must run, in order: a ramp up to the sustained load, the sustained load for at least two of the longest confirm windows, the burst for 10 minutes, and the sustained load again until every consumer's lag is back to its normal lag, or until the operator ends the run and records the lag left. Two windows is the lead's default, pending owner review: the first lets the held WAL reach a steady value, and the second gives CAP-NFR-06 a reading to compare with. |
+| CAP-FR-08 | The load test must send its traffic through the collector, with the workload profile the sizing used, and count the rate at the collector. It must run, in order: a ramp up to the sustained load, the sustained load for at least two of the longest confirm windows, the burst for 10 minutes, the sustained load until every consumer's lag is back to its normal lag, the long burst for 1 hour, and the sustained load again until every consumer's lag is back to its normal lag. The operator may end either recovery phase and record the lag left. Two windows is the lead's default, pending owner review: the first lets the held WAL reach a steady value, and the second gives CAP-NFR-06 a reading to compare with. |
 | CAP-FR-09 | The load test must measure, throughout the run: the event rate at the collector, the WAL rate, the held WAL and the slot status of every replication slot, each job's checkpoint duration and its failed or expired checkpoints, the lag of every consumer of every topic, each job's restarts, and the free space on each volume that holds Postgres or Kafka and on the disk under it. |
 | CAP-FR-10 | The load test must measure the rows per event per table and the WAL per event, and the capacity report must compare them with the sizing sheet. |
 | CAP-FR-11 | When the measured WAL rate or a slot's held WAL is above the sizing sheet, the root-cause review must run, and no cap on slot WAL, disk, or retention may go up for that reason until it has. |
@@ -213,15 +216,16 @@ Ties and edge cases:
 | CAP-NFR-09 | The sizing must not meet the cap by lowering the confirm count of [JEX-NFR-10](components/journey-execution.md#non-functional-requirements). A shorter CDC restore window needs its own decision record. |
 | CAP-NFR-10 | `snowplow-good` must keep at least 72 hours of messages at the target load, and the volume that holds Kafka must be sized by CAP-FR-06 to hold that. A recovery that keeps Flink state relies on the raw events waiting there ([rollout known issues](../operations/rollout-known-issues.md#a-new-job-image-cannot-restore-its-savepoint)). Once the lakehouse keeps raw events ([LKH-FR-01](components/lakehouse.md#functional-requirements)), a recovery past 72 hours reads them there, and the 72 hours bound how long the lakehouse sink may be down without a gap. From step 6 of the [algorithm](#algorithm), with one burst, the topic alone retains (500 × 259,200 s + 1,500 × 600 s) × its bytes per event, about 130.5 million events: about 13 GB for every 100 bytes per event, and about 65 GB at 500 bytes. The bytes per event come from measurement, so the bound is that product, not a fixed number. |
 | CAP-NFR-11 | The platform must take a monthly volume of 100 million to 500 million events. Its average, 38 to 190 events per second, must stay under the sustained load of CAP-NFR-01, and its peaks, 5 to 10 times the average, under the burst. CAP-NFR-01 is not changed by this. |
+| CAP-NFR-12 | The target load also has a long burst: 1,000 events per second for 1 hour, measured at the collector. Every requirement that holds at the target load holds through it. The owner decided this on 2026-11-17 (#116). |
 
 ## Interfaces
 
-The sizing and the load test read these. All exist today except the lakehouse sink and the profile read model, which are planned.
+The sizing and the load test read these. All exist today except the lakehouse sink, which is planned.
 
 | Interface | What capacity work reads |
 |---|---|
 | The collector | The accepted event rate. |
-| Tables on the event path: `identity_graph`, `event_volume`, `user_metrics`, `user_campaign_state_transitions`, and, once built, the profile read model | Rows written per second, and WAL per row from the database's per-statement WAL statistics. For a coalesced table, also the distinct rows per window. [The data model](data-model.md) says which job writes each. |
+| Tables on the event path: `identity_graph`, `event_volume`, `user_metrics`, `user_campaign_state_transitions` | Rows written per second, and WAL per row from the database's per-statement WAL statistics. For a coalesced table, also the distinct rows per window. [The data model](data-model.md) says which job writes each. |
 | `segment_members`, once built, and the tables of the governed passes | Nothing per event. The paced writers' budgets stand for them. |
 | The CDC publications and their replication slots | Which tables each publication covers, each slot's held WAL and status. [The data model](data-model.md#publications-for-cdc) lists them. |
 | The database | Its current WAL position, its cap on slot WAL, its maximum WAL size, and each table's replica identity. |
@@ -252,7 +256,7 @@ The sizing and the load test read these. All exist today except the lakehouse si
 - Given a cap of 8 GiB and a burst WAL rate of 5 MB/s, when the sizing runs, then a 60 s job's slot that stops at the burst reaches the cap in about 18 minutes. (CAP-FR-05)
 - Given `snowplow-good` with 3 partitions and a byte limit, when the sizing sheet is read, then it gives the topic's retained bytes at the target load, and the byte limit per partition is at least a third of them. (CAP-FR-06)
 - Given a change that raises the checkpoint interval of one job, when it is reviewed, then the sizing sheet in the same change shows the new held WAL against the cap. (CAP-FR-07)
-- Given a load test, when it runs, then its rate at the collector rises to 500 events per second in the ramp, holds 500 for at least two of the longest confirm windows, holds 2,000 for 10 minutes, then holds 500 until every lag is back to normal or the operator ends the run and records the lag left. (CAP-FR-08, CAP-NFR-01)
+- Given a load test, when it runs, then its rate at the collector rises to 500 events per second in the ramp, holds 500 for at least two of the longest confirm windows, holds 2,000 for 10 minutes, holds 500 until every lag is back to normal, holds 1,000 for 1 hour, then holds 500 until every lag is back to normal or the operator ends the run and records the lag left. (CAP-FR-08, CAP-NFR-01)
 - Given a load test, when it ends, then the capacity report gives every measurement of CAP-FR-09 for the whole run, and the measured rows per event per table and WAL per event beside the sizing sheet's. (CAP-FR-09, CAP-FR-10, CAP-FR-15)
 - Given a measured WAL per event above the sizing sheet's, when an operator proposes raising the cap on slot WAL, then the proposal includes the root-cause review, with a finding for each of the seven causes. (CAP-FR-11, CAP-FR-12)
 - Given the database's publications, when the review lists each covered table and its reader, then every table but the heartbeat table has a reader. (CAP-FR-13)
@@ -267,6 +271,7 @@ The sizing and the load test read these. All exist today except the lakehouse si
 - Given a coalesced table, when the sizing sheet is read, then it gives `T`, `m`, `w`, `D(r, T)`, and `g` at 500 and 2,000 events per second, each with where it was measured, and the table's rows and WAL per second derived from them. (CAP-FR-17)
 - Given a load test, when it ends, then the capacity report gives each coalesced table's distinct rows per window and row writes per second, and `g` beside the sizing sheet's. (CAP-FR-18)
 - Given a month of 500 million events, then its average of about 190 events per second is under the sustained load of 500, and its peaks of 950 to 1,900 are under the burst of 2,000. (CAP-NFR-11)
+- Given a load test, when it runs the long burst, then the rate at the collector holds 1,000 for 1 hour, and CAP-NFR-02 to CAP-NFR-05 and CAP-NFR-08 hold through it. Given the sizing sheet, then each topic's retained bytes include one long burst per retention period. (CAP-NFR-12, CAP-FR-06)
 - Given the measured bytes per event of `snowplow-good`, when the sizing sheet is read, then the topic's retained bytes for 72 hours at the target load fit the volume that holds Kafka, with CAP-NFR-08's free space left. (CAP-NFR-10, CAP-FR-06)
 
 ## Open questions
@@ -280,9 +285,6 @@ The sizing and the load test read these. All exist today except the lakehouse si
 - **The segment membership pass's budget.** SMP-NFR-02 gives the pass the governor's thresholds but no rate cap of its own. The sizing counts it at the import metric pass's 0.25 MB/s. That is the lead's default, pending owner review.
 - **Checkpoint duration bound.** The load test measures checkpoint duration, and CAP-NFR-04 forbids failures. Whether a duration under the timeout but close to it fails the run is undecided.
 - **Background writers during the test.** Whether the load test runs with the paced writers at their caps, or counts them only on paper, is undecided. The sizing counts them either way (CAP-FR-02).
-- **Peaks longer than the burst.** At 500 million events a month, a peak of 5 to 10 times the average is 950 to 1,900 events per second. The burst covers that for 10 minutes (CAP-NFR-11). How long a real peak lasts, and whether the target needs a longer burst, is undecided. Tracked in #116.
-- **The coalescing window.** `T` is open in [the profile writer](components/profile-writer.md#open-questions). The sizing cannot give the WAL of `user_metrics` until it is set and `D(r, T)` is measured. Tracked in #112.
-- **Postgres retention of transitions.** It caps the transitions table's data on disk and is open in [journey execution](components/journey-execution.md#open-questions). Tracked in #114.
 - **Rerunning the test.** CAP-FR-07 requires the sizing sheet to be checked again on a change. Which changes also require a new load test is undecided.
 
 ## Related

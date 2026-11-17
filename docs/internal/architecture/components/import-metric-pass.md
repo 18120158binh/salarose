@@ -8,7 +8,7 @@ area: event-processor
 tags: [data-import, batch, metrics, wal, idempotency]
 created: 2026-11-08
 updated: 2026-11-17
-version: 2.0
+version: 2.1
 known_issues: ../../known-issues/components/import-metric-pass.md
 ---
 
@@ -211,7 +211,7 @@ A failed pass leaves some rows from itself and the rest from the pass before. Ea
 
 | Id | Requirement |
 |---|---|
-| IMP-NFR-01 | At the record cap of 5 million records, a pass that writes no rows must finish within 1 hour with 1 vCPU and 2 GiB of memory. |
+| IMP-NFR-01 | A pass that writes no rows must finish within 1 hour when a dataset holds a file at the record cap of 100 million records ([IAP-NFR-03](import-applier.md#non-functional-requirements)). The owner raised the cap on 2026-11-17 on this condition (#131). The compute the pass may use follows the query engine, an [open question](#open-questions). |
 | IMP-NFR-02 | The pass's own WAL rate on the main Postgres, measured from its statements' WAL usage, must stay under 0.25 MB/s. The pass must not write while the cluster WAL rate is above 2 MB/s. (the lead's default) |
 | IMP-NFR-03 | The schedule, the reporting time zone, the batch size, the own WAL rate, the cluster rate thresholds, the slot thresholds, and the disk thresholds must be configurable. Defaults: 03:00, `Asia/Ho_Chi_Minh`, 500 rows, 0.25 MB/s, pause above 2 MB/s and resume under 1.5 MB/s, pause under half of the cap and resume above two thirds, pause under 20% free and resume above 25%. |
 | IMP-NFR-04 | `customer_attributes` must stay at the default replica identity and must join no publication. |
@@ -280,7 +280,7 @@ Customer decision reads `customer_attributes` by `customer_key` ([customer decis
 - Given a pass with the applier stopped, then every import store table has the same current snapshot before and after it, and the pass reaches the import store with credentials that may only read. (IMP-FR-16)
 - Given a finished pass while the live pipeline also wrote WAL, then its `wal_bytes` equals the sum of its own statements' WAL usage, not the LSN difference, and its row holds `changed_rows` and each pause. (IMP-FR-14)
 - Given a backfill on a staging copy, then the pass reports its own measured WAL bytes, and its own rate stays under 0.25 MB/s. (IMP-NFR-02)
-- Given 5 million records on a staging copy and no change since the last pass, then a pass with 1 vCPU and 2 GiB writes zero rows and is `done` within 1 hour. (IMP-NFR-01)
+- Given a dataset with a file of 100 million records on a staging copy and no change since the last pass, then a pass writes zero rows and is `done` within 1 hour. (IMP-NFR-01)
 - Given the batch size set to 100 and the schedule to 04:00, then the pass starts at 04:00 and checks the governor every 100 rows. Given no settings, then the defaults in IMP-NFR-03 hold. (IMP-NFR-03)
 - Given the main Postgres, then `customer_attributes` has replica identity `default` and is in no row of `pg_publication_tables`. (IMP-NFR-04)
 - Given a pass that pauses and publishes, then its log lines hold its pass id, counts, and pauses, and no customer key or attribute value. (IMP-NFR-05)
@@ -288,7 +288,7 @@ Customer decision reads `customer_attributes` by `customer_key` ([customer decis
 
 ## Open questions
 
-- **The query engine.** The engine that runs the grouped queries over the import store follows from the lakehouse's open questions on the catalog and the query engine ([lakehouse sink](lakehouse.md#open-questions)). IMP-NFR-01's 1 hour on 1 vCPU and 2 GiB was set for a Postgres import store, and holds until the engine is chosen.
+- **The query engine.** Which engine runs the grouped queries over the import tables is undecided. The catalog is S3 Tables ([LKH-NFR-08](lakehouse.md#non-functional-requirements)). The owner chose Athena for analytics on 2026-11-17 (#111). That choice does not name the pass's engine. IMP-NFR-01's 1 hour now holds at 100 million records in one file (#131), and the engine must meet it.
 
 The figures for WAL per changed row and pass duration are estimates in [decision 0040](../decisions/0040-import-through-a-batch-path-and-a-separate-store.md#why). The first backfill and the first week of passes correct them from `wal_bytes` and the pass durations.
 

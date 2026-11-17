@@ -8,7 +8,7 @@ Identity resolution decides which person each event belongs to. One shopper uses
 
 | Contract | What it decides | Contract | Implementation | Known issues |
 |---|---|---|---|---|
-| [Identifiers](identifiers.md) | Which ids the platform knows, the normalized form of each, and which ones may link two identity sets | Draft | Planned | [List](../../../known-issues/components/identity/identifiers.md) |
+| [Identifiers](identifiers.md) | Which ids the platform knows, the normalized form of each, and which ones may link two identity sets | Accepted | Planned | [List](../../../known-issues/components/identity/identifiers.md) |
 | [Identity stitching](identity-stitching.md) | How an event's identifiers resolve to a `canon_id`, and which root wins a merge | Accepted | Partial | [List](../../../known-issues/components/identity/identity-stitching.md) |
 | [Identity graph](identity-graph.md) | One record of every identity set, shared by all devices and jobs, with the rules that allow or refuse a merge and the history of every merge | Draft | Planned | [List](../../../known-issues/components/identity/identity-graph.md) |
 | [Identity merges](identity-merges.md) | What each job does with the metrics, journeys, and rows recorded under a `canon_id` that a merge retires | Draft | Planned | [List](../../../known-issues/components/identity/identity-merges.md) |

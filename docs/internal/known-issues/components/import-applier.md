@@ -15,6 +15,7 @@ Java paths are relative to `event-processor/src/main/java/com/cdp/platform/`. Th
 | IAP-KI-04 | Risk | An error while validating retries at every start instead of failing the run | IAP-FR-02 |
 | IAP-KI-05 | Minor | The applier's SQL has no test against Postgres | IAP-FR-03, IAP-FR-04, IAP-FR-23, IAP-FR-24 |
 | IAP-KI-06 | Risk | The import store is a Postgres cluster, not the lakehouse | IAP-FR-26, IAP-FR-27, IAP-NFR-06 |
+| IAP-KI-07 | Risk | The record cap counts the whole store at 5 million, not each file at 100 million | IAP-NFR-03 |
 
 ## IAP-KI-02. Tombstones and the 365-day `pii_access_log` deletion are not run
 
@@ -40,6 +41,13 @@ Java paths are relative to `event-processor/src/main/java/com/cdp/platform/`. Th
 - **Symptom.** Accepted records go to the second Postgres cluster `cdp-import-pg`, whose 10 GiB volume and record cap bound the history a shop can import. A tombstone deletes rows with SQL, and nothing expires older copies, because Postgres keeps none.
 - **Cause.** `PostgresImportStore` in `jobs/importapplier/` writes `import_records`, `import_profiles`, `import_identifiers`, and `import_run_commits` in one Postgres transaction. The tables come from `infra/db/import-store/schema.sql`. The contract moved the store to the lakehouse on 2026-11-17 ([decision 0053](../../architecture/decisions/0053-store-raw-events-transition-history-and-imports-in-an-iceberg-lakehouse.md)).
 - **Evidence.** Read from the code and `infra/db/import-store/` at `a29730c`.
-- **Fix direction.** An import store that commits to Iceberg tables, once the catalog is chosen, behind the applier's existing store interface. Delete the cluster, its DDL Job, and its secrets in the same change as IMP-KI-06.
+- **Fix direction.** An import store that commits to Iceberg tables in the S3 Tables catalog (LKH-NFR-08), behind the applier's existing store interface. Delete the cluster, its DDL Job, and its secrets in the same change as IMP-KI-06.
 
 Tracked in #102.
+
+## IAP-KI-07. The record cap counts the whole store at 5 million, not each file at 100 million
+
+- **Symptom.** A run is quarantined with `record_cap` once `import_records` would hold more than 5 million records in all, even when its own file is small. A file of 100 million records cannot apply.
+- **Cause.** `Limits.DEFAULT` in `jobs/importapplier/Limits.java` sets `recordCap` to 5,000,000. `Decision` in `jobs/importapplier/Decision.java` adds the run's new records to the stored count, and `RunProcessor` in the same package compares `store.records()` with the cap on a re-derive.
+- **Evidence.** Read from the code at `fe53fe6`.
+- **Fix direction.** Compare the cap with the run's file, default 100,000,000, in the decision and the re-derive. Land it with IAP-KI-06, because the Postgres store's volume cannot hold 100 million records.

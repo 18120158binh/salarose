@@ -10,6 +10,8 @@ superseded_by: []
 
 # 0052. Keep hot state in Flink and a redesigned projection in Postgres, with no new database
 
+> Amended on 2026-11-17. The owner answered the questions this record left open. [Amendments](#amendments) lists the answers. The text above them is unchanged.
+
 ## Context
 
 The platform must carry 100 million to 500 million events a month. That is about 38 to 190 events a second on average, with peaks of 5 to 10 times that. [Platform capacity](../capacity.md) already sets 500 events a second sustained and 2,000 for 10 minutes, which covers the average and most of the peak.
@@ -70,6 +72,23 @@ This decision supersedes in part [decision 0039](0039-shorten-the-cdc-restore-wi
 - A state miss after a fresh start reads metric values up to one coalescing window plus one flush old. [Decision 0054](0054-recover-flink-state-in-four-layers.md) accepts that loss for layer 3 and gives the exact path, a rebuild from raw events.
 - [PLT-KI-16](../../known-issues/platform.md#plt-ki-16-the-event-path-tables-share-the-database-whose-wal-every-cdc-slot-holds) is fixed by writing less WAL, not by moving tables.
 - Decision 0039's caps and restore window stay. The sizing in [platform capacity](../capacity.md) checks them again once coalescing is measured.
+
+## Amendments
+
+The owner answered this record's open questions on 2026-11-17. Each answer is written as requirements in the contract it changes.
+
+| Question | Answer | Where |
+|---|---|---|
+| The coalescing window | Once per checkpoint, 30 seconds by default (#112). | [PRW-NFR-07](../components/profile-writer.md#non-functional-requirements) |
+| Narrow rows for `user_metrics` | Keep one row per series. Revisit narrow rows only if the load test shows the WAL of `user_metrics` above the sizing sheet (#129). | [PRW-FR-17](../components/profile-writer.md#functional-requirements) |
+| The partition column of `user_campaign_state_transitions` | The entry start, `entry_started_at`, which the engine carries on every transition. A replay cannot change it, so one row per transition key holds (#117). | [JEX-FR-20](../components/journey-execution.md#functional-requirements) |
+| The Postgres retention of transitions | 90 days of entry starts, the journey state TTL (#114). | [JEX-NFR-12](../components/journey-execution.md#non-functional-requirements) |
+| The outbox publication | Keep `outbox_transitions_pub`. Publish the partitions under the parent table (#122). | [OUT-FR-09](../components/notification-outbox.md#functional-requirements) |
+| The profile read model | Deferred. No table is added now (#130). | [Profile writer](../components/profile-writer.md#open-questions) |
+| A transition whose partition already left Postgres | Written straight to `transition_history`. The outbox and the timer flow do not see it (#128). | [JEX-FR-22](../components/journey-execution.md#functional-requirements), [LKH-FR-12](../components/lakehouse.md#functional-requirements) |
+| How the projection catches up after a rebuild | A rebuild epoch in the row version. Rebuilt state wins over older rows, and normal writes catch up, with no bulk rewrite (#121). | [PRW-FR-16](../components/profile-writer.md#functional-requirements), [REC-FR-15](../components/state-recovery.md#functional-requirements) |
+
+In the Tier 2 table, the targets for metrics, journey progress, the outbox, and the profile read model now follow these answers. Metrics are coalesced once per checkpoint, one row per series. Transitions are partitioned by entry start, with 90 days in Postgres. The outbox keeps today's publication. No profile read model is built for now.
 
 ## Related
 
